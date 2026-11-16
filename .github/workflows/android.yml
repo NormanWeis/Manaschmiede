@@ -21,11 +21,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
-
+      # Das Android-SDK ist auf den GitHub-Rechnern (ubuntu-latest) bereits installiert (ANDROID_HOME).
       - name: APK bauen (Debug, sofort installierbar)
         working-directory: android
-        run: ./gradlew --no-daemon assembleDebug
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleDebug
 
       - name: Signierte Release-APK bauen (nur wenn Schlüssel hinterlegt)
         if: env.HAS_KEY == 'true'
@@ -36,7 +35,7 @@ jobs:
           CDB_KEY_PASSWORD: ${{ secrets.CDB_KEY_PASSWORD }}
         run: |
           echo "${{ secrets.CDB_KEYSTORE_BASE64 }}" | base64 -d > release.jks
-          CDB_KEYSTORE=$PWD/release.jks ./gradlew --no-daemon assembleRelease
+          chmod +x gradlew && CDB_KEYSTORE=$PWD/release.jks ./gradlew --no-daemon assembleRelease
 
       - uses: actions/upload-artifact@v4
         with:
