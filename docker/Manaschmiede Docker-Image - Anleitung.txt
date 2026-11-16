@@ -1,0 +1,42 @@
+MANASCHMIEDE – DOCKER-IMAGE (Version 32)
+========================================
+
+Inhalt: Ubuntu 24.04, Python 3.12, Java 17, Forge 2.0.16 und die Manaschmiede (Version 32).
+Fuer Server mit x86_64/amd64-Prozessor (praktisch alle gemieteten Cloud-Server und PCs).
+Groesse: rund 580 MB (gepackt), wegen der Dateigroessen in zwei Teilen geliefert.
+
+Pruefsumme (SHA-256) der zusammengefuegten Datei:
+d265b368c24d4873502bf3d05fd8ba7a76c0921c69c2f29b2790c2927bc7ab3c
+
+1) TEILE ZUSAMMENFUEGEN
+   Unter Windows: "Docker-Image zusammenfuegen.bat" doppelklicken (prueft auch die Pruefsumme).
+   Unter Linux (direkt auf dem Server):
+     cat manaschmiede-32-docker-image.tar.gz.teil0 manaschmiede-32-docker-image.tar.gz.teil1 > manaschmiede-32-docker-image.tar.gz
+     sha256sum manaschmiede-32-docker-image.tar.gz
+
+2) AUF DEN SERVER BRINGEN
+   Die Datei (oder beide Teile) und den Ordner "server" aus Manaschmiede-v32-Server-und-Android.zip
+   per WinSCP auf den Server kopieren.
+
+3) IMAGE LADEN
+     docker load -i manaschmiede-32-docker-image.tar.gz
+   Danach zeigt "docker images" den Eintrag manaschmiede:32.
+
+4) EINSTELLEN UND STARTEN (im Ordner "server")
+     cp .env.example .env
+     nano .env        -> Domain, E-Mail, Admin-Benutzer und langes Passwort eintragen
+     docker compose up -d        (OHNE --build, dann wird das geladene Image benutzt)
+   Fortschritt: docker compose logs -f app
+   Beim ersten Start laedt der Server Kartendaten, Precons und Regeln (1–3 Minuten).
+
+5) OPTIONAL: BISHERIGE DATEN UEBERNEHMEN
+     docker compose cp cards.db app:/data/cards.db
+     docker compose restart app
+   Deine gespeicherten Decks (z. B. Alexios) gehoeren danach dem Admin-Konto.
+
+Schnelltest ohne Domain (nur zum Ausprobieren, ohne HTTPS):
+     docker run -d --name manaschmiede -p 8000:8000 -v manaschmiede_data:/data \
+       -e CDB_ADMIN_USER=admin -e CDB_ADMIN_PASSWORD=EinLangesPasswort123 manaschmiede:32
+   Dann http://SERVER-IP:8000 im Browser oeffnen.
+
+Alles Weitere (Tunnel-Variante, Sicherung, Updates): server/README-Server.md im ZIP-Paket.

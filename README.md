@@ -2,7 +2,7 @@
 
 | Teil | Inhalt | Anleitung |
 |---|---|---|
-| **Windows (lokal)** | `commander_db_v32.py` + Startdateien im Download-Ordner – läuft wie bisher ohne Server | Doppelklick auf `Commander-DB starten.bat` |
+| **Windows (lokal)** | Ordner `windows`: `commander_db_v32.py` + Startdateien – läuft ohne Server | `windows/README-Windows.md` |
 | **Server (Internet)** | Ordner `server`: Docker-Image mit Python, Java, Forge, HTTPS über Caddy oder Cloudflare-Tunnel | `server/README-Server.md` |
 | **Android** | installierbare Web-App direkt vom Server **oder** eigene APK (Ordner `android`, Bau automatisch bei GitHub) | `android/README-Android.md` |
 | **Windows-App vom Server** | Serveradresse in Edge/Chrome öffnen → Installieren-Symbol in der Adressleiste → eigenes App-Fenster im Startmenü | – |
@@ -35,3 +35,16 @@ docker compose pull
 docker compose up -d
 ```
 Ausführlich (Einstellungen, Benutzer, Sicherung, Updates): [`server/README-Server.md`](server/README-Server.md)
+
+## Inhalt des Repositorys
+| Ordner | Inhalt |
+|---|---|
+| `server/` | Programm, Dockerfile, docker-compose, Caddy, Anleitung für den Serverbetrieb |
+| `android/` | Android-App (WebView, Kartenscanner, Dauerscan) |
+| `windows/` | Programm und Startdateien für den lokalen Betrieb unter Windows |
+| `docker/` | Anleitung und Hilfsdatei für das Image als Datei (Teile siehe Release „v32“) |
+| `docs/` | Funktionsvergleich mit anderen Apps, Punktetabelle, Versionsverlauf, bekannte Grenzen |
+| `archiv/` | frühere Programmversionen 6–31 |
+| `.github/workflows/` | automatischer Bau von Docker-Image (ghcr.io) und Android-APK |
+
+Downloads (Docker-Image als Datei, APK): unter **Releases** im Repository.

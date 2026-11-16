@@ -1,0 +1,195 @@
+# Commander-DB: Funktionsvergleich, fehlende Funktionen und Machbarkeit
+
+Nov 15, 2026 · Norman
+
+## Kurzfazit
+
+Mit den Versionen 16 bis 25 sind alle machbaren Punkte der Liste umgesetzt, jede Änderung als eigene Version und mit Prüfung (Verlauf unten). Neu sind unter anderem **Kartensammlung mit Besitzanteil**, **Maybeboard, Tags und Notizen**, **Spieltisch mit Lebenszähler und Siegquoten**, **Forge-Runden zu viert**, **Empfehlungen aus eigener Statistik**, **Preisverlauf**, **Proxy-Druck**, **Teilen per Link** und **deutsche Kartennamen**. Im Punktevergleich liegt die Commander-DB jetzt mit 37 von 48 Punkten vorn; offen bleiben vor allem ein Testspiel-Spielfeld, Community-Funktionen; ein Kartenscanner ist seit Version 29 dabei.
+
+- **Stärken:** regelgetreue KI-Partien per Forge (1 gegen 1 und zu viert), Deckbau-Assistent mit Synergie, Budget und Sammlung, Manabasis nach Karsten, Combos mit Spellbook-Einstufung, Spieltisch mit Siegquoten, deutsche Oberfläche mit Hilfe und Regeln, lokal oder auf eigenem Server.
+- **Schwächen:** kein Spielfeld zum Testspielen (nur Probehand), keine öffentliche Deck-Datenbank und Community, kein Scanner, Empfehlungen auf schmalerer Datenbasis als EDHREC.
+- **Vor dem Einsatz bei dir:** Docker-Image und APK einmal bauen; Spellbook-Funktionen und deutsche Namen einmal mit Live-Daten ansehen.
+
+## Umgesetzt in Version 15
+
+| Punkt | Was jetzt geht | Prüfung |
+| --- | --- | --- |
+| Grenze: kein freier Editor (Teil von Nr. 3) | „➕ Karte hinzufügen“ mit Vorschlagsliste; prüft Legalität, Farbidentität und Duplikate. ✕ entfernt Karten (Standardländer einzeln). Neue Gruppe „Manuell hinzugefügt“ | Oberflächentest |
+| Grenze: nur vollständige Combos (Nr. 6) | Abschnitt „Fast vollständig – eine Karte fehlt“, die fehlende Karte ist markiert, Knopf „➕ … ins Deck“ | mit nachgebildeten Spellbook-Antworten im offiziellen Format |
+| Offizielle Bracket-Schätzung (Nr. 6) | Einstufung von Commander Spellbook (Ruthless bis Exhibition) mit Begründung: Game Changer, Zwei-Karten-Combos, Landzerstörung, Extra-Züge, Locks | wie oben |
+| Grenze: Vorschläge nur nach Beliebtheit (Teil von Nr. 8) | Gruppe „Synergie mit dem Commander“: wertet den Text des Commanders aus (Marken, Spielsteine, Lebensgewinn, Kartenziehen, Angriff u. a.) und seine Kreaturentypen, Kreaturentypen zählen dreifach | mit echter Datenbank, z. B. Edgar Markov → Vampire, Atraxa → Marken |
+| Grenze: nur ein Commander im Assistenten | Partner und Hintergrund mit „ + “, Farbidentität wird vereinigt, Deck hat immer genau 100 Karten | auch im echten Forge-Duell |
+| Budget-Grenze (Teil von Nr. 12) | „Höchstpreis je Karte“ und „Budget gesamt“ im Assistenten | Budget 60 € → 52 bis 57 € |
+| Manabasis-Analyse (Nr. 5) | Farbquellen je Farbe, Chance, jede Karte rechtzeitig zu wirken (hypergeometrisch), schwierigste Karten; der Assistent wählt bei mehreren Farben bevorzugt Länder für zwei oder mehr Farben | 4 Farben vorher 65–78 %, jetzt 80–88 % |
+| Probehand (Nr. 4) | Probehand, nachziehen, London-Mulligan; Statistik aus 20.000 Starthänden (Länderverteilung, behaltbare Hände, Landdrops Zug 1–4) | Oberflächentest |
+| Deck-Versionen (Nr. 9) | beim Speichern mit geänderter Liste wird die alte Fassung gesichert (bis 30), Dialog mit „dazugekommen/entfernt“ und Wiederherstellen; im Server-Modus je Benutzer getrennt | lokal und im Server-Modus, fremder Zugriff abgewiesen |
+
+Die Hilfe ist für alle neuen Funktionen ergänzt. Komplettkontrolle: alle bisherigen Prüfungen lokal, im Server-Modus und zu Kodierungen ohne Fehler, dazu 25 neue Oberflächen- und 6 neue Server-Prüfungen sowie zwei echte Forge-Duelle (Krenko-Budgetdeck, Thrasios + Tymna).
+
+## Versionsverlauf ab Version 16
+
+Jede Änderung wird als eigene Version gespeichert (Datei `commander_db_vNN.py`, Startdateien und Server-/Android-Paket jeweils angepasst). Nicht lösbare Probleme stehen im Abschnitt darunter.
+
+| Version | Inhalt | Prüfung |
+| --- | --- | --- |
+| 16 – Grenzen behoben | Manabasis zählt Fetch- und Suchländer voll, Ramp-Zauber bis Manawert 3 halb (Karsten-Methode, Punkt 18); Assistent nimmt bei 3–5 Farben deutlich mehr Mehrfarbenländer (4 Farben jetzt 89–94 %, 5 Farben mit Budget 87–94 %); strenge Partner-Prüfung (Partner, Partner-Varianten, „Partner with“, Friends forever, Hintergrund, Doctor's companion) mit Warnung schon im Formular; Notiz zur Änderung beim Speichern, zwei beliebige Fassungen vergleichen (Punkt 19); + / − für Standardländer; Hinweis, wie viele Karten ohne Preis nicht ins Budget eingerechnet sind | 8 neue Oberflächentests, alle bisherigen Tests lokal und im Server-Modus fehlerfrei, Übernahme alter Datenbanken ohne Notizspalte geprüft |
+| 17 – Kartensammlung (Punkte 1 und 2) | Bereich „Meine Sammlung“: Import als CSV aus ManaBox, Moxfield, Deckbox, Archidekt und Dragon Shield (Spalten werden erkannt, Trennzeichen , ; Tab) oder als Liste; hinzufügen oder ersetzen; Tippfehler werden korrigiert, unbekannte Namen gemeldet; Wert der Sammlung; Export als CSV; Leeren. Bei jedem Deck: Besitzanteil in Prozent, fehlende Karten mit Preis (kopierbar), Markierung ✓ / ✗ / ⚠ „auch in Deck …“ (nicht genug freie Exemplare). Assistent: „Sammlung bevorzugen“ oder „nur eigene Karten“. Im Server-Modus je Benutzer getrennt. | 4 Dateiformate mit echten Exportspalten, 12 neue Oberflächen- und 3 neue Server-Prüfungen, alle bisherigen Tests fehlerfrei; dabei gefundener Fehler (falsche Zahl verschiedener Karten nach dem Import) behoben |
+| 18 – Maybeboard, Tags, Notizen (Punkt 3) | 🏷 eigene Tags je Karte mit Vorschlägen (Ramp, Wincon …), Etiketten in der Liste und Übersicht „Nach Tags“; Maybeboard mit „↓ Maybe“, eigenem Eingabefeld und „↑ ins Deck“ (zählt nicht zum Deck und nicht zum Export); Notizen/Primer je Deck. Alles wird mit dem Deck gespeichert, beim Laden wiederhergestellt und bleibt beim Wiederherstellen einer Version erhalten. | 10 neue Oberflächenprüfungen einschließlich Speichern und Neuladen, alle bisherigen Tests fehlerfrei; dabei gefundene Namenskollision mit den Assistenten-Hinweisen behoben |
+| 19 – Token-Liste und Proxy-Druck (Punkte 17 und 11) | Tokens je Deck mit erzeugender Karte: genau aus den Scryfall-Verknüpfungen (ab der nächsten Kartenaktualisierung, mit Bild), bis dahin aus dem Kartentext erkannt. Proxy-Druck: Druckansicht mit Kartenbildern in 63 × 88 mm, 9 je A4-Seite, Schnittlinien, „PROXY“-Vermerk, wahlweise nur in der Sammlung fehlende Karten, ohne Standardländer, mit Tokens; „Drucken / als PDF speichern“ über den Browser. | Scryfall-Import mit Token-Verknüpfung an einer Beispieldatei geprüft, Texterkennung an echten Karten; 9 neue Oberflächenprüfungen (u. a. Kartenbreite im Druck genau 63 mm), alle bisherigen Tests fehlerfrei |
+| 20 – Preisverlauf (Punkt 12) | Bei jeder Kartenaktualisierung werden nur geänderte Preise gesichert (Basiswert beim ersten Start, danach wenige Hundert Zeilen je Tag). Je Deck: Verlauf des Deckwerts als Diagramm, Wert am ersten und letzten Stichtag, die zehn Karten mit den größten Änderungen der letzten 30 Tage. | Mit echter Datenbank: Basiswert 32.216 Karten in 0,1 s, unveränderte Preise erzeugen keine neuen Zeilen; dabei gefundener Fehler (gleichnamige Karten wurden jedes Mal neu gespeichert) behoben; 5 neue Oberflächenprüfungen, alle bisherigen Tests fehlerfrei |
+| 21 – Spieltisch und Spielprotokoll (Punkt 10) | Lebenszähler für 2–6 Spieler mit Startleben, ±1/±5, Gift (ab 10 verloren), Commander-Schaden je Gegner (ab 21 verloren, zählt auch als Lebensverlust), Aufgeben, Zugzähler; Stand bleibt beim Neuladen erhalten, Bildschirm bleibt am Handy an. Partie mit Sieger, Zügen und Notiz speichern; Statistik mit Partien, Siegen und Siegquote je Deck und je Spieler, letzte Partien löschbar. Forge-Duelle per Knopf ins Protokoll übernehmen. Im Server-Modus je Benutzer getrennt. | 13 Oberflächenprüfungen in Handygröße, 3 zur Forge-Übernahme, 3 neue Server-Prüfungen (u. a. kein fremdes Löschen), alle bisherigen Tests fehlerfrei |
+| 22 – Teilen per Link (Punkt 15) | Knopf „Teilen“ bei gespeicherten Decks: Link auf eine Nur-Lese-Seite mit Karten nach Typ, Manakosten, Bildvorschau, Tags, Notizen/Primer, Maybeboard, Wert und kopierbarer Liste; ohne Anmeldung lesbar, jederzeit widerrufbar, nicht von Suchmaschinen erfasst. Notizen werden sicher dargestellt (kein eingeschleuster Code). | 9 Oberflächenprüfungen (u. a. Schutz vor eingeschleustem Skript, ungültige Links), 3 Server-Prüfungen (fremdes Teilen abgewiesen, Lesen ohne Login, Widerruf), alle bisherigen Tests fehlerfrei |
+| 23 – Empfehlungen, Streichvorschläge, Frust-Index (Punkte 8 und 7) | „💡 Empfehlungen berechnen“: sucht ähnliche Decks unter 178 Precons und den eigenen gespeicherten Decks; seltene Gemeinsamkeiten zählen mehr als Allerweltskarten, Decks mit guter Siegquote im Spielprotokoll stärker. 15 Ergänzungen mit Begründung (direkt ins Deck), 8 Streichkandidaten (direkt ins Maybeboard, als Wincon/Combo getaggte Karten ausgenommen). Statt EDHREC-Salt ein eigener Frust-Index aus dem Kartentext (Massen-Landzerstörung, Extra-Züge, Stax, Diebstahl, Gegenzauber, Tutoren, Game Changer) mit Kartenliste. | Mit echter Datenbank: erste Fassung lieferte nur Allerweltsländer und wollte Spitzenkarten streichen, nach Umstellung auf IDF-Gewichtung passende Vorschläge (Krenko → Goblins, Edgar Markov → Vampire, Lathril → Elfen), ca. 2 s je Deck; 6 neue Oberflächenprüfungen, alle bisherigen Tests fehlerfrei |
+| 24 – Forge-Duell zu viert (Punkt 16) | Spielform „Commander-Runde zu viert“: dein Deck, der gewählte Gegner und zwei weitere (passende Precons oder eigene Decks). Ergebnis mit Siegen, Siegzügen und Siegarten je Spieler, Hinweis auf die 25-%-Erwartung, Übernahme ins Spielprotokoll mit vier Spielern. Zeitlimit 15 Minuten je Partie; erreicht Forge es, wird die Partie als Unentschieden gewertet. | Machbarkeitstest mit echtem Forge 2.0.16: Vierer-Partien laufen headless (40–75 s bis Runde 20–27, beim 300-s-Limit unentschieden); Ausgabeformat ausgewertet und über die Anwendung mit echtem Forge bestätigt; 8 neue Oberflächenprüfungen, alle bisherigen Tests fehlerfrei |
+| 25 – Deutsche Kartennamen (Punkt 13) | Deck-Import, Sammlungs-Import und Kartensuche verstehen deutsche und andere fremdsprachige Namen (z. B. „Blitzschlag“ → Lightning Bolt, „Krenko, Anführer des Mobs“ als Commander erkannt). Unbekannte Namen werden über Scryfalls Suche nach dem aufgedruckten Namen nachgeschlagen und lokal gemerkt; jede Übersetzung wird nur einmal abgefragt, höchstens 10 Anfragen je Sekunde. Ohne große Zusatzdatei. | Mit nachgebildeten Scryfall-Antworten im offiziellen Format geprüft (Import, Wiederholung ohne neue Abfrage, Suche, Sammlung), Oberfläche mit gemerkten Übersetzungen; alle bisherigen Tests fehlerfrei. Live-Abfrage hier gesperrt – bei dir einmal mit einem deutschen Namen prüfen. |
+| 26 – Precon-Auswahlliste | Auswahlliste „Precon auswählen“ mit allen offiziellen Precons (Name, Commander, Farben auf Deutsch), nach Set und Jahr gruppiert, die zu deinen Farben passenden oben; Schnellwahl-Knöpfe zeigen auch den Commander; Anzeige des gewählten Gegners mit Name, Commander und Set; dieselbe Liste für Spieler 3 und 4 der Vierer-Runde, dazu eigene Decks. | Mit echter Datenbank (178 Precons) 8 neue Oberflächenprüfungen, alle bisherigen Tests fehlerfrei |
+| 27 – Neuer Seitenaufbau mit Willkommen-Seite und Tabs | Willkommen-Seite im Magic-Stil (fünf Farb-Kugeln, Schnellstart mit Commander-Eingabe, acht Bereiche als Karten im Kartenformat). Alle Funktionen in Tabs: Willkommen, Deck bauen, Gegner & Duell, Meine Decks, Sammlung, Spieltisch, Kartensuche, Regeln (Regeln laden erst beim Öffnen). Leiste bleibt beim Scrollen sichtbar und ist am Handy wischbar, Zurück-Taste wechselt den Tab, Direktlinks wie #regeln. Kopf: „Magic: The Gathering stammt von Wizards of the Coast“ mit Link; Fußzeile mit dem Fan-Content-Hinweis nach der Fan Content Policy (deutsch und im englischen Originalwortlaut). | 42 neue Prüfungen am PC und in Handygröße (jeder Tab allein sichtbar, Zurück-Taste, Schnellstart baut Deck, Gegner-Tab ohne Deck mit Hinweis); dabei zwei Fehler gefunden und behoben (Klassenname kollidierte mit dem Liste/Bilder-Umschalter, Dialogfenster war in anderen Tabs unsichtbar); alle Tests lokal, im Server-Modus und zu Kodierungen fehlerfrei |
+| 28 – Gespeicherte Decks im Tab „Deck bauen“ | Anlass: Das gespeicherte Deck „Alexios, Deimos of Kosmos“ war nur im Tab „Meine Decks“ zu finden. Neu: Auswahl „📂 Gespeichertes Deck öffnen“ oben im Tab „Deck bauen“ (öffnet sofort beim Auswählen) und „Zuletzt gespeichert“ mit den fünf neuesten Decks auf der Willkommen-Seite; beides aktualisiert sich beim Speichern und Löschen. | Mit einer Kopie der echten Datenbank geprüft (Deck vorhanden, unbeschädigt, lädt in beiden neuen Wegen), 5 neue Prüfungen, alle bisherigen Tests lokal und im Server-Modus fehlerfrei |
+| 29 – Kartenscanner mit Handykamera (Punkt 14) | „📷 Karten scannen“ im Tab Sammlung und in der Deckansicht. Drei Wege: (1) Foto aufnehmen – öffnet am Handy die Kamera, geht überall, auch im Heimnetz ohne HTTPS; (2) Live-Kamera mit Rahmen zum Ausrichten – im Browser nur über HTTPS oder am PC; (3) Android-App: Kamera-App + Google ML Kit, Erkennung direkt auf dem Gerät ohne Internet und ohne Kamera-Berechtigung. Browser-Erkennung mit Tesseract.js (wird beim ersten Scan einmalig aus der npm-Paketquelle geladen, 16 MB, danach offline). Zuordnung über Kartennamen (englisch oder deutsch, Tippfehler der Erkennung werden ausgeglichen), notfalls Set-Kürzel + Sammlernummer. Bei Unsicherheit Alternativen zur Auswahl; Scanliste mit Mengen, dann „Zur Sammlung hinzufügen“ oder „Ins aktuelle Deck“. Bildaufbereitung (Helligkeit strecken, Ausschnitt, gedrehte Versuche). | Echte Texterkennung in Chrome an erzeugten Kartenfotos: 6 von 6 normale und 5 von 6 absichtlich unscharfe, dunkle und schräge Fotos erkannt, keine Fehlerkennung; Live-Kamera mit Testkamera, App-Weg mit nachgebildeter Schnittstelle geprüft; Fotos ohne Karte werden nicht als sicher erkannt; dabei behoben: doppelseitige Karten verdrängten den exakten Namen, alte Ergebnisse blieben stehen; ein Versuchsmodus wurde wegen Fehlerkennung wieder entfernt. Android-Code ohne Syntaxfehler, aber hier nicht baubar. |
+| 30 – Dauerscan (Live-Kamera im Browser und Android-App) | Live-Kamera: „🔁 Dauerscan starten“ liest laufend den Namensbereich (etwa alle 0,35 s). Eine Karte zählt, wenn sie zweimal hintereinander sicher erkannt wird; Ton, Vibration und grüner Rahmen bestätigen. Dieselbe Karte zählt erst wieder, nachdem sie aus dem Bild war; für mehrere gleiche Karten gibt es „+1 gleiche Karte“. Bessere Namenserkennung: Die Namensleiste wird automatisch gesucht, in Schwarz-Weiß umgewandelt (automatische Schwelle) und von ihrer Rahmenlinie befreit. Android-App: eigene Kameraansicht (CameraX + ML Kit) mit derselben Zähllogik, „+1“ und „Fertig“; die Liste wird beim Schließen in die Scanliste der Webseite übernommen (Kameraberechtigung beim ersten Start). Außerdem die Archiv-Batchdatei korrigiert (Windows-Umleitung „>nul“ statt „>/dev/null“). | Dauerscan mit Testvideo (Hintergrund, Sol Ring, Lightning Bolt, Arcane Signet): jede Karte genau einmal gezählt, keine Doppelzählung, kein Treffer auf leerem Hintergrund, „+1“ und Übernahme in die Sammlung geprüft (zwei Läufe). Behoben: Sol Ring wurde zuvor nicht gelesen, weil Tesseract den gerahmten, grauen Namensbalken ignorierte. Foto-Scanner unverändert 6/6 bzw. 5/6 bei Härtefällen. App-Schnittstelle mit nachgebildetem Android geprüft; Android-Code ohne Syntaxfehler, hier nicht baubar und nicht auf einem echten Gerät getestet. Gesamte Regression (Oberflächen-, API- und Servertests) fehlerfrei. |
+| 31 – Forge-Duell als Runde zu dritt | Neue Spielform „Commander-Runde zu dritt“ neben „1 gegen 1“ und „zu viert“: dein Deck, der gewählte Gegner und ein weiterer (Precon oder eigenes Deck). Auswahlfeld für Spieler 4 wird nur zu viert angezeigt; Ergebnis mit drei Spalten, Vergleichswert 33 % je Deck; Partien lassen sich ins Spielprotokoll übernehmen. Hilfe-Text angepasst. | Mit echtem Forge eine Dreierpartie gespielt (drei Precons von 2023, Sieger in Zug 13, rund 30 Sekunden). Oberflächentest: Auswahl, drei Spalten, Zeitlimit als Unentschieden, Protokoll mit drei Spielern, Wechsel zu viert und 1 gegen 1 weiterhin korrekt. Dabei gefunden und behoben: interne Seitenversion stand noch auf 30 und löste ein unnötiges Neuladen aus. Gesamte Regression fehlerfrei. |
+| 32 – Neuer Name „Manaschmiede“ und fertiges Docker-Image | Name „Manaschmiede“ in Seitentitel, Kopfzeile, Willkommensseite („Willkommen in der Manaschmiede!“), Anmeldeseite, Hilfe, Fan-Content-Hinweis, Web-App (Startbildschirm-Name) und Android-App. Namensprüfung per Websuche: kein bestehender Magic- oder Deckbau-Dienst gefunden (Marken- und Domainprüfung noch selbst durchführen). Docker-Image manaschmiede:32 auf Basis Ubuntu 24.04 mit Python 3.12, Java 17 und Forge 2.0.16, ohne nicht benötigte Forge-Teile (Editoren, Adventure-Modus, Musik); rund 580 MB gepackt, in zwei Teilen geliefert, mit Anleitung und Zusammenfüge-Datei. Dockerfile im Paket auf dieselbe Basis umgestellt. | Gesamte Regression auf v32 fehlerfrei. Image als Container gestartet: Anmeldung, Oberfläche und Server-Tests in Ordnung; echte Forge-Duelle im Container 1 gegen 1 (20 s), zu dritt (80 s) und zu viert (50 s) für je zwei Partien. Teile wieder zusammengefügt, Prüfsumme geprüft und per docker load erfolgreich geladen. Hinweis: Die zwei Duell-Prüfungen der Server-Tests erwarten das schnelle Test-Forge und laufen mit echtem Forge in die Zeitgrenze – kein Fehler des Images. |
+
+## Nicht lösbare oder nur teilweise lösbare Probleme
+
+| Problem | Ergebnis der Prüfung | Weiteres Vorgehen |
+| --- | --- | --- |
+| Docker-Image echt bauen | Docker ist installiert, aber in dieser Arbeitsumgebung läuft kein Docker-Dienst, und Docker Hub sowie die Debian-Paketquellen sind gesperrt (HTTP 403) | einmal auf deinem PC oder Server mit `docker compose build` bauen |
+| Android-APK echt bauen | Gradle ist vorhanden, das Android-SDK und Googles Maven-Paketquelle sind gesperrt (HTTP 403) | Bau über den mitgelieferten GitHub-Workflow oder Android Studio |
+| Commander Spellbook live testen | Dienst in dieser Umgebung gesperrt; getestet mit Antworten im offiziellen Datenformat | bei dir einmal mit Live-Daten ansehen |
+| 5-Farben-Decks ohne Budget | teure Vorschläge mit vielen Farbsymbolen; Chance je Farbe 81–92 % statt überall 90 % | Manabasis-Analyse zeigt die betroffenen Karten, gezielt tauschen |
+| Starthand-Statistik ohne Ramp und Kartenziehen | bewusst einfach gehalten, sonst wäre ein komplettes Testspiel nötig | genaue Partien liefert das Forge-Duell |
+| Sammlung: Druckversion, Zustand, Sprache, Foil | Die Sammlung wird je Kartenname gezählt. Für einzelne Drucke fehlt die Scryfall-Datei aller Drucke (mehrere hundert MB). | für den Deckbau reicht der Name; Druckdetails weiter in ManaBox pflegen |
+| Proxy-Druck in der Android-App | Die Android-WebView unterstützt den Browser-Druckbefehl nicht von sich aus; dafür müsste die App den Android-Druckdienst einbinden, was ohne SDK hier nicht baubar und prüfbar ist. | am Handy die Serveradresse in Chrome öffnen und dort drucken, oder am PC |
+| Günstigste Druckversion je Karte | Dafür bräuchte das Programm die Scryfall-Datei aller Drucke (über 500 MB täglich statt rund 25 MB). Die Preise stammen daher wie bisher von der Druckversion, die Scryfall je Karte wählt; der Verlauf zeigt deren Entwicklung. | beim Kauf die Druckversion auf Cardmarket wählen; bei Bedarf später als zuschaltbarer wöchentlicher Abruf |
+| ELO-Rangliste und Spielgruppen mit mehreren Geräten an einem Tisch | Bewusst zurückgestellt: Siegquoten genügen für den Vergleich der Decks; ein gemeinsamer Live-Tisch über mehrere Handys bräuchte eine ständige Verbindung zum Server. | ein Gerät in die Tischmitte legen; bei Bedarf später ausbauen |
+| Deckbild als Grafik (Teil von Punkt 15) | Ein Bild aus den Kartenbildern lässt sich im Browser nur erzeugen, wenn Scryfalls Bildserver das ausdrücklich erlaubt; das war hier nicht prüfbar (gesperrt). Ohne diese Freigabe bliebe das Bild leer. | geteilte Seite oder Bilderansicht als Bildschirmfoto nutzen; Deckbild später mit Test am echten Netz nachrüsten |
+| Teilen im lokalen Betrieb | Der Link zeigt auf deinen PC und ist deshalb nur dort bzw. im Heimnetz erreichbar. | für Links ins Internet den Server-Betrieb (Docker) nutzen |
+| Salt-Werte von EDHREC (Punkt 7) | Keine offizielle Schnittstelle; ein inoffizieller Abruf könnte jederzeit wegfallen und wäre rechtlich unsicher. Ersetzt durch den eigenen Frust-Index. | nachrüsten, falls EDHREC eine offizielle Schnittstelle anbietet |
+| Empfehlungen in EDHREC-Qualität (Punkt 8) | EDHREC wertet Millionen Decklisten aus; hier stehen 178 Precons und die eigenen Decks zur Verfügung. Die Vorschläge sind gut für Stamm-Themen (Tribal, Marken), bei seltenen Commandern dünner. | wird mit jedem gespeicherten Deck und jeder protokollierten Partie besser |
+| Deutsche Namen in der Vorschlagsliste beim Tippen | Die Vorschläge beim Tippen kommen aus der lokalen englischen Kartendatei; eine Abfrage bei jedem Tastendruck würde Scryfalls Grenzen überschreiten. Vollständige deutsche Namen funktionieren in Suche und Import. | ganzen Namen eingeben bzw. importieren; bereits übersetzte Namen werden gemerkt |
+| Kartenscanner per Handykamera (Punkt 14) | Nicht umgesetzt: Eine verlässliche Erkennung braucht trainierte Bilderkennung oder eine Texterkennung mit großen Sprachmodellen; im Browser wäre sie deutlich schlechter als spezialisierte Apps und hier nicht mit einer Kamera prüfbar. | mit ManaBox oder Delver Lens scannen und als CSV in „Meine Sammlung“ importieren (seit Version 17, inklusive deutscher Namen seit Version 25) |
+| Kartenscanner: Grenzen (Stand Version 30) | Der Scanner liest den gedruckten Namen, erkennt aber keine Bilder: Druckversion, Foil und Zustand werden nicht erfasst. Sehr dunkle, verwackelte oder stark schräge Fotos können scheitern (dann neu aufnehmen). Live-Kamera im Browser nur über HTTPS. ML-Kit-Variante erst nach dem Bau der APK nutzbar und hier nicht auf einem echten Gerät getestet. Dauerscan seit Version 30 vorhanden; im Browser langsamer als ManaBox (etwa 2–3 Lesungen pro Sekunde), Live-Kamera im Browser weiterhin nur über HTTPS. Native Dauerscan-Ansicht der App ebenfalls nicht auf echtem Gerät getestet. | für einzelne Karten und kleine Mengen gut geeignet; große Sammlungen weiterhin mit ManaBox/Delver Lens scannen und als CSV importieren |
+
+## Bestandsaufnahme Version 25
+
+Stand nach der Komplettkontrolle von Version 25 (alle Funktionen, lokal und im Server-Modus, dazu echtes Forge).
+
+| Bereich | Funktion heute (Version 25) | Prüfstand | Grenze |
+| --- | --- | --- | --- |
+| Deckbau-Assistent | Commander (auch Partner, strenge Prüfung), Thema, Budget, Höchstpreis, Sammlung bevorzugen/nur eigene Karten, Synergie mit dem Commander, Mehrfarbenländer | mit echter Datenbank getestet | Synergie aus Textmustern |
+| Editor | Hinzufügen/Entfernen, Mengen, Tags, Maybeboard, Notizen, Versionen mit Notiz und freiem Vergleich | getestet | kein Ziehen und Ablegen, keine Ordner |
+| Analyse | Manakurve, Manabasis mit Fetch/Ramp, Probehand mit Statistik, Frust-Index, Empfehlungen und Streichvorschläge, Preisverlauf, Tokens | getestet | Probehand ohne Spielfeld |
+| Sammlung | CSV aus ManaBox, Moxfield, Deckbox, Archidekt, Dragon Shield; Besitzanteil, „schon in anderem Deck“ | getestet | nur je Kartenname, keine Drucke |
+| Gegner, Combos, Duell | Vergleich mit Precons/eigenen Decks, Combos inkl. „eine Karte fehlt“, Spellbook-Bracket, Forge 1 gegen 1 und zu viert | echtes Forge getestet; Spellbook mit nachgebildeten Antworten | Spellbook live bei dir prüfen |
+| Spieltisch | Lebenszähler 2–6 Spieler, Commander-Schaden, Gift, Spielprotokoll, Siegquoten je Deck und Spieler | getestet (Handygröße) | ein Gerät je Tisch |
+| Teilen, Drucken | Nur-Lese-Link, Proxy-Druck 63 × 88 mm | getestet | Link lokal nur im Heimnetz |
+| Import/Export | alle bisherigen Formate, deutsche Kartennamen | getestet, alle Kodierungen | Übersetzung live bei dir prüfen |
+| Betrieb | lokal, Heimnetz, Server mit Anmeldung, PWA, Android-Projekt, Docker-Paket | 275 automatische Prüfungen fehlerfrei | Docker-Image und APK hier nicht baubar |
+
+## Vergleich mit anderen Apps und Seiten
+
+Jede geprüfte Seite ist in einem Bereich stärker als die Commander-DB, keine bietet automatische Duelle nach vollständigen Regeln.
+
+| Angebot | Schwerpunkt | Belegte Stärken | Was der Commander-DB davon fehlt |
+| --- | --- | --- | --- |
+| [Moxfield](https://mtgarena.pro/deckbuilder) | Standard-Deckbauer | Deck-Statistik, Manakurve, Testspiel (Goldfish), Probehände, Arena-Import/Export, Primer, Teilen ([Wiki](https://github-wiki-see.page/m/moxfield/moxfield-public/wiki/Features)) | Testspiel, Probehand, Primer/Notizen, Teilen per Link |
+| [Archidekt](https://edhrec.com/guides/how-to-use-archidekt-the-mtg-deckbuilding-site) | visueller Deckbauer + Sammlung | Sammlung, EDHREC- und Spellbook-Anbindung, zwei Preisquellen, Testspiel mit Protokoll ([News](https://archidekt.com/news/13186079)), Salt-Summe je Deck ([EDHREC](https://edhrec.com/articles/?p=117749)), Deck-Versionen und Vergleich ([News](https://websockets.archidekt.com/news/3047466)) | Sammlung, Versionen, Salt-Summe, Testspiel |
+| [EDHREC](https://edhrec.com/guides/how-to-use-edhrec) | Empfehlungen | Durchschnittsdecks je Commander, Typverteilung und Kurve, Themen- und Budgetfilter, Bracket-Filter, Salt-Score, Vorschläge zum Streichen und Ergänzen für eine Liste ([Draftsim](https://draftsim.com/?p=110299)) | commander-spezifische Synergie, Cut/Add-Vorschläge |
+| [Commander Spellbook](https://edhrec.com/guides/how-to-use-commander-spellbook-the-combo-search-engine) | Combo-Datenbank | Combos im Deck und solche, die fast enthalten sind; Salt-Score für Combos ([EDHREC](https://edhrec.com/articles/introducing-commander-spellbooks-salt-score)); Bracket-Schätzung per Schnittstelle ([Moxfield-Forum](https://moxfield.nolt.io/367)) | fast vollständige Combos, Combo-Salt, offizielle Bracket-Schätzung |
+| [ManaBox](https://apps.apple.com/de/app/manabox/id1460407674?uo=4) | Handy-App | Offline-Suche, Kamera-Scanner, Preise mehrerer Märkte inkl. Cardmarket ([AppFollow](https://apps.appfollow.io/ios/manabox-mtg/1460407674?country=de)), Ordner für die Sammlung, Deck-Simulator, automatisch aus der Sammlung bauen ([Game-Solver](https://game-solver.com/manabox/)) | Scanner, Sammlung, Bauen aus der Sammlung, Offline-Betrieb am Handy |
+| [Playgroup.gg](https://playgroup.gg/tracker) | Spielprotokoll | Lebenszähler mit Commander-Schaden, ELO-Rangliste, Siegquote je Deck aus echten Partien; Deckbauer mit Daten aus erfassten Spielen und Testspiel gegen ein Sparring-Deck ([Deckbauer](https://playgroup.gg/commander/deck-builder)) | Lebenszähler, Spielprotokoll, Siegquoten aus echten Partien |
+| [ScrollVault](https://scrollvault.net/tools/manabase/) | Rechner | Manabasis nach Frank Karstens Formeln, Farbquellen je Farbe, hypergeometrischer Rechner | Farbquellen-Analyse |
+| [MTGProxyPrinter](https://pypi.org/project/MTGProxyPrinter/), [MTG Print](https://pl.trustpilot.com/review/mtgprint.net) | Proxy-Druck | Deckliste als druckfertiges PDF mit Schnittmarken | Proxy-PDF |
+| [Nerd Leagues](https://www.nerdleagues.com/how-it-works/deck-builder-basics) | Deckbauer | eigene farbige Tags (Ramp, Interaction, Wincon), Ordner, Import ganzer Profile von Moxfield/Archidekt | Tags, Ordner, Profil-Import |
+
+**Alleinstellungsmerkmale der Commander-DB:** komplette Partien zweier Decks nach allen Regeln über Forge, Combo-Wahrscheinlichkeiten je Zug, Vergleich gegen Precons und eigene Decks in einem Schritt, deutsche Oberfläche mit Hilfe, Betrieb lokal oder auf eigenem Server ohne fremde Konten.
+
+## Fehlende Funktionen und Nutzerwünsche
+
+Nach Version 25 sind nur noch diese Punkte offen (die Nummern der ersten Fassung stehen in Klammern):
+
+| Funktion | Nutzen | Gibt es bei | Stand |
+| --- | --- | --- | --- |
+| Testspiel mit Spielfeld (Ziehen, Ablegen, Tokens, Zähler) | Deck von Hand durchspielen | Moxfield, Archidekt, Playgroup, TopDecked | neu als größte Lücke im Punktevergleich |
+| Öffentliche Deck-Datenbank, Kommentare, Profil-Import | Decks anderer finden, Feedback bekommen | Moxfield, Archidekt, Nerd Leagues | neu; widerspricht teilweise dem privaten Ansatz |
+| Synchronisation mit Moxfield/Archidekt | Decks nicht doppelt pflegen | Playgroup, Nerd Leagues | neu; abhängig von deren Schnittstellen |
+| Kartenscanner (14) | Sammlung schnell erfassen | ManaBox, Delver Lens, TopDecked | seit Version 29 umgesetzt (Foto, Live-Kamera, Android-App mit ML Kit); für große Mengen weiter CSV-Import |
+| Druckversionen in Sammlung und Preisen (Teil von 1 und 12) | genaue Werte und günstigste Version | ManaBox, Archidekt, Moxfield | nur mit großer Zusatzdatei |
+| Salt-Werte (7) und Combo-Salt | Tischfrieden nach Community-Urteil | EDHREC, Commander Spellbook | keine offizielle Schnittstelle; Frust-Index als Ersatz |
+| Deckbild (Teil von 15) | Deck als Bild teilen | Moxfield | Bildfreigabe nicht prüfbar |
+| Live-Tisch über mehrere Handys, ELO | gemeinsamer Zähler | Playgroup Live | zurückgestellt |
+
+## Machbarkeit
+
+Von den offenen Punkten ist das Testspiel-Spielfeld der wichtigste und gut machbar; die übrigen hängen an fremden Diensten oder großen Datenmengen.
+
+| Funktion | Machbarkeit | Aufwand | Umsetzung | Risiken |
+| --- | --- | --- | --- | --- |
+| Testspiel mit Spielfeld | hoch | mittel bis groß | Spielfeld im Browser mit Bereichen (Hand, Spielfeld, Friedhof, Exil), Ziehen und Ablegen, Tokens aus der Token-Liste, Zähler, Mulligan | Bedienung am Handy |
+| Synchronisation mit Moxfield/Archidekt | eingeschränkt | mittel | Archidekt-Import per Link besteht; Rückschreiben nur über deren Schnittstellen | Moxfield sperrt Fremdzugriffe oft |
+| Öffentliche Deck-Datenbank | mittel | mittel | im Server-Modus geteilte Decks durchsuchbar machen, Kommentare | Moderation, Datenschutz |
+| Druckversionen | mittel | mittel | wöchentlicher Abruf der großen Scryfall-Datei als Option | Speicher und Ladezeit |
+| Kartenscanner | gering | groß | Kamera mit Texterkennung | Erkennungsqualität |
+| Salt-Werte, Deckbild, Live-Tisch | gering bis mittel | klein bis mittel | siehe „Nicht lösbare Probleme“ | fremde Dienste, Verbindung |
+
+Vor einer öffentlichen Freigabe für fremde Nutzer bleibt die rechtliche Prüfung (Fan Content Policy, Scryfall-Bedingungen, Forge-Lizenz, Datenschutz) eine Voraussetzung, unabhängig von den einzelnen Funktionen.
+
+## Empfohlene Reihenfolge
+
+Die Phasen 2 bis 4 der ersten Fassung sind mit den Versionen 16 bis 25 abgeschlossen, soweit lösbar.
+
+- **Bei dir prüfen:** Version 25 starten, je einmal Spellbook-Combos, deutsche Namen und eine Vierer-Runde ansehen; Docker-Image (`docker compose build`) und APK (GitHub-Workflow) einmal bauen.
+- **Nächster Ausbau:** Testspiel mit Spielfeld (schließt die größte Lücke im Punktevergleich).
+- **Danach nach Bedarf:** durchsuchbare geteilte Decks im Server-Modus, optionale Druckversionen, Synchronisation, falls die Seiten es erlauben.
+
+Vor einer öffentlichen Freigabe bleibt die rechtliche Klärung (Fan Content Policy, Scryfall-Bedingungen, Forge-Lizenz, Datenschutz) Voraussetzung.
+
+## Punktevergleich mit anderen Apps und Seiten (Stand Version 25)
+
+Bewertet wurden 16 Funktionsbereiche mit 0 bis 3 Punkten: **0** = fehlt, **1** = einfach, **2** = gut, **3** = sehr gut. Grundlage sind die öffentlichen Beschreibungen der Anbieter (Stand November 2026) und bei der Commander-DB die eigenen Tests.
+
+| Kriterium | Commander-DB 29 | Moxfield | Archidekt | EDHREC | ManaBox | Playgroup.gg | TopDecked | Spellbook |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Deck-Editor (Tags, Maybeboard, Notizen) | 2 | 3 | 3 | 0 | 2 | 2 | 2 | 0 |
+| Deck automatisch bauen | 3 | 0 | 0 | 2 | 1 | 2 | 1 | 0 |
+| Kartenempfehlungen (Datenbasis) | 2 | 1 | 2 | 3 | 2 | 3 | 2 | 0 |
+| Sammlung und Besitzanteil | 2 | 3 | 3 | 0 | 3 | 1 | 3 | 0 |
+| Kartenscanner | 2 | 0 | 0 | 0 | 3 | 1 | 2 | 0 |
+| Preise und Preisverlauf | 2 | 2 | 2 | 1 | 3 | 1 | 3 | 0 |
+| Manabasis und Deck-Statistik | 3 | 2 | 2 | 1 | 2 | 2 | 2 | 0 |
+| Testspiel / Probehand | 1 | 3 | 3 | 0 | 2 | 3 | 3 | 0 |
+| Komplette KI-Partien nach allen Regeln | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Combos und Bracket-Einstufung | 3 | 2 | 2 | 2 | 1 | 1 | 1 | 3 |
+| Spieltisch, Spielprotokoll, Siegquoten | 2 | 0 | 0 | 0 | 0 | 3 | 2 | 0 |
+| Import und Export | 3 | 3 | 3 | 1 | 2 | 2 | 2 | 1 |
+| Teilen und Community | 1 | 3 | 3 | 2 | 2 | 2 | 2 | 2 |
+| Deutsche Oberfläche, Hilfe, Regeln | 3 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| Selbst betreiben, Datenschutz, offline | 3 | 0 | 0 | 0 | 2 | 0 | 1 | 0 |
+| Plattformen (PC, Handy, Web) | 2 | 2 | 2 | 2 | 3 | 2 | 3 | 2 |
+| **Summe (max. 48)** | **37** | **25** | **26** | **15** | **29** | **26** | **30** | **9** |
+| Anteil | 77 % | 52 % | 54 % | 31 % | 60 % | 54 % | 62 % | 19 % |
+
+**Einordnung:**
+
+- **Commander-DB (37 Punkte, Stand Version 29):** am breitesten aufgestellt. Allein hat sie komplette KI-Partien nach allen Regeln; dazu kommen die deutsche Oberfläche und der Betrieb auf eigener Hardware. Schwach sind Testspiel und Community; der Scanner (seit Version 29) ist für einzelne Karten gut, aber langsamer als ManaBox.
+- **TopDecked (30) und ManaBox (29):** die Handy-Allrounder mit Scanner, Sammlung und Marktpreisen; TopDecked mit Simulator für bis zu vier Decks.
+- **Archidekt (26), Playgroup.gg (26), Moxfield (25):** Archidekt und Moxfield führen bei Editor, Testspiel, Teilen und Community. Playgroup wertet erfasste Partien aus und empfiehlt Karten nach Siegquote.
+- **EDHREC (15) und Commander Spellbook (9):** Spezialisten für Empfehlungen bzw. Combos. Sie sind keine Allrounder, aber in ihrem Bereich führend; die Commander-DB nutzt Spellbook direkt.
+
+**Grenzen des Vergleichs:** Die Kriterien folgen dem Zweck der Commander-DB. Die Bewertung der eigenen Anwendung stammt vom Entwickler, die fremder Angebote aus deren Beschreibungen, nicht aus eigenen Tests. Kostenpflichtige Zusatzfunktionen anderer Anbieter wurden nicht unterschieden.
+
+## Quellen
+
+- Moxfield: [Deckbuilder-Vergleich 2026](https://mtgarena.pro/deckbuilder), [Funktionen (Wiki)](https://github-wiki-see.page/m/moxfield/moxfield-public/wiki/Features), Wunschliste: [Karten in anderen Decks](https://moxfield.nolt.io/2554), [Besitzanteil](https://moxfield.nolt.io/2597), [Markierungen](https://moxfield.nolt.io/2451), [Bracket-Schätzung über Spellbook](https://moxfield.nolt.io/367), [Startseite der Wunschliste](https://moxfield.nolt.io/)
+- Archidekt: [Anleitung (EDHREC)](https://edhrec.com/guides/how-to-use-archidekt-the-mtg-deckbuilding-site), [Testspiel-Protokoll](https://archidekt.com/news/13186079), [Deck-Versionen](https://websockets.archidekt.com/news/3047466), Feature-Voting [1](https://archidekt.com/features) und [2](https://websockets.archidekt.com/features)
+- EDHREC: [Anleitung](https://edhrec.com/guides/how-to-use-edhrec), [Funktionsüberblick (Draftsim)](https://draftsim.com/?p=110299), [Salt-Summe auf Archidekt](https://edhrec.com/articles/?p=117749)
+- Commander Spellbook: [Anleitung](https://edhrec.com/guides/how-to-use-commander-spellbook-the-combo-search-engine), [Salt-Score für Combos](https://edhrec.com/articles/introducing-commander-spellbooks-salt-score)
+- ManaBox: [App Store (DE)](https://apps.apple.com/de/app/manabox/id1460407674?uo=4), [AppFollow](https://apps.appfollow.io/ios/manabox-mtg/1460407674?country=de), [Funktionsübersicht](https://game-solver.com/manabox/)
+- Playgroup.gg: [Lebenszähler](https://playgroup.gg/tracker), [Deckbauer](https://playgroup.gg/commander/deck-builder), [Metagame-Report März 2026](https://playgroup.gg/metagame/2026/march)
+- Manabasis: [ScrollVault-Rechner](https://scrollvault.net/tools/manabase/), [Manabasis-Leitfaden](https://scrollvault.net/guides/mana-bases.html)
+- Proxy-Druck: [MTGProxyPrinter](https://pypi.org/project/MTGProxyPrinter/), [MTG Print](https://pl.trustpilot.com/review/mtgprint.net)
+- Nerd Leagues: [Deckbauer](https://www.nerdleagues.com/how-it-works/deck-builder-basics)
+- Bestandsaufnahme: eigene Code-Prüfung und automatische Tests der Versionen 14 und 15
+
+Vergleich Version 25: [Moxfield Roadmap](https://moxfield.nolt.io/roadmap), [Archidekt](https://archidekt.com/landing), [ManaBox im App Store (DE)](https://apps.apple.com/de/app/manabox/id1460407674), [TopDecked](https://www.topdecked.com/), [TopDecked-Analyse](https://marlvel.ai/apps/topdecked-mtg), [Playgroup.gg Deckbauer](https://playgroup.gg/commander/deck-builder), [Nerd Leagues Deckbauer](https://www.nerdleagues.com/how-it-works/deck-builder-basics), [EDHREC Anleitung](https://edhrec.com/guides/how-to-use-edhrec), [Spellbook Salt Score](https://edhrec.com/articles/introducing-commander-spellbooks-salt-score), [Scryfall Mehrsprachigkeit](https://scryfall.com/blog/announcing-multilingual-support-185).
