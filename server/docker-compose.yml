@@ -1,11 +1,14 @@
-# Start:  docker compose up -d --build
+# Start:  docker compose pull && docker compose up -d     (fertiges Image)
+#         docker compose up -d --build                     (selbst bauen)
 # Welche Variante startet, steht in .env bei COMPOSE_PROFILES:
 #   https  = eigene Domain, HTTPS-Zertifikat automatisch über Caddy (Ports 80/443 nötig)
 #   tunnel = ohne offene Ports über einen Cloudflare-Tunnel (TUNNEL_TOKEN nötig)
 services:
   app:
+    # Fertiges Image von GitHub (ghcr.io); mit „docker compose up -d --build“ stattdessen selbst bauen
+    image: ${CDB_IMAGE:-ghcr.io/normanweis/manaschmiede:32}
+    pull_policy: missing
     build: .
-    image: manaschmiede:32
     restart: unless-stopped
     env_file: .env
     environment:

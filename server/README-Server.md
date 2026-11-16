@@ -12,26 +12,73 @@ je Benutzer und Forge-Duellen auf dem Server.
   auf die IP-Adresse des Servers zeigt; Ports 80 und 443 müssen offen sein.
 - Für Variante **Tunnel** (z. B. zu Hause, ohne offene Ports): ein kostenloses Cloudflare-Konto mit Domain.
 
-## Einrichtung in 5 Schritten
-1. Ordner `server` auf den Server kopieren (z. B. mit WinSCP) und dort eine Konsole öffnen.
-2. Einstellungen anlegen: `cp .env.example .env` und `.env` bearbeiten (`nano .env`):
-   Domain, E-Mail, **Admin-Benutzer und ein langes Passwort**.
-3. Optional: deinen Forge-Installer (`forge-installer-2.0.16.jar`) oder deine bisherige Installation (Inhalt von
-   `C:\Forge`) in den Ordner `forge` legen – sonst lädt das Image automatisch die neueste Forge-Version von GitHub.
-4. Starten: `docker compose up -d --build`
-   Der erste Bau dauert einige Minuten. Beim ersten Start lädt der Server Kartendaten, Precons und Regeln
-   (1–3 Minuten). Fortschritt ansehen: `docker compose logs -f app`
-5. `https://commander.deine-domain.de` öffnen und mit dem Admin-Zugang anmelden. Das HTTPS-Zertifikat
-   holt Caddy automatisch und erneuert es selbst.
+## Das Image
+Das fertige Image liegt in der GitHub Container Registry:
 
-## Fertiges Image verwenden (ohne Bauen)
-Statt Schritt 3–4 kannst du das fertige Image `manaschmiede:NN` laden (Dateien `manaschmiede-NN-docker-image.tar.gz.teil0/1`):
+| Tag | Inhalt |
+|---|---|
+| `ghcr.io/normanweis/manaschmiede:32` | Version 32 (fest) |
+| `ghcr.io/normanweis/manaschmiede:latest` | immer die neueste gebaute Version |
+
+Enthalten: Ubuntu 24.04, Python 3.12, Java 17, Xvfb und Forge 2.0.16 – für x86_64-/amd64-Server.
+Ist das Paket privat (Standard), meldet sich der Server einmal an. Dafür auf GitHub unter
+*Settings → Developer settings → Personal access tokens → Tokens (classic)* einen Token mit dem Recht
+`read:packages` erstellen, dann:
+```
+docker login ghcr.io -u NormanWeis        # als Passwort den Token eingeben
+```
+
+## Variante 1: docker run (ein Container, ohne HTTPS)
+Zum Ausprobieren oder wenn schon ein eigener Reverse-Proxy (nginx, Traefik, Caddy) davor läuft:
+```
+docker run -d --name manaschmiede --restart unless-stopped \
+  -p 8000:8000 \
+  -v manaschmiede_data:/data \
+  -e CDB_ADMIN_USER=admin \
+  -e CDB_ADMIN_PASSWORD='ein-langes-eigenes-passwort' \
+  -e CDB_MAX_DUELS=1 -e CDB_MAX_GAMES=20 \
+  --memory 4g \
+  ghcr.io/normanweis/manaschmiede:32
+```
+- Aufruf: `http://SERVER-IP:8000`, Anmeldung mit dem Admin-Zugang.
+- Alle Daten (Kartendaten, Decks, Benutzer) liegen im Volume `manaschmiede_data` und bleiben bei Updates erhalten.
+- Beim ersten Start lädt der Server Kartendaten, Precons und Regeln (1–3 Minuten); erst danach ist die Seite
+  erreichbar. Fortschritt: `docker logs -f manaschmiede`
+- Ohne HTTPS funktionieren die Live-Kamera im Browser und die Installation als Web-App nicht; für den Dauerbetrieb
+  im Internet daher Variante 2 oder ein eigener Reverse-Proxy mit HTTPS. Ein Proxy muss den Header
+  `X-Forwarded-Proto: https` setzen, dann werden die Anmelde-Cookies als „Secure“ markiert.
+
+| Aufgabe | Befehl |
+|---|---|
+| Logs | `docker logs -f manaschmiede` |
+| Neue Version | `docker pull ghcr.io/normanweis/manaschmiede:33`, Container löschen (`docker rm -f manaschmiede`) und mit neuem Tag erneut starten |
+| Sicherung | `docker cp manaschmiede:/data/cards.db ./sicherung-$(date +%F).db` |
+| Benutzer anlegen | `docker exec -it manaschmiede python3 /opt/cdb/commander_db.py adduser NAME` |
+
+## Variante 2: docker compose (Dauerbetrieb mit HTTPS oder Tunnel)
+1. Ordner `server` auf den Server kopieren (z. B. mit WinSCP, oder `git clone` des Repositorys) und dort eine Konsole öffnen.
+2. Einstellungen anlegen: `cp .env.example .env` und `.env` bearbeiten (`nano .env`):
+   Domain, E-Mail, **Admin-Benutzer und ein langes Passwort**. `CDB_IMAGE` gibt an, welches Image verwendet wird.
+3. Starten:
+   ```
+   docker compose pull
+   docker compose up -d
+   ```
+   Fortschritt: `docker compose logs -f app` – beim ersten Start werden Kartendaten, Precons und Regeln geladen.
+4. `https://deine-domain.de` öffnen und mit dem Admin-Zugang anmelden. Das HTTPS-Zertifikat holt Caddy
+   automatisch und erneuert es selbst.
+
+Selbst bauen statt das fertige Image zu nehmen: `docker compose up -d --build`. Optional vorher deinen
+Forge-Installer (`forge-installer-2.0.16.jar`) oder deine Forge-Installation in den Ordner `forge` legen –
+sonst lädt der Bau Forge von GitHub (Version über `--build-arg FORGE_VERSION=…`, Standard: neueste).
+
+## Image aus einer Datei laden (ohne Internetzugriff auf ghcr.io)
+Mit den Dateien `manaschmiede-NN-docker-image.tar.gz.teil0/1`:
 ```
 cat manaschmiede-*-docker-image.tar.gz.teil* > manaschmiede-image.tar.gz
-docker load -i manaschmiede-image.tar.gz
-docker compose up -d          # ohne --build: nimmt das geladene Image
+docker load -i manaschmiede-image.tar.gz      # ergibt das Image manaschmiede:NN
 ```
-Es enthält Ubuntu 24.04, Python, Java 17 und Forge 2.0.16 (für x86_64-/amd64-Server).
+Danach bei `docker run` den Namen `manaschmiede:NN` verwenden bzw. in `.env` `CDB_IMAGE=manaschmiede:NN` setzen.
 
 ## Benutzer
 - Neue Benutzer legt der Admin in der Oberfläche an: oben **„Benutzer verwalten“**.
@@ -51,7 +98,7 @@ Lokal gespeicherte Decks gehören danach dem ersten Administrator.
 1. In Cloudflare unter *Zero Trust → Networks → Tunnels* einen Tunnel anlegen, als Dienst
    `http://app:8000` und deine Subdomain eintragen, den **Tunnel-Token** kopieren.
 2. In `.env`: `COMPOSE_PROFILES=tunnel` und `TUNNEL_TOKEN=…` setzen.
-3. `docker compose up -d --build` – HTTPS übernimmt Cloudflare.
+3. `docker compose pull && docker compose up -d` – HTTPS übernimmt Cloudflare.
 
 ## Betrieb
 | Aufgabe | Befehl |
@@ -59,7 +106,8 @@ Lokal gespeicherte Decks gehören danach dem ersten Administrator.
 | Status / Logs | `docker compose ps` · `docker compose logs -f app` |
 | Neu starten | `docker compose restart app` |
 | Sicherung der Daten | `docker compose cp app:/data/cards.db ./sicherung-$(date +%F).db` |
-| Neue Programmversion | neue `commander_db.py` in den Ordner kopieren, dann `docker compose up -d --build` |
+| Neue Version | in `.env` `CDB_IMAGE` auf das neue Tag setzen, dann `docker compose pull && docker compose up -d` |
+| Selbst gebaute Version | neue `commander_db.py` in den Ordner kopieren, dann `docker compose up -d --build` |
 | Neue Forge-Version | `docker compose build --no-cache app && docker compose up -d` |
 | Stoppen | `docker compose down` (Daten bleiben im Volume erhalten) |
 
@@ -69,6 +117,7 @@ Regeln, Precons und Kartendaten aktualisieren sich bei jedem Start automatisch; 
 ## Einstellungen (.env)
 | Variable | Bedeutung | Standard |
 |---|---|---|
+| `CDB_IMAGE` | verwendetes Docker-Image | `ghcr.io/normanweis/manaschmiede:32` |
 | `CDB_DOMAIN`, `ACME_EMAIL` | Domain und E-Mail für HTTPS | – |
 | `CDB_ADMIN_USER`, `CDB_ADMIN_PASSWORD` | Admin wird bei jedem Start angelegt/gesetzt | – |
 | `CDB_MAX_DUELS` | gleichzeitige Forge-Duelle (weitere warten in einer Schlange) | 1 |
