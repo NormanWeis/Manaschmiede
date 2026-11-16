@@ -1,0 +1,63 @@
+# Erstellt ein GitHub-Release mit allen Downloads: Docker-Image als Datei, Android-APK und Windows-Programm.
+# Start: Actions -> "Release erstellen" -> Run workflow (Versionsnummer eintragen)
+name: Release erstellen
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versionsnummer (z. B. 32)"
+        required: true
+        default: "32"
+      forge:
+        description: "Forge-Version im Image"
+        default: "2.0.16"
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      V: ${{ github.event.inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android-APK bauen
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleDebug
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker-Image bauen
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          load: true
+          build-args: FORGE_VERSION=${{ github.event.inputs.forge }}
+          tags: manaschmiede:${{ github.event.inputs.version }}
+      - name: Dateien zusammenstellen
+        run: |
+          mkdir dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist/Manaschmiede-$V.apk"
+          docker save "manaschmiede:$V" | gzip -6 > "dist/manaschmiede-$V-docker-image.tar.gz"
+          (cd windows && zip -q "../dist/Manaschmiede-$V-Windows.zip" ./*)
+          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - name: Release anlegen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: Manaschmiede ${{ github.event.inputs.version }}
+          target_commitish: ${{ github.sha }}
+          body: |
+            **Manaschmiede Version ${{ github.event.inputs.version }}**
+
+            | Datei | Zweck |
+            |---|---|
+            | `Manaschmiede-${{ github.event.inputs.version }}.apk` | Android-App (aufs Handy kopieren und installieren) |
+            | `manaschmiede-${{ github.event.inputs.version }}-docker-image.tar.gz` | Docker-Image als Datei: `docker load -i …` |
+            | `Manaschmiede-${{ github.event.inputs.version }}-Windows.zip` | Programm und Startdateien für Windows |
+            | `SHA256SUMS.txt` | Prüfsummen |
+
+            Docker-Image direkt: `docker pull ghcr.io/${{ github.repository_owner }}/manaschmiede:${{ github.event.inputs.version }}` (Name kleingeschrieben).
+            Anleitungen: `README.md`, `server/README-Server.md`, `android/README-Android.md`, `windows/README-Windows.md`.
+          files: dist/*

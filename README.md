@@ -42,9 +42,10 @@ Ausführlich (Einstellungen, Benutzer, Sicherung, Updates): [`server/README-Serv
 | `server/` | Programm, Dockerfile, docker-compose, Caddy, Anleitung für den Serverbetrieb |
 | `android/` | Android-App (WebView, Kartenscanner, Dauerscan) |
 | `windows/` | Programm und Startdateien für den lokalen Betrieb unter Windows |
-| `docker/` | Anleitung und Hilfsdatei für das Image als Datei (Teile siehe Release „v32“) |
+| `docker/` | Anleitung und Zusammenfüge-Datei für das Image als Datei in zwei Teilen |
 | `docs/` | Funktionsvergleich mit anderen Apps, Punktetabelle, Versionsverlauf, bekannte Grenzen |
 | `archiv/` | frühere Programmversionen 6–31 |
 | `.github/workflows/` | automatischer Bau von Docker-Image (ghcr.io) und Android-APK |
 
-Downloads (Docker-Image als Datei, APK): unter **Releases** im Repository.
+Downloads (Docker-Image als Datei, APK, Windows-Paket): unter **Releases** im Repository. Ein neues Release erstellt
+**Actions → „Release erstellen“ → Run workflow** (Versionsnummer eintragen) – APK und Image werden dabei frisch gebaut.
