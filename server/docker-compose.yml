@@ -1,0 +1,50 @@
+# Start:  docker compose up -d --build
+# Welche Variante startet, steht in .env bei COMPOSE_PROFILES:
+#   https  = eigene Domain, HTTPS-Zertifikat automatisch über Caddy (Ports 80/443 nötig)
+#   tunnel = ohne offene Ports über einen Cloudflare-Tunnel (TUNNEL_TOKEN nötig)
+services:
+  app:
+    build: .
+    image: manaschmiede:32
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CDB_SERVER: "1"
+    volumes:
+      - cdb_data:/data
+    expose:
+      - "8000"
+    mem_limit: ${CDB_MEM_LIMIT:-4g}
+    logging:
+      options: { max-size: "10m", max-file: "3" }
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    profiles: ["https"]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      CDB_DOMAIN: ${CDB_DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on: [app]
+
+volumes:
+  cdb_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,17 @@
+# HTTPS mit automatischem Let's-Encrypt-Zertifikat für deine Domain
+{
+	email {$ACME_EMAIL}
+}
+
+{$CDB_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:8000 {
+		transport http {
+			read_timeout 10m
+		}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+}

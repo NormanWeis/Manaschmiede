@@ -1,0 +1,44 @@
+# Baut das Docker-Image der Manaschmiede und legt es in der GitHub Container Registry (ghcr.io) ab.
+# Start: Actions -> "Docker-Image bauen" -> Run workflow (oder automatisch bei einem Tag wie v32)
+name: Docker-Image bauen
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versionsnummer für das Image-Tag"
+        default: "32"
+      forge:
+        description: "Forge-Version (z. B. 2.0.16 oder latest)"
+        default: "2.0.16"
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+  packages: write
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Namen festlegen
+        id: n
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          v="${{ github.event.inputs.version }}"; [ -z "$v" ] && v="${GITHUB_REF_NAME#v}"
+          echo "image=ghcr.io/$owner/manaschmiede" >> "$GITHUB_OUTPUT"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "forge=${{ github.event.inputs.forge || '2.0.16' }}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: server
+          push: true
+          build-args: FORGE_VERSION=${{ steps.n.outputs.forge }}
+          tags: |
+            ${{ steps.n.outputs.image }}:${{ steps.n.outputs.version }}
+            ${{ steps.n.outputs.image }}:latest

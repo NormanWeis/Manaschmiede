@@ -1,0 +1,4 @@
+Optional: Hier kann Forge abgelegt werden – entweder einfach die Datei forge-installer-….jar
+oder eine vorhandene Installation (z. B. der Inhalt von C:\Forge:
+die Datei forge-gui-desktop-…-jar-with-dependencies.jar und der Ordner res). Dann verwendet das
+Docker-Image genau diese Version. Bleibt der Ordner leer, wird die neueste Forge-Version von GitHub geladen.
