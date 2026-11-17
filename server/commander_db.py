@@ -17,6 +17,8 @@ Version 3: Deckansicht mit Kartenbildern, Vergleich mit offiziellen Commander-Pr
 (Decklisten: github.com/taw/magic-preconstructed-decks-data, auch Grundlage von mtg.wtf/MTGJSON).
 Version 4: Karten gezielt tauschen oder entfernen (mit Alternativen gleicher Aufgabe), Option ohne
 Game Changer, Liste nicht verfügbarer Karten, bessere Ramp-Erkennung.
+Version 36: Commander-Vorschläge mit Abwechslung – jede Anfrage mischt beliebte Commander, Geheimtipps und günstige
+  Optionen, achtet auf verschiedene Farbkombinationen; „Andere Vorschläge“ zeigt noch nicht gezeigte Commander.
 Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen kompakter Kopf, Navigationsleiste unten,
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
@@ -77,7 +79,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "35"
+APP_VERSION = "36"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -408,6 +410,64 @@ def theme_terms(theme):
                         [x for w in ws for x in (f"%{w}%", f"%{w}%")]))
     return out
 
+def pick_varied(rows, n, seed="", vary_colors=False, hits=None, bonus=None):
+    """Abwechslungsreiche Auswahl aus einer nach Passung sortierten Liste:
+    ein Teil beliebte Commander, ein Teil Geheimtipps (weniger gespielt), ein Teil günstige,
+    Rest gewichtet zufällig; bei offenen Farben höchstens drei gleiche Farbkombinationen."""
+    if len(rows) <= n:
+        return [(r, "beliebt" if i < 3 else "") for i, r in enumerate(rows)]
+    rnd = random.Random(seed or None)
+    hits = hits or {}
+    best = len(hits.get(rows[0]["name"], [])) if rows else 0
+    # Kandidaten: nur gut passende (gleiche Trefferzahl wie die besten), höchstens 80
+    pool = [r for r in rows if len(hits.get(r["name"], [])) >= best][:80] or rows[:80]
+    if bonus:  # Stammes-Thema: Commander, deren Text den Typ unterstützt, zuerst
+        strong = [r for r in pool if bonus.get(r["name"])]
+        if len(strong) >= n * 2:
+            pool = strong
+    if len(pool) < n * 2:
+        pool = rows[:max(n * 3, 36)]
+    by_rank = sorted(pool, key=lambda r: r["edhrec_rank"] or 10 ** 7)
+    chosen, names, ci_count = [], set(), {}
+    def ok(r):
+        if r["name"] in names:
+            return False
+        if vary_colors and ci_count.get(r["color_identity"] or "", 0) >= 3:
+            return False
+        return True
+    def take(r, tag):
+        chosen.append((r, tag)); names.add(r["name"])
+        ci_count[r["color_identity"] or ""] = ci_count.get(r["color_identity"] or "", 0) + 1
+    def take_some(cands, k, tag):
+        cands = [r for r in cands if ok(r)]
+        rnd.shuffle(cands)
+        for r in cands:
+            if k <= 0:
+                break
+            if ok(r):
+                take(r, tag); k -= 1
+    q = max(1, n // 3)
+    take_some(by_rank[:max(q * 2, 8)], q, "beliebt")                       # bekannte, oft gespielte
+    third = len(by_rank) // 3
+    take_some(by_rank[third:], q, "Geheimtipp")                            # seltener gespielt
+    take_some([r for r in pool if r["eur"] not in (None, "") and float(r["eur"]) <= 2], max(1, n // 6), "günstig")
+    rest = [r for r in pool if ok(r)]                                     # Rest: Beliebtere leicht bevorzugt
+    weights = [1.0 / (1 + i / 15) for i in range(len(rest))]
+    while len(chosen) < n and rest:
+        r = rnd.choices(rest, weights=weights)[0]
+        i = rest.index(r); rest.pop(i); weights.pop(i)
+        if ok(r):
+            take(r, "")
+    if len(chosen) < n:                                                    # Farbgrenze notfalls lockern
+        for r in pool + rows:
+            if len(chosen) >= n:
+                break
+            if r["name"] not in names:
+                take(r, "")
+    order = {"beliebt": 0, "": 1, "günstig": 2, "Geheimtipp": 3}
+    chosen.sort(key=lambda x: (order.get(x[1], 1), x[0]["edhrec_rank"] or 10 ** 7))
+    return chosen
+
 def suggest_commanders(p):
     g = lambda k: (p.get(k) or [""])[0].strip()
     ci = "".join(x for x in ORDER if x in g("ci").upper())
@@ -450,13 +510,17 @@ def suggest_commanders(p):
             rows = [r for r in rows if r["name"] in hits]
         big = 10 ** 7
         rows.sort(key=lambda r: (-len(hits.get(r["name"], [])), -bonus.get(r["name"], 0), r["edhrec_rank"] or big, r["name"]))
+        total = len(rows)
+        shown = {x for x in g("shown").split("|") if x}
+        rows = [r for r in rows if r["name"] not in shown]
+        picked = pick_varied(rows, int(g("limit") or 12), g("seed"), vary_colors=not ci or fewer, hits=hits, bonus=bonus)
         out = []
-        for r in rows[:int(g("limit") or 12)]:
+        for r, tag in picked:
             txt = (r["oracle_text"] or "").replace("\n", " ")
             out.append({"name": r["name"], "ci": r["color_identity"] or "", "type": r["type_line"], "image": r["image"] or "",
-                        "eur": r["eur"], "rank": r["edhrec_rank"], "gc": bool(r["game_changer"]),
+                        "eur": r["eur"], "rank": r["edhrec_rank"], "gc": bool(r["game_changer"]), "tag": tag,
                         "why": hits.get(r["name"], []), "text": txt[:220] + ("…" if len(txt) > 220 else "")})
-        return {"cards": out, "total": len(rows), "ci": ci or ("C" if colorless else ""), "theme": theme}
+        return {"cards": out, "total": total, "left": len(rows) - len(out), "ci": ci or ("C" if colorless else ""), "theme": theme}
     finally:
         con.close()
 
@@ -3301,7 +3365,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 35)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 36)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -3460,6 +3524,7 @@ body.mtg #mainnav a.navneu:not(.on):not([aria-selected=true]){background:#2f7d3e
 #csug .cc{border:1px solid #c9b78f;border-radius:10px;padding:8px;background:rgba(255,255,255,.5);display:flex;flex-direction:column;gap:4px}
 body.mtg #csug .cc{background:rgba(30,22,16,.6);border-color:#6b5532}
 #csug .cc img{width:100%;border-radius:8px;aspect-ratio:626/457;object-fit:cover;background:#2a2018}#csug .cc .ctake{margin-top:auto}
+#csug .ctag{align-self:flex-start;font-size:.78em;padding:1px 8px;border-radius:10px;background:#e6dcc4;color:#3a2c1c}#csug .ctag.gem{background:#d9e4f5;color:#1d3d66}#csug .ctag.cheap{background:#dff0d8;color:#2f5f2f}#csug .csnav{margin-top:10px}
 #csug .cc .why{font-size:.85em;color:#2f7d3e}body.mtg #csug .cc .why{color:#9cf29c}#csug .cc .tx{font-size:.82em;opacity:.85}.herosub{font-size:1.1em;max-width:640px;margin:0 auto 14px}
 #wquick input{font-size:1.1em;padding:8px 10px;width:min(440px,100%);box-sizing:border-box}#wquick .ac{display:inline-block;width:min(440px,100%)}#wquick button{font-size:1.1em;padding:8px 18px;margin-top:6px}
 .orbs{display:flex;justify-content:center;gap:12px}.orb{width:34px;height:34px;border-radius:50%;box-shadow:0 0 0 2px #0004 inset,0 2px 6px #0006}
@@ -3579,7 +3644,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <p>Alle Felder sind freiwillig – eine Angabe genügt.</p>
 <ul><li><b>Commander:</b> beim Tippen erscheinen Vorschläge; Tippfehler werden toleriert. Die Farbidentität wird automatisch übernommen. <b>Zwei Commander</b> (Partner, Hintergrund) mit „ + “ trennen, z. B. „Thrasios, Triton Hero + Tymna the Weaver“.</li>
 <li><b>Thema:</b> z. B. Mill, Lifegain, Tokens, Voltron – das Deck wird um dieses Thema herum gebaut.</li>
-<li><b>Noch kein Commander?</b> Lieblingsfarben über die Farbknöpfe (W U B R G ◇) anklicken und/oder ein Thema eintragen – deutsch oder englisch, z. B. „Drachen“, „Elfen“, „Tokens“, „Friedhof“, „Artefakte“, „Lebensgewinn“. „💡 Commander vorschlagen“ zeigt passende Commander mit Bild, Begründung und Regeltext, die beliebtesten zuerst. Normalerweise müssen die Farben genau passen; „auch mit weniger Farben“ zeigt zusätzlich Commander mit einem Teil der Farben. „Keine Game Changer“ und „Höchstpreis je Karte“ gelten auch hier. Mit „✔ Diesen Commander nehmen“ wird er übernommen. Wird ein Deck ohne Commander vorgeschlagen, erscheinen die Vorschläge automatisch.</li>
+<li><b>Noch kein Commander?</b> Lieblingsfarben über die Farbknöpfe (W U B R G ◇) anklicken und/oder ein Thema eintragen – deutsch oder englisch, z. B. „Drachen“, „Elfen“, „Tokens“, „Friedhof“, „Artefakte“, „Lebensgewinn“. „💡 Commander vorschlagen“ zeigt zwölf passende Commander mit Bild, Begründung und Regeltext – jedes Mal eine neue Mischung aus ⭐ beliebten Commandern, 💎 Geheimtipps (seltener gespielt) und 💶 günstigen Optionen, bei offenen Farben aus verschiedenen Farbkombinationen. „🔄 Andere Vorschläge“ zeigt weitere, noch nicht gezeigte Commander; „🔀 Neu mischen“ beginnt von vorn. Normalerweise müssen die Farben genau passen; „auch mit weniger Farben“ zeigt zusätzlich Commander mit einem Teil der Farben. „Keine Game Changer“ und „Höchstpreis je Karte“ gelten auch hier. Mit „✔ Diesen Commander nehmen“ wird er übernommen. Wird ein Deck ohne Commander vorgeschlagen, erscheinen die Vorschläge automatisch.</li>
 <li><b>Farbidentität:</b> nur nötig, wenn du keinen Commander angibst (W = Weiß, U = Blau, B = Schwarz, R = Rot, G = Grün).</li>
 <li><b>Karten, die ins Deck sollen:</b> eigene Lieblingskarten, eine pro Zeile. Mit dem Feld darüber und Enter fügst du sie bequem hinzu.</li>
 <li><b>Keine Game Changer:</b> lässt besonders starke Karten weg – sinnvoll für entspannte Runden.</li>
@@ -3968,7 +4033,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='35';
+const PAGE_VERSION='36';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -4298,25 +4363,32 @@ function ciBtns(){const box=E('cibtns');if(!box)return;box.innerHTML='';const v=
   b.onclick=()=>{let x=ci.value.toUpperCase().replace(/[^WUBRGC]/g,'');if(c=='C')x=x=='C'?'':'C';else{x=x.replace('C','');x=x.includes(c)?x.replace(c,''):x+c}
    ci.value=[...'WUBRGC'].filter(k=>x.includes(k)).join('');ciBtns()};box.append(b)})}
 ci.addEventListener('input',ciBtns);
-async function suggestCmd(auto){const box=E('csug');const th=(E('b').elements.theme.value||'').trim(),c=ci.readOnly?'':ci.value.trim();
+let csShown=[],csKey='';
+async function suggestCmd(auto,more){const box=E('csug');const th=(E('b').elements.theme.value||'').trim(),c=ci.readOnly?'':ci.value.trim();
  if(!th&&!c){box.innerHTML='';P(box,'Bitte mindestens eine Farbe anklicken oder ein Thema eintragen.','hint');return}
+ const key=[c,th,E('cfewer').checked,E('nogc').checked,E('maxprice').value].join('|');if(!more||key!=csKey){csShown=[];csKey=key}
  box.textContent='Suche passende Commander ...';
- const q=new URLSearchParams({ci:c,theme:th,fewer:E('cfewer').checked?'1':'',nogc:E('nogc').checked?'1':'',maxeur:E('maxprice').value||'',limit:'12'});
+ const q=new URLSearchParams({ci:c,theme:th,fewer:E('cfewer').checked?'1':'',nogc:E('nogc').checked?'1':'',maxeur:E('maxprice').value||'',limit:'12',seed:String(Math.floor(Math.random()*1e9)),shown:csShown.join('|')});
  const r=await J('/api/commander_suggest?'+q);box.innerHTML='';
  if(r.error){P(box,r.error,'hint');return}
+  if(!r.cards.length&&csShown.length){P(box,'Alle '+r.total+' passenden Commander wurden schon gezeigt. „Neu mischen“ beginnt wieder von vorn.','hint');const rb=$('button','🔀 Neu mischen');rb.type='button';rb.onclick=()=>suggestCmd(false,false);box.append(rb);return}
  if(!r.cards.length){P(box,'Keine passenden Commander gefunden. Tipp: „auch mit weniger Farben“ anhaken, eine Farbe mehr wählen oder ein anderes Thema probieren.','hint');return}
  const cn=c?(c=='C'?'farblos':[...c].map(x=>CINAME[x]).join('-')):'alle Farben';
- P(box,(auto?'Ein Commander ist im Format Pflicht – hier passende Vorschläge. ':'')+r.total+' Commander passen ('+cn+(th?', Thema „'+th+'“':'')+'); die beliebtesten zuerst:','hint');
+ csShown=csShown.concat(r.cards.map(x=>x.name));
+ P(box,(auto?'Ein Commander ist im Format Pflicht – hier passende Vorschläge. ':'')+r.total+' Commander passen ('+cn+(th?', Thema „'+th+'“':'')+'). Gemischte Auswahl aus beliebten Commandern, Geheimtipps und günstigen Optionen'+(csShown.length>r.cards.length?' – '+csShown.length+' von '+r.total+' gezeigt':'')+':','hint');
  const g=DV('','cgrid');
  r.cards.forEach(x=>{const d=DV('','cc');if(x.image){const im=$('img');im.loading='lazy';im.alt=x.name;im.src=x.image.replace('/normal/','/art_crop/');d.append(im)}
   const nb=$('b');nb.append(cardName(x.name,null,x.image));d.append(nb);const m=$('div');m.append(manaEl(x.ci?[...x.ci].map(k=>'{'+k+'}').join(''):'{C}'),' ',x.type);d.append(m);
+  if(x.tag){const tg=DV({beliebt:'⭐ beliebt',Geheimtipp:'💎 Geheimtipp','günstig':'💶 günstig'}[x.tag]||x.tag,'ctag '+(x.tag=='günstig'?'cheap':x.tag=='Geheimtipp'?'gem':'pop'));d.insertBefore(tg,d.firstChild)}
   if(x.why.length)d.append(DV('passt zu: '+x.why.join(', '),'why'));
   if(x.gc)d.append(DV('⚠ Game Changer (sehr stark)','why'));
   d.append(DV(x.text,'tx'));
   const bt=$('button','✔ Diesen Commander nehmen');bt.type='button';bt.className='primary ctake';bt.onclick=async()=>{cmd.value='';await setCommander(x.name);ciBtns();E('csug').innerHTML='';
    P(E('csug'),'Commander „'+x.name+'“ übernommen – jetzt „Deck vorschlagen“ klicken.','hint');cmd.scrollIntoView({block:'center'})};
-  d.append(bt);g.append(d)});box.append(g)}
-E('csugbtn').onclick=()=>suggestCmd(false);ciBtns();
+  d.append(bt);g.append(d)});box.append(g);
+ const nav=DV('','csnav');const mb=$('button',r.left>0?'🔄 Andere Vorschläge ('+r.left+' weitere)':'🔀 Neu mischen');mb.type='button';mb.id='csmore';
+ mb.onclick=()=>suggestCmd(false,r.left>0);nav.append(mb);if(r.left>0){const rb=$('button','🔀 Neu mischen');rb.type='button';rb.onclick=()=>suggestCmd(false,false);nav.append(' ',rb)}box.append(nav)}
+E('csugbtn').onclick=()=>suggestCmd(false,false);ciBtns();
 E('wsug').addEventListener('click',()=>setTimeout(()=>E('csugbox').scrollIntoView({block:'center'}),150));
 async function bd(e){e.preventDefault();
  const p=new URLSearchParams(new FormData(E('b')));

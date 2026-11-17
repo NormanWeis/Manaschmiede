@@ -86,7 +86,7 @@ public class MainActivity extends Activity {
         s.setJavaScriptCanOpenWindowsAutomatically(true);
         s.setMediaPlaybackRequiresUserGesture(true);
         s.setAllowFileAccess(false);
-        s.setUserAgentString(s.getUserAgentString() + " CommanderDB-Android/35");
+        s.setUserAgentString(s.getUserAgentString() + " CommanderDB-Android/36");
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -380,7 +380,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String appVersion() {
-            return "35";
+            return "36";
         }
     }
 
