@@ -17,6 +17,8 @@ Version 3: Deckansicht mit Kartenbildern, Vergleich mit offiziellen Commander-Pr
 (Decklisten: github.com/taw/magic-preconstructed-decks-data, auch Grundlage von mtg.wtf/MTGJSON).
 Version 4: Karten gezielt tauschen oder entfernen (mit Alternativen gleicher Aufgabe), Option ohne
 Game Changer, Liste nicht verfügbarer Karten, bessere Ramp-Erkennung.
+Version 37: Gemeinsamer Spieltisch – mehrere Handys an einem Tisch (Code/QR beitreten, jeder steuert sein Feld, Abgleich
+  in Echtzeit); Decks an andere Benutzer senden (Postfach) bzw. per Link an andere Manaschmieden.
 Version 36: Commander-Vorschläge mit Abwechslung – jede Anfrage mischt beliebte Commander, Geheimtipps und günstige
   Optionen, achtet auf verschiedene Farbkombinationen; „Andere Vorschläge“ zeigt noch nicht gezeigte Commander.
 Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen kompakter Kopf, Navigationsleiste unten,
@@ -73,13 +75,13 @@ Eine mit Version 1 gebaute cards.db wird beim ersten 'serve' automatisch umgeste
 import urllib.error
 import urllib.parse
 import math
-import getpass, hmac, secrets, struct, time, zlib
+import base64, getpass, hmac, secrets, struct, time, zlib
 import xml.etree.ElementTree as ET
 import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re, shutil, sqlite3, subprocess, sys, tempfile, threading, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "36"
+APP_VERSION = "37"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -2382,6 +2384,14 @@ def http_get(url, accept="*/*"):
 def fetch_deck_url(url):
     """Holt eine Deckliste von bekannten Seiten. Liefert ("json", dict) oder ("text", str)."""
     u = url.strip()
+    m = re.search(r"/d/([A-Za-z0-9_-]{8,40})(?:\.txt)?/?(?:[?#].*)?$", u)
+    if m:  # Link auf ein geteiltes Deck einer Manaschmiede: zuerst hier suchen, sonst (nicht auf dem Server) dort abholen
+        t = shared_text(m.group(1))
+        if t:
+            return "text", t
+        if SERVER:
+            raise RuntimeError("Dieses geteilte Deck liegt auf einer anderen Manaschmiede. Dort „Text kopieren“ und hier einfügen.")
+        return "text", http_get(u.split("?")[0].split("#")[0].rstrip("/").removesuffix(".txt") + ".txt")
     m = re.search(r"archidekt\.com/(?:api/)?decks/(\d+)", u)
     if m:
         return "json", json.loads(http_get(f"https://archidekt.com/api/decks/{m.group(1)}/", "application/json"))
@@ -3365,7 +3375,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 36)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 37)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -3496,6 +3506,14 @@ body.printing>*:not(#printarea){display:none!important}
 #tfield .tcen{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;display:flex;gap:6px;align-items:center;background:rgba(20,15,11,.92);border:1px solid #a8843a;border-radius:22px;padding:4px 10px;color:#f1e3c6;white-space:nowrap}
 #tfield .tcen button{background:transparent;color:#f1e3c6;border:0;font-size:1.15em;min-width:34px;min-height:34px;cursor:pointer}
 #tgame .tvbar{margin:4px 0}
+.inboxitem{padding:6px 0;border-bottom:1px solid rgba(168,132,58,.35)}#mainnav a[data-badge]:not([data-badge=''])::after,#mobmore a[data-badge]:not([data-badge=''])::after,#mobmorebtn[data-badge]:not([data-badge=''])::after{content:attr(data-badge);background:#c0362c;color:#fff;border-radius:9px;padding:0 6px;margin-left:4px;font-size:.8em}
+.roombox{border:1px dashed #a8843a;border-radius:10px;padding:8px 12px;margin:8px 0}.roombox .tcode{font-family:monospace;font-size:1.5em;letter-spacing:3px;font-weight:bold;padding:0 6px}
+.qrbox{background:#fff;display:inline-block;padding:6px;border-radius:8px;margin:6px 0;width:200px}.qrbox svg{width:100%;height:auto;display:block}
+.tseats{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.tseats button{padding:8px 12px}
+.tothers{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:6px;margin:6px 0}
+.tother{border:1px solid #a8843a;border-radius:10px;padding:4px 6px;text-align:center;background:rgba(0,0,0,.25)}.tother b{display:block;font-size:.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tother .ol{display:block;font-size:1.8em;font-weight:800;line-height:1.1}.tother small{opacity:.85}.tother.act{box-shadow:0 0 0 3px #f5d27a}.tother.out{opacity:.45}
+#tfield.solo{height:min(62vh,640px)}body.mob #tfield.solo{height:calc(100vh - 290px);min-height:300px}
 @media (max-width:600px){#tfield .tcen{gap:2px;padding:2px 6px}#tfield .tcen button{min-width:28px;font-size:1em}#tfield .tz{font-size:1.6em}#tfield .tic button{padding:2px 7px;font-size:.85em}}body.mtg #tgame .pl{border-color:#a8843a;background:#241a12}
 #top{text-align:center;margin-top:8px}#top h2{margin-bottom:4px}.wotc{margin:0 0 10px;font-size:.95em}
 #mainnav{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:6px 0 12px}
@@ -3675,6 +3693,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <ul><li><b>Speichern:</b> im umrahmten Feld „💾 Deck speichern“ direkt unter der Deck-Überschrift einen Namen eingeben und <b>Speichern</b> klicken. Gleicher Name = altes Deck wird überschrieben.</li>
 <li><b>Gespeicherte Decks</b> findest du im aufklappbaren Bereich „Deck importieren &amp; gespeicherte Decks“ – mit den Knöpfen „Mein Deck“ (laden), „Gegner“ (als Gegner verwenden), „Versionen“ und „Löschen“ (zweimal klicken).</li>
 <li><b>Teilen:</b> erzeugt einen Link auf eine Nur-Lese-Seite des gespeicherten Decks (mit Bildern, Tags, Notizen). „Link widerrufen“ macht ihn sofort ungültig. Im lokalen Betrieb funktioniert der Link nur auf dem PC bzw. im Heimnetz, im Server-Betrieb im Internet.</li>
+<li><b>📤 Senden:</b> Im Server-Betrieb wählst du einen anderen Benutzer und optional eine Nachricht; das Deck landet in dessen Postfach („📥 Erhaltene Decks“ oben unter Meine Decks, mit Zähler am Menüpunkt) und wird dort mit „Übernehmen“ als eigenes Deck gespeichert (bei gleichem Namen mit „(von …)“) oder abgelehnt. Ohne Benutzerkonten (lokal oder im Heimnetz) erzeugt „Senden“ einen Link samt QR-Code – über „Senden über …“ z. B. per Messenger. Die andere Person fügt den Link in ihrer Manaschmiede unter „Deck importieren“ ins Link-Feld ein; das Deck wird komplett übernommen. Der Link funktioniert, solange deine Manaschmiede für die andere Person erreichbar ist.</li>
 <li><b>Versionen:</b> jedes Mal, wenn du ein Deck mit geänderter Liste speicherst, wird die vorige Fassung aufgehoben (bis zu 30). Unter „Versionen“ siehst du, was seitdem dazugekommen oder weggefallen ist, und kannst eine alte Fassung wiederherstellen – die aktuelle bleibt dabei ebenfalls als Version erhalten. Beim Speichern kannst du eine <b>Notiz zur Änderung</b> mitgeben; im Versionsfenster lassen sich <b>zwei beliebige Fassungen vergleichen</b>.</li>
 <li><b>Deutsche Kartennamen:</b> Listen, Sammlungen und die Kartensuche verstehen auch deutsche (und andere fremdsprachige) Namen, z. B. „Blitzschlag“ → Lightning Bolt. Unbekannte Namen werden einmalig bei Scryfall nachgeschlagen und dann gemerkt; dafür ist eine Internetverbindung nötig.</li>
 <li><b>Importieren:</b> eine Liste einfügen (z. B. aus Moxfield „Export“), eine Datei wählen (.txt, .dck, .dec, .csv, .json) oder einen Link angeben (Archidekt, MTGGoldfish, TappedOut, Deckstats; Moxfield blockiert Links oft – dann die Liste kopieren). Dateien werden in jeder üblichen Zeichenkodierung erkannt, auch MTGO (.dek) und Cockatrice (.cod). Danach <b>Importieren</b>.</li>
@@ -3689,6 +3708,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <h3 id=h-spieltisch>Spieltisch: Lebenszähler und Spielprotokoll</h3>
 <ul><li><b>Partie starten:</b> Spielerzahl (2–6) und Startleben wählen, Namen eintragen und je Spieler ein gespeichertes Deck auswählen oder frei eintippen.</li>
 <li><b>Tischansicht (Standard):</b> ein großes Feld je Spieler, die obere Reihe steht auf dem Kopf für die gegenüber Sitzenden (🔄 schaltet das ab). <b>Links tippen = −1, rechts tippen = +1, gedrückt halten = ±10</b> (wiederholt, solange der Finger liegt); die Änderung wird kurz angezeigt. Ist zum Spieler ein Deck mit Commander gespeichert oder ein Commander-Name eingetragen, erscheint dessen Kartenbild als Hintergrund. ☠/⚔ öffnet Gift, Commander-Schaden je Gegner, Monarch, „am Zug“ und Aufgeben. In der Mitte: 🎲 Startspieler auslosen, Zugzähler, ⏭ nächster Spieler, ⛶ Vollbild, 📋 Tabellenansicht.</li>
+<li><b>📡 Gemeinsamer Tisch (mehrere Handys):</b> Alle Geräte müssen dieselbe Manaschmiede nutzen (Server oder PC im Heimnetz mit „im Netzwerk starten“). Eine Person startet die Partie, wählt unten „Dein Platz“ und tippt „📡 Tisch teilen“ – es erscheinen ein vierstelliger Code, ein QR-Code und ein Link. Die anderen geben im Spieltisch bei „📡 Einem Tisch beitreten“ den Code ein (oder scannen den QR-Code) und wählen ihren Platz. Jedes Handy zeigt dann das eigene Feld groß und die Mitspieler klein darüber; Leben, Gift, Commander-Schaden (trägt der Getroffene ein), Zug und Monarch werden innerhalb etwa einer Sekunde abgeglichen. Jeder kann nur sein eigenes Feld ändern. Fällt ein Handy aus, hakt der Gastgeber „alle Felder anzeigen und steuern“ an. Speichern oder Abbrechen beim Gastgeber beendet den Tisch für alle. Nach dem Neuladen verbindet sich ein Handy von selbst wieder; offene Tische verfallen nach 12 Stunden ohne Änderung.</li>
 <li><b>Tabellenansicht:</b> mit 📋 umschaltbar (🃏 wieder zurück, die Wahl wird gemerkt): Gift (ab 10 verloren) und Commander-Schaden je Gegner (ab 21 verloren). Wer verloren hat, wird ausgegraut. „Nächster Zug“ zählt die Runden. Der Stand bleibt beim Neuladen erhalten; am Handy bleibt der Bildschirm an.</li>
 <li><b>Partie beenden:</b> Sieger wählen (bleibt nur einer übrig, ist er vorausgewählt) und speichern. Die Statistik zeigt Partien, Siege und Siegquote je Deck und je Spieler sowie die letzten Partien.</li>
 <li><b>Forge-Ergebnisse:</b> nach einem Duell mit „Ins Spielprotokoll übernehmen“ zählen die KI-Partien mit (als „Forge“ gekennzeichnet).</li></ul>
@@ -3972,6 +3992,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <input id=impurl size=60 placeholder="oder Link, z. B. https://archidekt.com/decks/123456">
 <button type=button id=impgo class=primary>Importieren</button>
 <div id=impres></div>
+<div id=inbox></div>
 <h4>Gespeicherte Decks</h4><div id=mydecks></div></details>
 </section>
 <section id=v-sammlung class=page hidden><h3>Meine Sammlung <span class=hint id=collsum2></span> <button type=button class=qh data-h=sammlung>?</button></h3>
@@ -4033,7 +4054,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='36';
+const PAGE_VERSION='37';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -4765,11 +4786,42 @@ async function myDecks(list){list=list||await J('/api/decks');
   const b2=$('button','Gegner');b2.type='button';b2.onclick=async()=>useOpp(await get(),E('impres'));
   const bv=$('button','Versionen');bv.type='button';bv.onclick=()=>versionsDialog(d.id);
   const bs=$('button',d.shared?'🔗 Geteilt':'Teilen');bs.type='button';bs.onclick=()=>shareDialog(d);
+  const bx=$('button','📤 Senden');bx.type='button';bx.className='dsend';bx.onclick=()=>sendDialog(d);
   const b3=$('button','Löschen');b3.type='button';
   b3.onclick=async()=>{if(b3.textContent!='Wirklich?'){b3.textContent='Wirklich?';return}myDecks(await J('/api/deck_delete',{id:d.id}))};
-  a.append(b1,b2,bv,bs,b3);
+  a.append(b1,b2,bv,bs,bx,b3);
   const ch=$('button',d.name);ch.type='button';ch.title=d.commander||'';ch.onclick=async()=>useOpp(await get());c.append(ch)}}
 myDecks();oppInfo();
+// ---- Decks senden: im Server-Betrieb an andere Benutzer (Postfach), sonst als Link an eine andere Manaschmiede
+async function sendDialog(d){await MEP;const b=dlgOpen('Deck senden: '+d.name);
+ if(ME.server){const nl=await J('/api/user_names');const names=nl.names||[];
+  if(!names.length){P(b,'Auf diesem Server gibt es noch keine anderen Benutzer. Der Administrator kann sie unter „Benutzer verwalten“ anlegen.','hint')}
+  else{P(b,'Das Deck landet im Postfach des Empfängers („📥 Erhaltene Decks“ unter Meine Decks) und kann dort übernommen oder abgelehnt werden. Dein eigenes Deck bleibt unverändert.','hint');
+   const to=$('select');to.id='sendto';names.forEach(n=>{const op=$('option',n);op.value=n;to.append(op)});
+   const msg=$('input');msg.id='sendmsg';msg.size=40;msg.maxLength=300;msg.placeholder='Nachricht (optional), z. B. „Probier das mal gegen Atraxa“';
+   const go=$('button','📤 Senden');go.type='button';go.className='primary';go.id='sendgo';const res=$('div');
+   go.onclick=async()=>{const r=await J('/api/deck_send',{id:d.id,to:to.value,msg:msg.value});res.innerHTML='';
+    if(r.error)P(res,r.error,'warn');else{P(res,'✓ An '+r.to+' gesendet.');go.disabled=true}};
+   const l1=$('div');l1.append('An: ',to);b.append(l1,msg,$('br'),go,res)}
+  P(b,'Für Leute ohne Zugang zu diesem Server: „Teilen“ erzeugt einen Link, den sie in ihrer eigenen Manaschmiede unter „Meine Decks“ importieren können.','hint');return}
+ P(b,'Hier gibt es keine Benutzerkonten. Du sendest deshalb einen Link: Die andere Person öffnet ihn im Browser oder fügt ihn in ihrer Manaschmiede unter „📂 Meine Decks → Deck importieren“ in das Link-Feld ein – das Deck wird dann komplett übernommen.','hint');
+ P(b,'Der Link funktioniert nur, solange deine Manaschmiede läuft und für die andere Person erreichbar ist (gleiches Heimnetz mit „im Netzwerk starten“ oder Server).','hint');
+ const res=$('div');b.append(res);let r=await J('/api/deck_share',{id:d.id,on:1});if(r.error){P(res,r.error,'warn');return}
+ const url=location.origin+r.path;const inp=$('input');inp.id='sendlink';inp.readOnly=true;inp.value=url;inp.size=48;
+ const cp=$('button','Link kopieren');cp.type='button';cp.onclick=()=>{try{navigator.clipboard.writeText(url);cp.textContent='✓ kopiert'}catch(e){inp.select()}};
+ res.append(inp,' ',cp);if(navigator.share){const sh=$('button','Senden über …');sh.type='button';sh.onclick=()=>navigator.share({title:'Deck: '+d.name,text:'Mein Commander-Deck „'+d.name+'“ aus der Manaschmiede',url:url}).catch(()=>{});res.append(' ',sh)}
+ const qr=$('div');qr.className='qrbox';res.append($('br'),qr);roomQR(qr,url);myDecks()}
+async function inboxShow(){await MEP;const o=E('inbox');if(!o)return;o.innerHTML='';if(!ME.server)return;
+ const r=await J('/api/inbox');const it=r.items||[];const nb=document.querySelector('#mainnav a[data-v=decks]');
+ if(nb)nb.dataset.badge=it.length?String(it.length):'';const mb2=document.querySelector('#mobmore a[data-v=decks]');if(mb2)mb2.dataset.badge=it.length?String(it.length):'';const mbb=E('mobmorebtn');if(mbb)mbb.dataset.badge=it.length?String(it.length):'';if(!it.length)return;
+ const box=$('div');box.className='roombox inboxbox';box.append($('h4','📥 Erhaltene Decks ('+it.length+')'));
+ it.forEach(x=>{const d=$('div');d.className='inboxitem';d.append($('b',x.name),' – '+(x.commander||'ohne Commander')+' · '+x.cards+' Karten · von ',$('b',x.from),' · '+x.sent_at);
+  if(x.msg){const m=$('div','„'+x.msg+'“');m.className='hint';d.append(m)}
+  const ac=$('button','✔ Übernehmen');ac.type='button';ac.className='primary inacc';ac.onclick=async()=>{const q=await J('/api/inbox_accept',{id:x.id});if(q.error){P(d,q.error,'warn');return}
+   await myDecks();await inboxShow();P(E('inbox'),'✓ „'+q.name+'“ ist jetzt unter deinen Decks.','hint')};
+  const dc=$('button','Ablehnen');dc.type='button';dc.className='indec';dc.onclick=async()=>{await J('/api/inbox_decline',{id:x.id});inboxShow()};
+  d.append($('br'),ac,' ',dc);box.append(d)});o.append(box)}
+inboxShow();setInterval(()=>{if(document.visibilityState=='visible')inboxShow()},60000);
 
 // ---- Combos (Commander Spellbook)
 function comboList(o,rep,title){const box=$('div');o.append(box);box.append($('h4',title));
@@ -4882,9 +4934,89 @@ function showDuel(o,s){o.innerHTML='';
 
 // ---- Spieltisch
 let tg=null;try{tg=JSON.parse(localStorage.getItem('tablegame')||'null')}catch(e){}
-const tgSave=()=>{try{localStorage.setItem('tablegame',JSON.stringify(tg))}catch(e){}};
+const tgStore=()=>{try{localStorage.setItem('tablegame',JSON.stringify(tg))}catch(e){}};
+const tgSave=()=>{tgStore();if(tg&&tg.room&&!roomApplying)roomPushSoon()};
+// ---------- Gemeinsamer Tisch: mehrere Geräte, jedes steuert sein eigenes Feld ----------
+let roomApplying=false,roomLoopId=0,roomPushT=null,roomInflight=false,roomPendingRender=false;window.tPress=false;
+const tClient=()=>{let c='';try{c=localStorage.getItem('tclient')||''}catch(e){}if(!c){c=Math.random().toString(36).slice(2)+Date.now().toString(36);try{localStorage.setItem('tclient',c)}catch(e){}}return c};
+const RGLOB=['turn','active','monarch','rot','start'];
+const pJSON=p=>JSON.stringify({name:p.name,deck:p.deck,life:p.life,poison:p.poison,cmd:p.cmd,conceded:!!p.conceded});
+function roomSnap(){tg.room.synced=tg.players.map(pJSON);tg.room.gsync=JSON.stringify(RGLOB.map(k=>tg[k]))}
+function roomApply(r){if(!tg||!tg.room)return;if(r.error){tg.room.lost=r.error;tgStore();tableGame();return}
+ const R=tg.room;R.lost='';R.ver=r.ver;R.claims=r.claims||{};R.closed=r.closed||'';if(r.seat!=null)R.seat=r.seat;R.host=!!r.host;
+ const st=r.state||{};const dirty=new Set();(tg.players||[]).forEach((p,i)=>{if(R.synced&&R.synced[i]!==pJSON(p))dirty.add(i)});
+ const gdirty=R.gsync&&R.gsync!==JSON.stringify(RGLOB.map(k=>tg[k]));
+ roomApplying=true;try{
+  const np=(st.players||[]).map((q,i)=>dirty.has(i)&&tg.players[i]?tg.players[i]:{name:q.name,deck:q.deck,life:q.life,poison:q.poison,cmd:q.cmd||{},conceded:!!q.conceded});
+  const synced=(st.players||[]).map(q=>pJSON({name:q.name,deck:q.deck,life:q.life,poison:q.poison,cmd:q.cmd||{},conceded:!!q.conceded}));
+  tg.players=np;if(!gdirty)RGLOB.forEach(k=>{if(k in st)tg[k]=st[k]});
+  R.synced=synced;R.gsync=JSON.stringify(RGLOB.map(k=>st[k]));tgStore()}finally{roomApplying=false}
+ if(window.tPress){roomPendingRender=true}else tableGame()}
+async function roomLoop(){const my=++roomLoopId;while(tg&&tg.room&&my==roomLoopId&&!tg.room.closed){
+ const r=await J('/api/room_get?'+new URLSearchParams({code:tg.room.code,since:tg.room.ver||0,client:tClient()}));
+ if(my!=roomLoopId||!tg||!tg.room)return;
+ if(r.error&&!/nicht gefunden/.test(r.error)){tg.room.lost='Verbindung unterbrochen – versuche erneut …';tableGame();await new Promise(z=>setTimeout(z,2500));continue}
+ roomApply(r);if(r.error)return}}
+function roomPushSoon(){clearTimeout(roomPushT);roomPushT=setTimeout(roomPush,120)}
+async function roomPush(){if(!tg||!tg.room||tg.room.closed)return;if(roomInflight){roomPushSoon();return}
+ const R=tg.room,pl={};tg.players.forEach((p,i)=>{if(!R.synced||R.synced[i]!==pJSON(p))if(R.host||i==R.seat)pl[i]=p});
+ const gl={};RGLOB.forEach(k=>{gl[k]=tg[k]===undefined?null:tg[k]});
+ const gch=R.gsync!==JSON.stringify(RGLOB.map(k=>tg[k]));if(!Object.keys(pl).length&&!gch)return;
+ roomInflight=true;const r=await J('/api/room_push',{code:R.code,client:tClient(),players:JSON.stringify(pl),glob:JSON.stringify(gch?gl:{})});roomInflight=false;
+ if(r&&!r.error){/* gesendete Stände gelten als abgeglichen, sofern seither nicht erneut geändert */
+  Object.keys(pl).forEach(i=>{if(R.synced)R.synced[i]=JSON.stringify(JSON.parse(pJSON(pl[i])))});if(gch)R.gsync=JSON.stringify(RGLOB.map(k=>tg[k]));roomApply(r)}}
+async function roomCreate(seat){const st={players:tg.players.map(p=>JSON.parse(pJSON(p))),seat:seat};RGLOB.forEach(k=>{if(tg[k]!=null)st[k]=tg[k]});
+ const r=await J('/api/room_create',{state:JSON.stringify(st),client:tClient()});if(r.error){alert(r.error);return}
+ tg.room={code:r.code,host:true,seat:seat,ver:r.ver,claims:{[seat]:tClient()}};roomSnap();tgStore();roomLoop();tableGame()}
+const roomLink=c=>location.origin+location.pathname+'?join='+c+'#spieltisch';
+async function roomJoin(code,box){code=(code||'').trim().toUpperCase();if(!code)return;box.innerHTML='';P(box,'Verbinde mit Tisch '+code+' …','hint');
+ const r=await J('/api/room_get?'+new URLSearchParams({code:code,since:0,client:tClient(),wait:'0'}));box.innerHTML='';
+ if(r.error){P(box,r.error,'warn');return}if(r.closed){P(box,'Diese Partie ist bereits beendet.','warn');return}
+ P(box,'Welcher Platz bist du?');const g=$('div');g.className='tseats';
+ r.state.players.forEach((p,i)=>{const taken=r.claims[i]&&r.claims[i]!=tClient();const b=$('button',p.name+(p.deck?' – '+p.deck:'')+(taken?' (vergeben)':''));b.type='button';b.disabled=!!taken;b.dataset.seat=i;
+  b.onclick=async()=>{const c=await J('/api/room_claim',{code:code,seat:i,client:tClient()});if(c.error){P(box,c.error,'warn');return}
+   tg={players:[],turn:1,start:Date.now(),room:{code:code,host:false,seat:i,ver:0}};roomApplying=true;roomApplying=false;roomApply(c);tableSetup();roomLoop();tableGame();
+   try{history.replaceState(null,'',location.pathname+'#spieltisch')}catch(e){}};g.append(b)});box.append(g)}
+function roomLeave(){roomLoopId++;tg=null;tgStore();tableSetup();tableGame()}
+// nach Neuladen: Verbindung zum gemeinsamen Tisch wieder aufnehmen
+if(tg&&tg.room&&!tg.room.closed)setTimeout(()=>{if(tg&&tg.room)roomLoop()},300);
+function roomQR(el,text){const draw=()=>{try{const q=qrcode(0,'M');q.addData(text);q.make();el.innerHTML=q.createSvgTag({cellSize:4,margin:2,scalable:true})}catch(e){el.textContent=''}};
+ if(window.qrcode)draw();else{const sc=document.createElement('script');sc.src='/qr.js';sc.onload=draw;document.head.append(sc)}}
+// Gastgeber-Bereich: Code, QR, Teilnehmer; vor dem Teilen fragen, welcher Platz der eigene ist
+function roomHostBox(o){const b=$('div');b.className='roombox';
+ if(!tg.room){b.append($('b','📡 Gemeinsamer Tisch: '),'Mitspieler steuern ihr Feld vom eigenen Handy. Dein Platz: ');const ss=$('select');ss.id='tmyseat';
+  tg.players.forEach((p,i)=>{const op=$('option',p.name);op.value=i;ss.append(op)});const go=$('button','📡 Tisch teilen');go.type='button';go.id='troom';go.className='primary';
+  go.onclick=()=>roomCreate(+ss.value);b.append(ss,' ',go);o.append(b);return}
+ const R=tg.room,n=tg.players.length,con=Object.keys(R.claims||{}).length;
+ b.append($('b','📡 Tisch '),$('span',R.code),' · '+con+' von '+n+' verbunden ');b.querySelector('span').className='tcode';b.querySelector('span').id='tcode';
+ const det=$('details');det.className='roomqr';const sm=$('summary','QR-Code & Link zum Beitreten');det.append(sm);const qr=$('div');qr.className='qrbox';const ln=$('input');ln.readOnly=true;ln.value=roomLink(R.code);ln.size=40;
+ const cp=$('button','Link kopieren');cp.type='button';cp.onclick=()=>{try{navigator.clipboard.writeText(ln.value);cp.textContent='✓ kopiert'}catch(e){ln.select()}};
+ det.addEventListener('toggle',()=>{if(det.open&&!qr.innerHTML)roomQR(qr,ln.value)});
+ det.append(qr,ln,' ',cp);if(navigator.share){const sh=$('button','Teilen …');sh.type='button';sh.onclick=()=>navigator.share({title:'Manaschmiede – Tisch '+R.code,url:ln.value}).catch(()=>{});det.append(' ',sh)}
+ const who=$('div');who.className='hint';who.textContent='Plätze: '+tg.players.map((p,i)=>p.name+(R.claims&&R.claims[i]?(R.claims[i]==tClient()?' (du)':' ✓'):' –')).join(' · ');
+ const al=$('label');const cb=$('input');cb.type='checkbox';cb.id='tall';cb.checked=!!R.all;cb.onchange=()=>{R.all=cb.checked;tgStore();tableGame()};al.append(cb,' alle Felder anzeigen und steuern (z. B. wenn ein Handy ausfällt)');
+ b.append(det,who,al);o.append(b)}
+function roomGuestBox(o){const b=$('div');b.className='roombox';const R=tg.room;
+ b.append($('b','📡 Tisch '+R.code),' · du spielst als ',$('b',(tg.players[R.seat]||{}).name||'?'),' ');
+ const lv=$('button','Tisch verlassen');lv.type='button';lv.id='tleave';lv.onclick=()=>{if(lv.textContent!='Wirklich verlassen?'){lv.textContent='Wirklich verlassen?';return}roomLeave()};b.append(lv);
+ P(b,'Speichern und Sieger wählen macht der Gastgeber.','hint');o.append(b)}
+// Ansicht am eigenen Handy: eigenes Feld groß, Mitspieler klein darüber
+function tableShared(o){const R=tg.room,me=R.seat;const n=tg.players.length;
+ const ot=$('div');ot.className='tothers';tg.players.forEach((p,i)=>{if(i==me)return;const c=$('div');c.className='tother'+(lostWhy(p)?' out':'')+(tg.active==i?' act':'');c.dataset.i=i;
+  const cm=Math.max(0,...Object.values(p.cmd||{}));c.append($('b',p.name+(tg.monarch==i?' 👑':'')),$('span',String(p.life)),$('small',(p.poison?'☠'+p.poison+' ':'')+(cm?'⚔'+cm:'')));
+  c.querySelector('span').className='ol';ot.append(c)});o.append(ot);
+ const f=$('div');f.id='tfield';f.className='solo';const row=$('div');row.className='trow';row.style.gridTemplateColumns='1fr';row.append(tPanel(me));f.append(row);
+ const c=$('div');c.className='tcen';const cb=(t,ti,id,fn)=>{const b=$('button',t);b.type='button';b.title=ti;b.id=id;b.onclick=e=>{e.stopPropagation();fn()};return b};
+ const tn=$('b','Zug '+tg.turn);tn.id='tturn';
+ c.append(tn,cb('⏭','Nächster Zug','tnext',()=>{let k=tg.active||0;for(let s2=0;s2<n;s2++){k=(k+1)%n;if(!lostWhy(tg.players[k]))break}tg.active=k;tg.turn++;tgSave();tableGame()}),
+  cb('⛶','Vollbild','tfull',()=>{try{document.fullscreenElement?document.exitFullscreen():f.requestFullscreen()}catch(e){}}));
+ f.append(c);o.append(f)}
 let wake=null;const keepAwake=async on=>{try{if(on&&navigator.wakeLock&&!wake)wake=await navigator.wakeLock.request('screen');if(!on&&wake){wake.release();wake=null}}catch(e){}};
 async function tableSetup(){const o=E('tsetup');o.innerHTML='';if(tg){o.style.display='none';return}o.style.display='';
+ {const jb=$('div');jb.className='roombox';jb.append($('b','📡 Einem Tisch beitreten: '));const ci2=$('input');ci2.id='tjoincode';ci2.size=6;ci2.maxLength=4;ci2.placeholder='Code';ci2.style.textTransform='uppercase';
+  const jg=$('button','Beitreten');jg.type='button';jg.id='tjoin';const jr=$('div');jr.id='tjoinres';jg.onclick=()=>roomJoin(ci2.value,jr);ci2.onkeydown=e=>{if(e.key=='Enter')jg.click()};
+  jb.append(ci2,' ',jg,jr);P(jb,'Code oder QR-Code vom Gastgeber – oder unten selbst eine Partie starten und mit „📡 Tisch teilen“ freigeben.','hint');o.append(jb);
+  const jq=new URLSearchParams(location.search).get('join');if(jq&&!o.dataset.auto){o.dataset.auto=1;ci2.value=jq;roomJoin(jq,jr)}}
  const dl=await J('/api/decks');const decks=Array.isArray(dl)?dl:(dl.decks||[]);
  const n=$('select');n.id='tn';[2,3,4,5,6].forEach(k=>{const op=$('option',k+' Spieler');op.value=k;n.append(op)});n.value=4;
  const lf=$('input');lf.id='tlife';lf.size=4;lf.value=40;
@@ -4908,7 +5040,11 @@ const tArt={};async function tArtFor(p){const k=(p.deck||'').toLowerCase();if(!k
 function tPanelBg(el,p,i){el.style.backgroundColor=TPAL[i%TPAL.length];tArtFor(p).then(a=>{if(!a)return;
  if(a.img)el.style.backgroundImage='url("'+a.img+'")';else if(a.ci){const cs=[...a.ci].map(c=>TCOL[c]).filter(Boolean);if(cs.length==1)el.style.backgroundColor=cs[0];else if(cs.length)el.style.backgroundImage='linear-gradient(135deg,'+cs.join(',')+')'}})}
 function tableGame(){const o=E('tgame');o.innerHTML='';if(!tg){keepAwake(false);return}keepAwake(true);
- if(tview=='tisch'){tableTisch(o);return}
+ if(tg.room&&tg.room.closed){const b=$('div');b.className='roombox';b.append($('b','🏁 '+tg.room.closed));
+  const ok=$('button','OK');ok.type='button';ok.className='primary';ok.id='tclosedok';ok.onclick=roomLeave;b.append(' ',ok);o.append(b);return}
+ if(tg.room&&tg.room.lost){P(o,'⚠ '+tg.room.lost,'warn');if(/nicht gefunden/.test(tg.room.lost)){const lv=$('button','Tisch verlassen');lv.type='button';lv.onclick=roomLeave;o.append(lv);return}}
+ if(tg.room&&!tg.room.host){roomGuestBox(o);if(tg.room.seat==null){P(o,'Kein Platz gewählt.','warn');return}tableShared(o);return}
+ if(tview=='tisch'){if(tg.room&&!tg.room.all){roomHostBox(o);tableShared(o);tableEnd(o);return}tableTisch(o);return}
  const vb=$('div');vb.className='tvbar';const tv=$('button','🃏 Tischansicht');tv.type='button';tv.id='tvtisch';tv.onclick=()=>setTview('tisch');vb.append(tv);o.append(vb);
  const bar=$('div');bar.append($('b','Zug '+tg.turn+' '));const nx=$('button','Nächster Zug');nx.type='button';nx.id='tnext';nx.onclick=()=>{tg.turn++;tgSave();tableGame()};bar.append(nx);o.append(bar);
  tg.players.forEach((p,i)=>{const d=$('div');const why=lostWhy(p);d.className='pl'+(why?' out':'');d.dataset.i=i;
@@ -4922,14 +5058,14 @@ function tableGame(){const o=E('tgame');o.innerHTML='';if(!tg){keepAwake(false);
   if(why)d.append($('div','verloren: '+why));else d.append(bt('aufgeben',()=>p.conceded=true));
   o.append(d)});
  tableEnd(o)}
-function tableEnd(o){const alive=tg.players.map((p,i)=>[p,i]).filter(([p])=>!lostWhy(p));
+function tableEnd(o){if(tg.room&&!tg.room.host)return;if(tview!='tisch'||(tg.room&&tg.room.all)||!tg.room)roomHostBox(o);const alive=tg.players.map((p,i)=>[p,i]).filter(([p])=>!lostWhy(p));
  const end=$('div');end.className='savebox';end.append($('b','Partie beenden: '));const ws=$('select');ws.id='twinner';
  const o0=$('option','kein Sieger / Unentschieden');o0.value=-1;ws.append(o0);tg.players.forEach((p,i)=>{const op=$('option',p.name);op.value=i;ws.append(op)});
  if(alive.length==1)ws.value=alive[0][1];const nt=$('input');nt.size=30;nt.placeholder='Notiz (optional)';nt.id='tnote';
  const sv=$('button','Speichern');sv.type='button';sv.className='primary';sv.id='tsave';
  sv.onclick=async()=>{const r=await J('/api/game_save',{games:JSON.stringify([{players:tg.players.map(p=>({name:p.name,deck:p.deck})),winner:+ws.value,turns:tg.turn,note:nt.value}])});
-  if(r.error){P(end,r.error,'warn');return}tg=null;tgSave();tableSetup();tableGame();tableStats(r)};
- const ab=$('button','Abbrechen ohne Speichern');ab.type='button';ab.onclick=()=>{if(ab.textContent!='Wirklich abbrechen?'){ab.textContent='Wirklich abbrechen?';return}tg=null;tgSave();tableSetup();tableGame()};
+  if(r.error){P(end,r.error,'warn');return}if(tg.room){roomLoopId++;J('/api/room_close',{code:tg.room.code,client:tClient(),result:'Partie beendet'+(+ws.value>=0?' – Sieger: '+tg.players[+ws.value].name:'')+'.'})}tg=null;tgSave();tableSetup();tableGame();tableStats(r)};
+ const ab=$('button','Abbrechen ohne Speichern');ab.type='button';ab.onclick=()=>{if(ab.textContent!='Wirklich abbrechen?'){ab.textContent='Wirklich abbrechen?';return}if(tg.room){roomLoopId++;J('/api/room_close',{code:tg.room.code,client:tClient(),result:'Partie abgebrochen.'})}tg=null;tgSave();tableSetup();tableGame()};
  end.append(ws,' ',nt,' ',sv,' ',ab);o.append(end)}
 // Tischansicht: ein großes Feld je Spieler; links tippen −1, rechts +1, halten ±10 (wiederholt)
 function tableTisch(o){const n=tg.players.length;if(tg.active==null)tg.active=0;if(tg.rot==null)tg.rot=true;
@@ -4954,8 +5090,8 @@ function tPanel(i){const p=tg.players[i],why=lostWhy(p),d=$('div');d.className='
  let acc=0,accT=null;const show=dv=>{acc+=dv;dl.textContent=(acc>0?'+':'')+acc;dl.className='tdl on '+(acc<0?'neg':'pos');clearTimeout(accT);accT=setTimeout(()=>{acc=0;dl.className='tdl'},1600)};
  const change=dv=>{p.life+=dv;lv.textContent=p.life;show(dv);tgSave();const nw=!!lostWhy(p);if(nw!=d.classList.contains('out'))tableGame()};
  [['m','−',-1],['p','+',1]].forEach(([cl,sym,sg])=>{const z=$('div',sym);z.className='tz '+cl;z.dataset.d=sg;let t=null,iv=null,held=false;
-  const stop=()=>{clearTimeout(t);clearInterval(iv);t=iv=null};
-  z.addEventListener('pointerdown',e=>{e.preventDefault();held=false;stop();t=setTimeout(()=>{held=true;change(10*sg);iv=setInterval(()=>change(10*sg),450)},500)});
+  const stop=()=>{clearTimeout(t);clearInterval(iv);t=iv=null;if(window.tPress){window.tPress=false;if(roomPendingRender){roomPendingRender=false;setTimeout(tableGame,0)}}};
+  z.addEventListener('pointerdown',e=>{e.preventDefault();window.tPress=true;held=false;stop();t=setTimeout(()=>{held=true;change(10*sg);iv=setInterval(()=>change(10*sg),450)},500)});
   z.addEventListener('pointerup',e=>{if(t||iv){const h=held;stop();if(!h)change(sg)}});
   ['pointerleave','pointercancel'].forEach(ev=>z.addEventListener(ev,stop));z.addEventListener('contextmenu',e=>e.preventDefault());w.append(z)});
  if(why){const l=$('div','💀 '+why);l.className='tlost';w.append(l)}
@@ -5176,6 +5312,204 @@ infoLine();
 
 LAN_KEY = ""
 
+# ---------------------------------------------------------------- Gemeinsamer Spieltisch (mehrere Geräte)
+# Räume liegen nur im Arbeitsspeicher; nach 12 Stunden ohne Änderung werden sie verworfen.
+ROOMS, ROOM_LOCK = {}, threading.Condition()
+ROOM_GLOBALS = ("turn", "active", "monarch", "rot", "start", "life0")
+QR_JS_Z = "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"  # qrcode-generator 1.4.4, © Kazuhiko Arase, MIT-Lizenz (komprimiert)
+
+
+def room_clean():
+    now = time.time()
+    for k in [k for k, r in ROOMS.items() if now - r["updated"] > 12 * 3600]:
+        del ROOMS[k]
+
+
+def room_valid_player(pl):
+    try:
+        cmd = {str(int(k)): max(0, min(999, int(v))) for k, v in (pl.get("cmd") or {}).items()}
+        return {"name": str(pl.get("name") or "")[:40], "deck": str(pl.get("deck") or "")[:120],
+                "life": max(-999, min(9999, int(pl.get("life", 40)))), "poison": max(0, min(99, int(pl.get("poison") or 0))),
+                "cmd": cmd, "conceded": bool(pl.get("conceded"))}
+    except Exception:
+        return None
+
+
+def room_create(state, client, uid):
+    try:
+        st = json.loads(state)
+        players = [room_valid_player(x) for x in st.get("players", [])][:6]
+    except Exception:
+        return {"error": "Ungültiger Spielstand."}
+    if len(players) < 2 or None in players:
+        return {"error": "Ungültiger Spielstand."}
+    with ROOM_LOCK:
+        room_clean()
+        if len(ROOMS) > 500:
+            return {"error": "Zu viele offene Tische – bitte später erneut versuchen."}
+        alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        code = "".join(secrets.choice(alphabet) for _ in range(4))
+        while code in ROOMS:
+            code = "".join(secrets.choice(alphabet) for _ in range(4))
+        g = {k: st.get(k) for k in ROOM_GLOBALS if k in st}
+        seat = st.get("seat", 0) if isinstance(st.get("seat"), int) else 0
+        ROOMS[code] = {"state": {"players": players, **g}, "ver": 1, "host": client, "uid": uid, "claims": {str(seat): client},
+                       "closed": "", "updated": time.time()}
+        return {"ok": True, "code": code, "ver": 1}
+
+
+def room_view(r, client):
+    return {"state": r["state"], "ver": r["ver"], "claims": r["claims"], "host": r["host"] == client,
+            "seat": next((int(k) for k, v in r["claims"].items() if v == client), None), "closed": r["closed"]}
+
+
+def room_get(code, since, client, wait=True):
+    code = code.upper()
+    deadline = time.time() + (20 if wait else 0)
+    with ROOM_LOCK:
+        while True:
+            r = ROOMS.get(code)
+            if not r:
+                return {"error": "Tisch nicht gefunden – Code prüfen oder der Tisch wurde beendet."}
+            if r["ver"] > since or time.time() >= deadline:
+                return room_view(r, client)
+            ROOM_LOCK.wait(max(0.1, deadline - time.time()))
+
+
+def room_claim(code, seat, client):
+    with ROOM_LOCK:
+        r = ROOMS.get(code.upper())
+        if not r:
+            return {"error": "Tisch nicht gefunden."}
+        if r["closed"]:
+            return {"error": "Diese Partie ist bereits beendet."}
+        if not (0 <= seat < len(r["state"]["players"])):
+            return {"error": "Ungültiger Platz."}
+        cur = r["claims"].get(str(seat))
+        if cur and cur != client and cur != "":
+            return {"error": "Dieser Platz ist schon vergeben."}
+        for k in [k for k, v in r["claims"].items() if v == client]:
+            del r["claims"][k]
+        r["claims"][str(seat)] = client
+        r["ver"] += 1; r["updated"] = time.time(); ROOM_LOCK.notify_all()
+        return room_view(r, client)
+
+
+def room_push(code, client, players, glob, full=False):
+    with ROOM_LOCK:
+        r = ROOMS.get(code.upper())
+        if not r:
+            return {"error": "Tisch nicht gefunden."}
+        if r["closed"]:
+            return room_view(r, client)
+        host = r["host"] == client
+        mine = {int(k) for k, v in r["claims"].items() if v == client}
+        try:
+            players = json.loads(players or "{}")
+            glob = json.loads(glob or "{}")
+        except Exception:
+            return {"error": "Ungültige Daten."}
+        st = r["state"]
+        if full and host and isinstance(players, list):
+            pl = [room_valid_player(x) for x in players][:6]
+            if len(pl) >= 2 and None not in pl:
+                st["players"] = pl
+        else:
+            for k, v in (players.items() if isinstance(players, dict) else []):
+                try:
+                    i = int(k)
+                except ValueError:
+                    continue
+                if 0 <= i < len(st["players"]) and (host or i in mine):
+                    pv = room_valid_player(v)
+                    if pv:
+                        st["players"][i] = pv
+        for k, v in (glob.items() if isinstance(glob, dict) else []):
+            if k in ROOM_GLOBALS and (host or k in ("turn", "active", "monarch")):
+                st[k] = v if isinstance(v, (int, bool)) or v is None else None
+        r["ver"] += 1; r["updated"] = time.time(); ROOM_LOCK.notify_all()
+        return room_view(r, client)
+
+
+def room_close(code, client, result):
+    with ROOM_LOCK:
+        r = ROOMS.get(code.upper())
+        if not r or r["host"] != client:
+            return {"error": "Nur der Gastgeber kann den Tisch beenden."}
+        r["closed"] = (result or "Partie beendet.")[:200]
+        r["ver"] += 1; r["updated"] = time.time(); ROOM_LOCK.notify_all()
+        return {"ok": True}
+
+
+# ---------------------------------------------------------------- Decks senden (Postfach zwischen Benutzern)
+def inbox_table(con):
+    con.execute("CREATE TABLE IF NOT EXISTS deck_inbox(id INTEGER PRIMARY KEY, to_uid INTEGER, from_uid INTEGER, from_name TEXT, "
+                "name TEXT, commander TEXT, list TEXT, extra TEXT, msg TEXT, sent_at TEXT)")
+
+
+def deck_send(con, did, to_name, msg, uid, uname):
+    decks_table(con); users_tables(con); inbox_table(con)
+    d = con.execute("SELECT name, commander, list, extra FROM decks WHERE id = ? AND owner = ?", (did, uid)).fetchone()
+    if not d:
+        return {"error": "Deck nicht gefunden."}
+    u = con.execute("SELECT id, name FROM users WHERE name = ?", (to_name.strip(),)).fetchone()
+    if not u:
+        return {"error": f"Benutzer „{to_name}“ gibt es nicht."}
+    if u[0] == uid:
+        return {"error": "An dich selbst musst du nichts senden – das Deck liegt ja schon bei dir."}
+    if con.execute("SELECT count(*) FROM deck_inbox WHERE to_uid = ?", (u[0],)).fetchone()[0] >= 100:
+        return {"error": f"Das Postfach von {u[1]} ist voll (100 Decks)."}
+    con.execute("INSERT INTO deck_inbox(to_uid, from_uid, from_name, name, commander, list, extra, msg, sent_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (u[0], uid, uname, d[0], d[1], d[2], d[3] or "", msg.strip()[:300],
+                 datetime.datetime.now().isoformat(sep=" ", timespec="minutes")))
+    con.commit()
+    return {"ok": True, "to": u[1]}
+
+
+def inbox_list(con, uid):
+    inbox_table(con)
+    return {"items": [{"id": r[0], "from": r[1], "name": r[2], "commander": r[3], "cards": sum(int(m.group(1)) for m in re.finditer(r"^(\d+)", r[4] or "", re.M)),
+                       "msg": r[5], "sent_at": r[6]}
+                      for r in con.execute("SELECT id, from_name, name, commander, list, msg, sent_at FROM deck_inbox WHERE to_uid = ? ORDER BY id DESC", (uid,))]}
+
+
+def inbox_accept(con, iid, uid, new_name=""):
+    inbox_table(con); decks_table(con)
+    r = con.execute("SELECT name, commander, list, extra, from_name FROM deck_inbox WHERE id = ? AND to_uid = ?", (iid, uid)).fetchone()
+    if not r:
+        return {"error": "Nicht gefunden."}
+    base = (new_name.strip() or r[0])[:70]
+    name, k = base, 1
+    while con.execute("SELECT 1 FROM decks WHERE owner = ? AND name = ?", (uid, name)).fetchone():
+        k += 1
+        name = f"{base} (von {r[4]})" if k == 2 else f"{base} (von {r[4]}, {k - 1})"
+    con.execute("INSERT INTO decks(owner, name, commander, list, saved_at, note, extra) VALUES(?,?,?,?,?,?,?)",
+                (uid, name[:80], r[1], r[2], datetime.datetime.now().isoformat(sep=" ", timespec="minutes"), f"Erhalten von {r[4]}", r[3] or ""))
+    con.execute("DELETE FROM deck_inbox WHERE id = ?", (iid,))
+    con.commit()
+    return {"ok": True, "name": name, "decks": deck_list(con, uid)}
+
+
+def shared_text(tok):
+    """Geteiltes Deck als Text (Forge-Format) – zum Importieren in einer anderen Manaschmiede."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,40}", tok or ""):
+        return None
+    con = db()
+    try:
+        decks_table(con)
+        d = con.execute("SELECT name, commander, list FROM decks WHERE share = ? AND share <> ''", (tok,)).fetchone()
+        if not d:
+            return None
+        cmds = [c.strip() for c in (d[1] or "").split(" + ") if c.strip()]
+        lines, main = [f"Name={d[0]}", "[Commander]"] + [f"1 {c}" for c in cmds], []
+        for ln in (d[2] or "").splitlines():
+            m = re.match(r"^\s*(\d+)\s*x?\s+(.+?)\s*$", ln)
+            if m and m.group(2) not in cmds:
+                main.append(f"{m.group(1)} {m.group(2)}")
+        return "\n".join(lines + ["[Main]"] + main) + "\n"
+    finally:
+        con.close()
+
 
 def lan_ip():
     import socket
@@ -5201,6 +5535,35 @@ class H(BaseHTTPRequestHandler):
         con = db()
         con.row_factory = sqlite3.Row
         try:
+            if path == "/api/room_create":
+                return room_create(g("state"), g("client"), uid)
+            if path == "/api/room_get":
+                con.close()
+                return room_get(g("code"), int(g("since") or 0), g("client"), g("wait") != "0")
+            if path == "/api/room_claim":
+                return room_claim(g("code"), int(g("seat") or -1), g("client"))
+            if path == "/api/room_push":
+                return room_push(g("code"), g("client"), g("players"), g("glob"), g("full") == "1")
+            if path == "/api/room_close":
+                return room_close(g("code"), g("client"), g("result"))
+            if path == "/api/user_names":
+                if not SERVER:
+                    return {"names": []}
+                users_tables(con)
+                return {"names": [r[0] for r in con.execute("SELECT name FROM users WHERE id <> ? ORDER BY name COLLATE NOCASE", (uid,))]}
+            if path == "/api/deck_send":
+                if not SERVER or not self.user:
+                    return {"error": "Senden an Benutzer gibt es nur im Server-Betrieb – hier bitte „Als Link senden“ nutzen."}
+                return deck_send(con, int(g("id") or 0), g("to"), g("msg"), uid, self.user["name"])
+            if path == "/api/inbox":
+                return inbox_list(con, uid) if SERVER else {"items": []}
+            if path == "/api/inbox_accept":
+                return inbox_accept(con, int(g("id") or 0), uid, g("name"))
+            if path == "/api/inbox_decline":
+                inbox_table(con)
+                con.execute("DELETE FROM deck_inbox WHERE id = ? AND to_uid = ?", (int(g("id") or 0), uid))
+                con.commit()
+                return inbox_list(con, uid)
             if path == "/api/me":
                 return {"server": SERVER, "name": self.user["name"] if self.user else None, "admin": admin,
                         "max_games": MAX_GAMES, "version": APP_VERSION}
@@ -5411,6 +5774,13 @@ class H(BaseHTTPRequestHandler):
         return ("Set-Cookie", f"cdbsess={token}; Max-Age={age}; Path=/; HttpOnly; SameSite=Lax{secure}")
 
     def answer(self, path, p):
+        if path.startswith("/d/") and path.endswith(".txt"):  # geteiltes Deck als Text (zum Import in einer anderen Manaschmiede)
+            t = shared_text(path[3:-4])
+            if t is None:
+                return self.send(b"not found", "text/plain", 404)
+            return self.send(t.encode(), "text/plain; charset=utf-8", extra=[("X-Robots-Tag", "noindex"), ("Access-Control-Allow-Origin", "*")])
+        if path == "/qr.js":
+            return self.send(zlib.decompress(base64.b64decode(QR_JS_Z)), "text/javascript")
         if path.startswith("/d/"):  # geteilte Decks: öffentlich lesbar, ohne Anmeldung und ohne Zugangscode
             page = shared_page(path[3:])
             if page is None:
