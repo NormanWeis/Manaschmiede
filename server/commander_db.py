@@ -27,6 +27,9 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 39: Öffentliche Deck-Galerie im Server-Betrieb: Decks veröffentlichen, Galerie mit Filtern (Commander, Farben,
+            Preis, Game Changer, Thema), Decks kopieren, Herzchen und Kommentare, Administrator kann Decks ausblenden.
+Version 38: Testspielfeld zum Goldfischen (Kommandozone, Bibliothek, Friedhof, Exil, Spielmarken, Zähler, Rückgängig).
 Version 33: Spieltisch mit Tischansicht im Stil von Lebenszähler-Apps (große Felder je Spieler, Tippen links/rechts,
   Halten für ±10, Kartenbild des Commanders als Hintergrund, Vollbild); die Tabellenansicht bleibt umschaltbar.
 Version 32: Neuer Name „Manaschmiede“ (Titel, Willkommensseite, Web-App, Android-App).
@@ -83,7 +86,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "38"
+APP_VERSION = "39"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -2571,6 +2574,11 @@ def decks_table(con):
         con.execute("ALTER TABLE decks ADD COLUMN extra TEXT DEFAULT ''")
     if "share" not in cols:  # Token für öffentlichen Nur-Lese-Link
         con.execute("ALTER TABLE decks ADD COLUMN share TEXT DEFAULT ''")
+    if "public" not in cols:  # Galerie: 1 = veröffentlicht; hidden = vom Administrator ausgeblendet; pub_meta = Kennzahlen als JSON
+        con.execute("ALTER TABLE decks ADD COLUMN public INTEGER DEFAULT 0")
+        con.execute("ALTER TABLE decks ADD COLUMN hidden INTEGER DEFAULT 0")
+        con.execute("ALTER TABLE decks ADD COLUMN pub_at TEXT DEFAULT ''")
+        con.execute("ALTER TABLE decks ADD COLUMN pub_meta TEXT DEFAULT ''")
 
 
 def deck_save(p, uid=0):
@@ -2681,8 +2689,8 @@ def deck_count(text):
 
 def deck_list(con, uid=0):
     decks_table(con)
-    return [{"id": i, "name": n, "commander": c, "saved_at": t, "count": deck_count(l), "shared": bool(sh)}
-            for i, n, c, l, t, sh in con.execute("SELECT id, name, commander, list, saved_at, share FROM decks WHERE owner = ? "
+    return [{"id": i, "name": n, "commander": c, "saved_at": t, "count": deck_count(l), "shared": bool(sh), "public": bool(pb)}
+            for i, n, c, l, t, sh, pb in con.execute("SELECT id, name, commander, list, saved_at, share, public FROM decks WHERE owner = ? "
                                              "ORDER BY name COLLATE NOCASE", (uid,))]
 
 
@@ -3377,7 +3385,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 38)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 39)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -3518,6 +3526,11 @@ body.printing>*:not(#printarea){display:none!important}
 #tfield.solo{height:min(62vh,640px)}body.mob #tfield.solo{height:calc(100vh - 290px);min-height:300px}
 @media (max-width:600px){#tfield .tcen{gap:2px;padding:2px 6px}#tfield .tcen button{min-width:28px;font-size:1em}#tfield .tz{font-size:1.6em}#tfield .tic button{padding:2px 7px;font-size:.85em}}body.mtg #tgame .pl{border-color:#a8843a;background:#241a12}
 #top{text-align:center;margin-top:8px}#top h2{margin-bottom:4px}.wotc{margin:0 0 10px;font-size:.95em}
+.galf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0 10px}.galci button{min-width:30px;padding:3px 6px;opacity:.45}.galci button.on{opacity:1;outline:2px solid #a8843a}
+.galgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.galcard{border:1px solid #a8843a;border-radius:10px;overflow:hidden;cursor:pointer;background:rgba(0,0,0,.18);display:flex;flex-direction:column}
+.galcard .gimg{height:110px;background:#2a1f15 center 22%/cover no-repeat}.galcard .gb{padding:7px 9px;flex:1}.galcard .gn{font-weight:bold}.galcard .gm{font-size:.86em;opacity:.85;margin-top:3px}
+.galcard .gt{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}.galcard .gt span,.galtags span{font-size:.78em;border:1px solid #a8843a;border-radius:8px;padding:0 5px}.galcard.hid{opacity:.5}
+.galcom{border-top:1px solid rgba(168,132,58,.35);padding:5px 0}.galcom b{margin-right:6px}.gallist{columns:2;column-gap:20px;font-size:.92em}@media(max-width:700px){.gallist{columns:1}}
 #mainnav{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:6px 0 12px}
 #mainnav a{padding:6px 12px;border:1px solid #bbb;border-radius:18px;text-decoration:none;color:inherit;background:#f4f4f4;cursor:pointer}
 #mainnav a.on{background:#2b5797;color:#fff;border-color:#2b5797}
@@ -3732,6 +3745,11 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>Importieren:</b> eine Liste einfügen (z. B. aus Moxfield „Export“), eine Datei wählen (.txt, .dck, .dec, .csv, .json) oder einen Link angeben (Archidekt, MTGGoldfish, TappedOut, Deckstats; Moxfield blockiert Links oft – dann die Liste kopieren). Dateien werden in jeder üblichen Zeichenkodierung erkannt, auch MTGO (.dek) und Cockatrice (.cod). Danach <b>Importieren</b>.</li>
 <li>Die Vorschau zeigt, ob der Commander erkannt wurde, welche Karten nicht gefunden oder korrigiert wurden und ob etwas nicht zur Farbidentität passt. Den Commander kannst du dort ändern; Partner mit „ + “ trennen.</li></ul>
 
+<h3 id=h-galerie>Deck-Galerie (nur im Server-Betrieb)</h3>
+<ul><li><b>Veröffentlichen:</b> unter „📂 Meine Decks“ beim Deck „🌍 Veröffentlichen“ antippen. Das Deck erscheint dann für alle angemeldeten Benutzer dieses Servers in der Galerie; noch einmal antippen zieht es zurück. Änderungen am Deck werden beim Speichern übernommen.</li>
+<li><b>Suchen:</b> nach Commander, Deckname, Benutzer, Tags und Notizen; Farbfilter (höchstens/genau/mindestens diese Farben), Höchstpreis, Game Changer; sortiert nach neu, beliebt oder günstig.</li>
+<li><b>Deck öffnen:</b> Liste, Notizen und Maybeboard ansehen, „♡“ für gefällt mir, „📥 In meine Decks kopieren“ (das Original bleibt unverändert), „⚔ Als Gegner“ und Kommentare schreiben. Eigene Kommentare und Kommentare am eigenen Deck kannst du löschen.</li>
+<li><b>Administrator:</b> kann Decks mit „🚫 Ausblenden“ aus der Galerie nehmen und alle Kommentare löschen.</li></ul>
 <h3 id=h-sammlung>Meine Sammlung</h3>
 <ul><li><b>Importieren:</b> im Bereich „Meine Sammlung“ eine CSV-Datei aus ManaBox, Moxfield, Deckbox, Archidekt oder Dragon Shield wählen oder eine Liste einfügen. „Hinzufügen“ zählt die Karten zur vorhandenen Sammlung dazu, „Ersetzen“ beginnt neu. Nicht erkannte Namen werden angezeigt.</li>
 <li><b>Besitzanteil:</b> bei jedem Deck steht, wie viel Prozent du besitzt und was fehlt (mit Preis). In der Liste markiert ✓ vorhandene Karten, ✗ fehlende und ⚠ Karten, die schon in einem anderen gespeicherten Deck stecken und von denen nicht genug Exemplare frei sind.</li>
@@ -3821,7 +3839,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <header id=top><h2>Manaschmiede</h2>
 <p class=wotc>Fan-Werkzeug für das Commander-Format von <b>Magic: The Gathering®</b> · Magic: The Gathering stammt von
 <a href="https://magic.wizards.com/de" target=_blank rel=noopener>Wizards of the Coast</a></p>
-<nav id=mainnav role=tablist><a href="#willkommen" data-v=willkommen>🏠 Willkommen</a><a href="#neu" data-v=neu class=navneu>🌱 Neu hier?</a><a href="#deck" data-v=deck>🛠 Deck bauen</a><a href="#gegner" data-v=gegner>⚔ Gegner &amp; Duell</a><a href="#decks" data-v=decks>📂 Meine Decks</a><a href="#sammlung" data-v=sammlung>📦 Sammlung</a><a href="#spieltisch" data-v=spieltisch>🎲 Spieltisch</a><a href="#suche" data-v=suche>🔎 Kartensuche</a><a href="#regeln" data-v=regeln>📖 Regeln</a></nav></header>
+<nav id=mainnav role=tablist><a href="#willkommen" data-v=willkommen>🏠 Willkommen</a><a href="#neu" data-v=neu class=navneu>🌱 Neu hier?</a><a href="#deck" data-v=deck>🛠 Deck bauen</a><a href="#gegner" data-v=gegner>⚔ Gegner &amp; Duell</a><a href="#decks" data-v=decks>📂 Meine Decks</a><a href="#galerie" data-v=galerie class=srvonly hidden>🌍 Galerie</a><a href="#sammlung" data-v=sammlung>📦 Sammlung</a><a href="#spieltisch" data-v=spieltisch>🎲 Spieltisch</a><a href="#suche" data-v=suche>🔎 Kartensuche</a><a href="#regeln" data-v=regeln>📖 Regeln</a></nav></header>
 <p class=info id=info></p>
 <div id=userbar class=hint></div>
 <div id=upd class=updbar>Prüfe auf Aktualisierungen ...</div>
@@ -4052,6 +4070,15 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <p class=chips id=rquick></p>
 <div id=rres></div>
 </section>
+<section id=v-galerie class=page hidden><h3>🌍 Deck-Galerie <button type=button class=qh data-h=galerie>?</button></h3>
+<p class=hint id=galintro>Hier stehen die Decks, die Benutzer dieses Servers veröffentlicht haben. Eigene Decks veröffentlichst du unter „📂 Meine Decks“ mit „🌍 Veröffentlichen“.</p>
+<form id=galf class=galf><input id=galq placeholder="Suche: Commander, Deckname, Benutzer, Thema (z. B. Goblins, Token)" size=44>
+<span class=galci id=galci></span><select id=galcim title="Farbfilter"><option value=within>höchstens diese Farben</option><option value=exact>genau diese Farben</option><option value=contains>mindestens diese Farben</option></select>
+<label>bis <input id=galeur size=5 inputmode=decimal placeholder="€"> €</label>
+<select id=galgc title="Game Changer"><option value="">Game Changer: egal</option><option value=0>ohne Game Changer</option><option value=3>höchstens 3 Game Changer</option></select>
+<select id=galsort><option value=new>neueste zuerst</option><option value=likes>beliebteste zuerst</option><option value=eur>günstigste zuerst</option></select>
+<button class=primary id=galgo>🔎 Suchen</button></form>
+<div id=galres></div></section>
 <section id=v-suche class=page hidden>
 <h3>Kartensuche <button type=button class=qh data-h=suche>?</button></h3>
 <form id=f autocomplete=off>
@@ -4087,7 +4114,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='38';
+const PAGE_VERSION='39';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -4117,7 +4144,7 @@ const UA_MOBILE=/Android|iPhone|iPod|Windows Phone|Mobile|CommanderDB-Android/i.
 function isPhone(){const w=window.innerWidth;if(layoutPref=='mobile')return true;if(layoutPref=='desktop')return false;
  return UA_MOBILE?w<1000:w<=760}
 const MOBMAIN=[['willkommen','🏠','Start'],['neu','🌱','Neu hier?'],['deck','🛠','Deck'],['gegner','⚔','Duell'],['spieltisch','🎲','Tisch']];
-const MOBMORE=[['decks','📂 Meine Decks'],['sammlung','📦 Sammlung'],['suche','🔎 Kartensuche'],['regeln','📖 Regeln']];
+const MOBMORE=[['decks','📂 Meine Decks'],['galerie','🌍 Galerie'],['sammlung','📦 Sammlung'],['suche','🔎 Kartensuche'],['regeln','📖 Regeln']];
 function buildMobNav(){const n=E('mobnav'),m=E('mobmore');if(!n||n.childElementCount)return;
  MOBMAIN.forEach(([v,i,t])=>{const a=$('a');a.href='#'+v;a.dataset.v=v;if(v=='neu')a.className='neu';const si=$('span',i);si.className='i';a.append(si,$('span',t));a.onclick=()=>m.classList.remove('open');n.append(a)});
  const mb=$('button');mb.type='button';mb.id='mobmorebtn';const si=$('span','☰');si.className='i';mb.append(si,$('span','Mehr'));
@@ -4458,6 +4485,55 @@ function ptRender(){const o=E('pt');if(!o||!PT)return;const keepList=E('ptlist')
  const hand=$('div');hand.className='pthand';hand.append($('div','✋ Hand ('+PT.hand.length+') – antippen = ausspielen, gedrückt halten / Rechtsklick = weitere Aktionen'));
  const hr=$('div');hr.className='ptrow';PT.hand.forEach(c=>hr.append(ptCardEl(c,'hand')));hand.append(hr);o.append(hand);
  if(keepList)o.append(keepList)}
+
+// ---- Öffentliche Deck-Galerie (Server-Betrieb)
+const GAL={ci:new Set()};
+function galEur(v){return v==null?'–':(Math.round(v*100)/100).toFixed(2).replace('.',',')+' €'}
+function galInit(){const c=E('galci');if(!c||c.childElementCount)return;
+ ['W','U','B','R','G','C'].forEach(x=>{const b=$('button');b.type='button';b.dataset.c=x;b.title={W:'Weiß',U:'Blau',B:'Schwarz',R:'Rot',G:'Grün',C:'farblos'}[x];
+  b.className='pip p'+x;b.textContent=x=='C'?'◇':x;b.onclick=()=>{GAL.ci.has(x)?GAL.ci.delete(x):GAL.ci.add(x);b.classList.toggle('on',GAL.ci.has(x))};c.append(b)});
+ E('galf').onsubmit=e=>{e.preventDefault();galSearch()}}
+async function galSearch(){const o=E('galres');o.innerHTML='';P(o,'Suche …','hint');
+ const r=await J('/api/gallery',{q:E('galq').value,ci:[...GAL.ci].join(''),cimode:E('galcim').value,maxeur:E('galeur').value,gc:E('galgc').value,sort:E('galsort').value});
+ o.innerHTML='';if(r.error){P(o,r.error,'warn');return}
+ if(!r.decks.length){P(o,r.total===0&&!E('galq').value&&!GAL.ci.size?'Noch keine Decks veröffentlicht. Veröffentliche eins unter „📂 Meine Decks“ mit „🌍 Veröffentlichen“.':'Keine Decks zu diesen Filtern.','hint');return}
+ P(o,r.total+' Deck'+(r.total==1?'':'s')+(r.total>r.decks.length?' – angezeigt werden die ersten '+r.decks.length:''),'hint');
+ const g=$('div');g.className='galgrid';o.append(g);
+ r.decks.forEach(d=>{const c=$('div');c.className='galcard'+(d.hidden?' hid':'');c.dataset.id=d.id;
+  const im=$('div');im.className='gimg';if(d.image)im.style.backgroundImage='url("'+d.image+'")';
+  const b=$('div');b.className='gb';const n=$('div',d.name);n.className='gn';
+  const m=$('div');m.className='gm';m.append(manaEl((d.ci||'C').split('').map(x=>'{'+x+'}').join('')),' ');
+  m.append((d.commander||'ohne Commander')+' · von '+d.owner);
+  const m2=$('div','♥ '+d.likes+' · 💬 '+d.comments+' · '+galEur(d.eur)+' · '+d.cards+' Karten'+(d.gc?' · '+d.gc+' GC':'')+(d.hidden?' · ausgeblendet':''));m2.className='gm';
+  const t=$('div');t.className='gt';(d.themes||[]).forEach(x=>t.append($('span',x)));
+  b.append(n,m,m2,t);c.append(im,b);c.onclick=()=>galOpen(d.id);g.append(c)})}
+async function galOpen(id){const d=await J('/api/gallery_deck?id='+id);await MEP;
+ const b=dlgOpen(d.error?'Galerie':d.name);if(d.error){P(b,d.error,'warn');return}
+ const h=$('p');h.append(manaEl((d.ci||'C').split('').map(x=>'{'+x+'}').join('')),' ');
+ h.append($('b',d.commander||'ohne Commander'),' · von '+d.owner+' · veröffentlicht '+(d.pub_at||'')+' · '+d.cards+' Karten · '+galEur(d.eur)+(d.gc?' · '+d.gc+' Game Changer':''));b.append(h);
+ if(d.themes&&d.themes.length){const t=$('div');t.className='galtags';d.themes.forEach(x=>t.append($('span',x),' '));b.append(t)}
+ const bar=$('div');bar.style.margin='8px 0';
+ const lk=$('button',(d.liked?'♥ ':'♡ ')+d.likes);lk.type='button';lk.id='gallike';lk.title='Gefällt mir';
+ lk.onclick=async()=>{const r=await J('/api/gallery_like',{id:d.id});if(!r.error){lk.textContent=(r.liked?'♥ ':'♡ ')+r.likes;galSearch()}};
+ const cp=$('button','📥 In meine Decks kopieren');cp.type='button';cp.className='primary';cp.id='galcopy';const msg=$('span');
+ cp.onclick=async()=>{const r=await J('/api/gallery_copy',{id:d.id});msg.textContent=r.error?' '+r.error:' ✓ als „'+r.name+'“ gespeichert';if(!r.error){cp.disabled=true;myDecks(r.decks)}};
+ const op=$('button','⚔ Als Gegner');op.type='button';op.onclick=()=>{closeSwap();useOpp({name:d.name,commander:d.commander,list:d.list})};
+ bar.append(lk,' ',cp,' ',op);
+ if(ME.admin){const hd=$('button',d.hidden?'👁 Wieder einblenden':'🚫 Ausblenden');hd.type='button';hd.id='galhide';
+  hd.onclick=async()=>{const r=await J('/api/gallery_hide',{id:d.id,on:d.hidden?0:1});if(!r.error){d.hidden=r.hidden;hd.textContent=d.hidden?'👁 Wieder einblenden':'🚫 Ausblenden';galSearch()}};bar.append(' ',hd)}
+ bar.append(msg);b.append(bar);
+ if(d.notes){b.append($('h4','Notizen / Primer'));const nt=$('div');nt.style.whiteSpace='pre-wrap';nt.textContent=d.notes;b.append(nt)}
+ b.append($('h4','Deckliste'));const ul=$('div');ul.className='gallist';
+ (d.list||'').split('\\n').filter(x=>x.trim()).forEach(x=>ul.append($('div',x)));b.append(ul);
+ if(d.maybe&&d.maybe.length){b.append($('h4','Maybeboard'));const mb=$('div');mb.className='gallist';d.maybe.forEach(x=>mb.append($('div',x)));b.append(mb)}
+ b.append($('h4','Kommentare ('+d.comments.length+')'));const cl=$('div');cl.id='galcoms';b.append(cl);
+ d.comments.forEach(c=>{const r=$('div');r.className='galcom';r.append($('b',c.user),$('small',c.at+' '));const tx=$('div',c.text);tx.style.whiteSpace='pre-wrap';r.append(tx);
+  if(c.can_delete){const x=$('button','löschen');x.type='button';x.className='mini';x.onclick=async()=>{await J('/api/gallery_comment_delete',{cid:c.id});galOpen(d.id)};r.append(x)}cl.append(r)});
+ if(!d.hidden){const ta=$('textarea');ta.id='galctext';ta.rows=2;ta.maxLength=500;ta.style.width='100%';ta.placeholder='Kommentar schreiben (höchstens 500 Zeichen)';
+  const sb=$('button','💬 Kommentieren');sb.type='button';sb.id='galcsend';const em=$('span');
+  sb.onclick=async()=>{const r=await J('/api/gallery_comment',{id:d.id,text:ta.value});if(r.error)em.textContent=' '+r.error;else{galOpen(d.id);galSearch()}};b.append(ta,sb,em)}}
+MEP.then(m=>{document.querySelectorAll('.srvonly').forEach(x=>x.hidden=!m.server);
+ if(!m.server){const a=document.querySelector('#mobmore a[data-v=galerie]');if(a)a.hidden=true}});
 
 // Probehand und Starthand-Statistik (London-Mulligan)
 function libraryCards(){return deck.groups.filter(g=>g.name!='Commander').flatMap(g=>g.cards.flatMap(c=>Array(c.qty).fill(c)))}
@@ -4938,9 +5014,12 @@ async function myDecks(list){list=list||await J('/api/decks');
   const bv=$('button','Versionen');bv.type='button';bv.onclick=()=>versionsDialog(d.id);
   const bs=$('button',d.shared?'🔗 Geteilt':'Teilen');bs.type='button';bs.onclick=()=>shareDialog(d);
   const bx=$('button','📤 Senden');bx.type='button';bx.className='dsend';bx.onclick=()=>sendDialog(d);
+  const bp=$('button',d.public?'🌍 Veröffentlicht':'🌍 Veröffentlichen');bp.type='button';bp.className='dpub srvonly';bp.hidden=!ME.server;
+  bp.title=d.public?'Steht in der Galerie – antippen, um es zurückzuziehen':'In die öffentliche Galerie dieses Servers stellen';
+  bp.onclick=async()=>{const r=await J('/api/deck_public',{id:d.id,on:d.public?0:1});if(r.error){bp.textContent='⚠ '+r.error;return}myDecks()};
   const b3=$('button','Löschen');b3.type='button';
   b3.onclick=async()=>{if(b3.textContent!='Wirklich?'){b3.textContent='Wirklich?';return}myDecks(await J('/api/deck_delete',{id:d.id}))};
-  a.append(b1,b2,bv,bs,bx,b3);
+  a.append(b1,b2,bv,bs,bx,bp,b3);
   const ch=$('button',d.name);ch.type='button';ch.title=d.commander||'';ch.onclick=async()=>useOpp(await get());c.append(ch)}}
 myDecks();oppInfo();
 // ---- Decks senden: im Server-Betrieb an andere Benutzer (Postfach), sonst als Link an eine andere Manaschmiede
@@ -5436,12 +5515,13 @@ async function rules(q){const o=E('rres');o.textContent='Suche ...';
   d.append(b);richText(d,x.text,words);o.append(d)})}
 E('rf').onsubmit=e=>{e.preventDefault();rules(E('rq').value.trim())};
 // Tabs der Seite (über die Adresse #name erreichbar, Zurück-Taste funktioniert)
-let rulesLoaded=false;const PAGES=['willkommen','neu','deck','gegner','decks','sammlung','spieltisch','suche','regeln'];
+let rulesLoaded=false;const PAGES=['willkommen','neu','deck','gegner','decks','galerie','sammlung','spieltisch','suche','regeln'];
 function showView(v){if(v=='start')v='deck';if(!PAGES.includes(v))v='willkommen';
  document.querySelectorAll('section.page').forEach(x=>x.hidden=x.id!='v-'+v);
  document.querySelectorAll('#mainnav a[data-v]').forEach(a=>{a.classList.toggle('on',a.dataset.v==v);a.setAttribute('aria-selected',a.dataset.v==v)});markMobNav(v);
  document.body.dataset.page=v;
  if(v=='regeln'&&!rulesLoaded){rulesLoaded=true;rules('')}
+ if(v=='galerie'){galInit();galSearch()}
  if(v=='spieltisch'){tableSetup();tableGame();J('/api/games').then(tableStats)}
  if(v=='gegner'){const ok=!!(deck&&!deck.error);E('nogegner').hidden=ok;E('cmpbox').style.display=ok?'block':'none'}}
 function goTab(v){if(location.hash!='#'+v)location.hash=v;else showView(v)}
@@ -5641,6 +5721,202 @@ def inbox_accept(con, iid, uid, new_name=""):
     return {"ok": True, "name": name, "decks": deck_list(con, uid)}
 
 
+# ---------------------------------------------------------------- Öffentliche Deck-Galerie
+def gallery_tables(con):
+    decks_table(con)
+    con.execute("CREATE TABLE IF NOT EXISTS deck_likes(deck_id INTEGER, uid INTEGER, PRIMARY KEY(deck_id, uid))")
+    con.execute("CREATE TABLE IF NOT EXISTS deck_comments(id INTEGER PRIMARY KEY, deck_id INTEGER, uid INTEGER, uname TEXT, "
+                "text TEXT, at TEXT)")
+
+
+def deck_meta(con, commander, lst, extra):
+    """Kennzahlen für die Galerie: Farben, Wert, Kartenzahl, Game Changer, Themen (aus den Tags)."""
+    con.row_factory = sqlite3.Row
+    ent, _ = entries_from_list(con, lst, commander)
+    cmds = resolve_cmds(con, commander)
+    src = cmds if cmds else [r for r, _ in ent]
+    ci = "".join(x for x in ORDER if any(x in (r["color_identity"] or "") for r in src))
+    eur = sum((float(r["eur"]) if r["eur"] not in (None, "") else 0) * q for r, q in ent if not r["type_line"].startswith("Basic"))
+    gc = sum(q for r, q in ent if r["game_changer"])
+    tags = {}
+    try:
+        for v in (json.loads(extra or "{}").get("tags") or {}).values():
+            for t in v:
+                tags[t] = tags.get(t, 0) + 1
+    except Exception:
+        pass
+    themes = [t for t, _ in sorted(tags.items(), key=lambda x: -x[1])[:6]]
+    img = cmds[0]["image"] if cmds and cmds[0]["image"] else ""
+    con.row_factory = None
+    return {"ci": ci or "C", "eur": round(eur, 2), "cards": sum(q for _, q in ent), "gc": gc, "themes": themes, "image": img}
+
+
+def deck_public(con, did, on, uid=0):
+    gallery_tables(con)
+    r = con.execute("SELECT commander, list, extra, public FROM decks WHERE id = ? AND owner = ?", (did, uid)).fetchone()
+    if not r:
+        return {"error": "Deck nicht gefunden."}
+    if on:
+        meta = deck_meta(con, r[0], r[1], r[2])
+        if meta["cards"] < 10:
+            return {"error": "Das Deck hat zu wenige Karten für die Galerie."}
+        con.execute("UPDATE decks SET public = 1, pub_at = CASE WHEN public = 1 AND pub_at <> '' THEN pub_at ELSE ? END, pub_meta = ? "
+                    "WHERE id = ?", (datetime.datetime.now().isoformat(sep=" ", timespec="minutes"), json.dumps(meta), did))
+    else:
+        con.execute("UPDATE decks SET public = 0 WHERE id = ?", (did,))
+    con.commit()
+    return {"ok": True, "public": bool(on)}
+
+
+def gallery_refresh(con, owner, name):
+    """Nach dem Speichern eines veröffentlichten Decks die Kennzahlen neu berechnen."""
+    gallery_tables(con)
+    r = con.execute("SELECT id, commander, list, extra FROM decks WHERE owner = ? AND name = ? AND public = 1", (owner, name)).fetchone()
+    if r:
+        con.execute("UPDATE decks SET pub_meta = ? WHERE id = ?", (json.dumps(deck_meta(con, r[1], r[2], r[3])), r[0]))
+        con.commit()
+
+
+def gallery_list(con, p, uid=0, admin=False):
+    g = lambda k: (p.get(k) or [""])[0].strip()
+    gallery_tables(con); users_tables(con)
+    rows = con.execute("SELECT d.id, d.name, d.commander, d.pub_at, d.pub_meta, d.hidden, d.owner, coalesce(u.name, 'lokal'), d.extra, "
+                       "(SELECT count(*) FROM deck_likes l WHERE l.deck_id = d.id), "
+                       "(SELECT count(*) FROM deck_likes l WHERE l.deck_id = d.id AND l.uid = ?), "
+                       "(SELECT count(*) FROM deck_comments c WHERE c.deck_id = d.id) "
+                       "FROM decks d LEFT JOIN users u ON u.id = d.owner WHERE d.public = 1" + ("" if admin else " AND d.hidden = 0"),
+                       (uid,)).fetchall()
+    q = g("q").lower()
+    cols = "".join(x for x in g("ci").upper() if x in "WUBRGC")
+    mode = g("cimode") or "within"
+    maxeur = float(g("maxeur").replace(",", ".") or 0) if re.fullmatch(r"[\d.,]*", g("maxeur")) else 0
+    gcmax = g("gc")
+    out = []
+    for i, n, c, at, meta, hid, own, oname, extra, likes, mine, ncom in rows:
+        try:
+            m = json.loads(meta or "{}")
+        except Exception:
+            m = {}
+        dci = m.get("ci", "")
+        if q:
+            hay = " ".join([n or "", c or "", oname or "", " ".join(m.get("themes") or [])]).lower()
+            try:
+                hay += " " + (json.loads(extra or "{}").get("notes") or "")[:2000].lower()
+            except Exception:
+                pass
+            if not all(w in hay for w in q.split()):
+                continue
+        if cols:
+            want = set(cols) - {"C"} if cols != "C" else set()
+            have = set(dci) - {"C"}
+            if mode == "exact" and have != want or mode == "within" and not have <= want or mode == "contains" and not want <= have:
+                continue
+        if maxeur and (m.get("eur") or 0) > maxeur:
+            continue
+        if gcmax == "0" and m.get("gc"):
+            continue
+        if gcmax == "3" and (m.get("gc") or 0) > 3:
+            continue
+        out.append({"id": i, "name": n, "commander": c, "owner": oname, "mine": own == uid, "pub_at": at, "likes": likes,
+                    "liked": bool(mine), "comments": ncom, "hidden": bool(hid), **m})
+    srt = g("sort") or "new"
+    if srt == "likes":
+        out.sort(key=lambda x: (-x["likes"], x["pub_at"] or ""), reverse=False)
+    elif srt == "eur":
+        out.sort(key=lambda x: x.get("eur") or 0)
+    else:
+        out.sort(key=lambda x: x["pub_at"] or "", reverse=True)
+    return {"total": len(out), "decks": out[:60]}
+
+
+def gallery_deck(con, did, uid=0, admin=False):
+    gallery_tables(con); users_tables(con)
+    r = con.execute("SELECT d.id, d.name, d.commander, d.list, d.extra, d.pub_at, d.pub_meta, d.hidden, d.owner, coalesce(u.name, 'lokal') "
+                    "FROM decks d LEFT JOIN users u ON u.id = d.owner WHERE d.id = ? AND d.public = 1", (did,)).fetchone()
+    if not r or (r[7] and not admin):
+        return {"error": "Dieses Deck ist nicht (mehr) öffentlich."}
+    try:
+        ex = json.loads(r[4] or "{}")
+    except Exception:
+        ex = {}
+    com = [{"id": c[0], "user": c[1], "text": c[2], "at": c[3], "can_delete": admin or c[4] == uid or r[8] == uid}
+           for c in con.execute("SELECT id, uname, text, at, uid FROM deck_comments WHERE deck_id = ? ORDER BY id", (did,))]
+    likes = con.execute("SELECT count(*) FROM deck_likes WHERE deck_id = ?", (did,)).fetchone()[0]
+    liked = bool(con.execute("SELECT 1 FROM deck_likes WHERE deck_id = ? AND uid = ?", (did, uid)).fetchone())
+    try:
+        m = json.loads(r[6] or "{}")
+    except Exception:
+        m = {}
+    return {"id": r[0], "name": r[1], "commander": r[2], "list": r[3], "notes": ex.get("notes") or "", "maybe": ex.get("maybe") or [],
+            "extra": r[4] or "", "pub_at": r[5], "owner": r[9], "mine": r[8] == uid, "hidden": bool(r[7]), "likes": likes, "liked": liked,
+            "comments": com, **m}
+
+
+def gallery_like(con, did, uid):
+    gallery_tables(con)
+    if not con.execute("SELECT 1 FROM decks WHERE id = ? AND public = 1 AND hidden = 0", (did,)).fetchone():
+        return {"error": "Dieses Deck ist nicht öffentlich."}
+    if con.execute("SELECT 1 FROM deck_likes WHERE deck_id = ? AND uid = ?", (did, uid)).fetchone():
+        con.execute("DELETE FROM deck_likes WHERE deck_id = ? AND uid = ?", (did, uid))
+    else:
+        con.execute("INSERT INTO deck_likes VALUES(?,?)", (did, uid))
+    con.commit()
+    return {"ok": True, "likes": con.execute("SELECT count(*) FROM deck_likes WHERE deck_id = ?", (did,)).fetchone()[0],
+            "liked": bool(con.execute("SELECT 1 FROM deck_likes WHERE deck_id = ? AND uid = ?", (did, uid)).fetchone())}
+
+
+def gallery_comment(con, did, text, uid, uname):
+    gallery_tables(con)
+    text = (text or "").strip()
+    if not text:
+        return {"error": "Der Kommentar ist leer."}
+    if not con.execute("SELECT 1 FROM decks WHERE id = ? AND public = 1 AND hidden = 0", (did,)).fetchone():
+        return {"error": "Dieses Deck ist nicht öffentlich."}
+    if con.execute("SELECT count(*) FROM deck_comments WHERE deck_id = ?", (did,)).fetchone()[0] >= 200:
+        return {"error": "Zu diesem Deck gibt es schon 200 Kommentare."}
+    last = con.execute("SELECT at FROM deck_comments WHERE uid = ? ORDER BY id DESC LIMIT 1", (uid,)).fetchone()
+    now = datetime.datetime.now()
+    if SERVER and last and (now - datetime.datetime.fromisoformat(last[0])).total_seconds() < 5:
+        return {"error": "Bitte kurz warten, bevor du den nächsten Kommentar schreibst."}
+    con.execute("INSERT INTO deck_comments(deck_id, uid, uname, text, at) VALUES(?,?,?,?,?)",
+                (did, uid, uname, text[:500], now.isoformat(sep=" ", timespec="seconds")))
+    con.commit()
+    return {"ok": True}
+
+
+def gallery_comment_delete(con, cid, uid, admin=False):
+    gallery_tables(con)
+    r = con.execute("SELECT c.uid, d.owner FROM deck_comments c JOIN decks d ON d.id = c.deck_id WHERE c.id = ?", (cid,)).fetchone()
+    if not r or not (admin or uid in (r[0], r[1])):
+        return {"error": "Diesen Kommentar kannst du nicht löschen."}
+    con.execute("DELETE FROM deck_comments WHERE id = ?", (cid,))
+    con.commit()
+    return {"ok": True}
+
+
+def gallery_copy(con, did, uid, admin=False, new_name=""):
+    d = gallery_deck(con, did, uid, admin)
+    if d.get("error"):
+        return d
+    base = (new_name.strip() or d["name"])[:70]
+    name, k = base, 1
+    while con.execute("SELECT 1 FROM decks WHERE owner = ? AND name = ?", (uid, name)).fetchone():
+        k += 1
+        name = f"{base} (von {d['owner']})" if k == 2 else f"{base} (von {d['owner']}, {k - 1})"
+    con.execute("INSERT INTO decks(owner, name, commander, list, saved_at, note, extra) VALUES(?,?,?,?,?,?,?)",
+                (uid, name[:80], d["commander"], d["list"], datetime.datetime.now().isoformat(sep=" ", timespec="minutes"),
+                 f"Aus der Galerie von {d['owner']}", d["extra"]))
+    con.commit()
+    return {"ok": True, "name": name, "decks": deck_list(con, uid)}
+
+
+def gallery_hide(con, did, on):
+    gallery_tables(con)
+    con.execute("UPDATE decks SET hidden = ? WHERE id = ?", (1 if on else 0, did))
+    con.commit()
+    return {"ok": True, "hidden": bool(on)}
+
+
 def shared_text(tok):
     """Geteiltes Deck als Text (Forge-Format) – zum Importieren in einer anderen Manaschmiede."""
     if not re.fullmatch(r"[A-Za-z0-9_-]{8,40}", tok or ""):
@@ -5706,6 +5982,24 @@ class H(BaseHTTPRequestHandler):
                 if not SERVER or not self.user:
                     return {"error": "Senden an Benutzer gibt es nur im Server-Betrieb – hier bitte „Als Link senden“ nutzen."}
                 return deck_send(con, int(g("id") or 0), g("to"), g("msg"), uid, self.user["name"])
+            if path == "/api/deck_public":
+                return deck_public(con, int(g("id") or 0), g("on") == "1", uid)
+            if path == "/api/gallery":
+                return gallery_list(con, p, uid, admin)
+            if path == "/api/gallery_deck":
+                return gallery_deck(con, int(g("id") or 0), uid, admin)
+            if path == "/api/gallery_like":
+                return gallery_like(con, int(g("id") or 0), uid)
+            if path == "/api/gallery_comment":
+                return gallery_comment(con, int(g("id") or 0), g("text"), uid, self.user["name"] if self.user else "Ich")
+            if path == "/api/gallery_comment_delete":
+                return gallery_comment_delete(con, int(g("cid") or 0), uid, admin)
+            if path == "/api/gallery_copy":
+                return gallery_copy(con, int(g("id") or 0), uid, admin, g("name"))
+            if path == "/api/gallery_hide":
+                if not admin:
+                    return {"error": "Nur der Administrator kann Decks ausblenden."}
+                return gallery_hide(con, int(g("id") or 0), g("on") == "1")
             if path == "/api/inbox":
                 return inbox_list(con, uid) if SERVER else {"items": []}
             if path == "/api/inbox_accept":
@@ -5841,12 +6135,20 @@ class H(BaseHTTPRequestHandler):
             if path == "/api/decks":
                 return deck_list(con, uid)
             if path == "/api/deck_save":
-                return deck_save(p, uid)
+                r = deck_save(p, uid)
+                if r.get("ok"):
+                    gallery_refresh(con, uid, r["name"])
+                return r
             if path == "/api/deck_get":
                 return deck_get(con, int(g("id") or 0), uid) or {"error": "Deck nicht gefunden."}
             if path == "/api/deck_delete":
                 decks_table(con)
-                con.execute("DELETE FROM decks WHERE id = ? AND owner = ?", (int(g("id") or 0), uid))
+                gallery_tables(con)
+                did = int(g("id") or 0)
+                if con.execute("SELECT 1 FROM decks WHERE id = ? AND owner = ?", (did, uid)).fetchone():
+                    con.execute("DELETE FROM deck_likes WHERE deck_id = ?", (did,))
+                    con.execute("DELETE FROM deck_comments WHERE deck_id = ?", (did,))
+                con.execute("DELETE FROM decks WHERE id = ? AND owner = ?", (did, uid))
                 con.commit()
                 return deck_list(con, uid)
             if path == "/api/version":
