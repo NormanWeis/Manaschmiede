@@ -27,6 +27,8 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 40: Empfehlungen auch aus der Galerie (veröffentlichte Decks anderer Benutzer), Lückenanalyse für Ramp, Kartenziehen,
+            Removal und Board-Wipes mit passenden Karten, Filter „nur aus meiner Sammlung“ und Höchstpreis je Karte.
 Version 39: Öffentliche Deck-Galerie im Server-Betrieb: Decks veröffentlichen, Galerie mit Filtern (Commander, Farben,
             Preis, Game Changer, Thema), Decks kopieren, Herzchen und Kommentare, Administrator kann Decks ausblenden.
 Version 38: Testspielfeld zum Goldfischen (Kommandozone, Bibliothek, Friedhof, Exil, Spielmarken, Zähler, Rückgängig).
@@ -86,7 +88,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "39"
+APP_VERSION = "40"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -1177,6 +1179,36 @@ def frust_index(ent):
             "hint": "Eigene Schätzung aus dem Kartentext (keine EDHREC-Salt-Werte): wie sehr das Deck Mitspieler frustrieren kann."}
 
 
+ROLE_TARGETS = {  # Funktion: (Bezeichnung, Richtwert, Suchmuster im Kartentext)
+    "ramp": ("Ramp (Mana beschleunigen)", 10, ("add {", "add one mana", "add two mana", "basic land card")),
+    "draw": ("Kartenziehen", 10, ("draw a card", "draw two", "draw three")),
+    "removal": ("Gezieltes Removal", 8, ("destroy target", "exile target")),
+    "wipe": ("Board-Wipes", 3, ("destroy all", "exile all")),
+}
+
+
+WIPE_RE = re.compile(r"(destroy|exile) all (other )?(creatures|nonland permanents|nonland|permanents|artifacts|enchantments|"
+                     r"artifacts and enchantments|creatures and planeswalkers)|deals? \w+ damage to each (other )?creature|"
+                     r"all creatures get -\w+/-\w+|each player sacrifices (all|\w+) (creatures|nonland)")
+
+
+def role_ok(r, role):
+    """Strengere Prüfung für Vorschläge: Rituale sind kein Ramp, „exile all spells“ ist kein Board-Wipe."""
+    t, ty = (r["oracle_text"] or "").lower(), front_type(r)
+    if role == "ramp":
+        if "Instant" in ty:
+            return False
+        if "Sorcery" in ty:
+            return "land card" in t
+        return "Land" not in ty
+    if role == "wipe":
+        return bool(WIPE_RE.search(t))
+    if role == "removal":
+        return bool(re.search(r"(destroy|exile) target (creature|nonland permanent|permanent|artifact|enchantment|planeswalker|"
+                              r"artifact or enchantment|creature or planeswalker)", t)) or "damage to any target" in t
+    return True
+
+
 def recommend(p, uid=0):
     """Ergänzungen und Streichkandidaten aus Precons, eigenen Decks, Spielprotokoll und dem Text des Commanders."""
     g = lambda k: (p.get(k) or [""])[0]
@@ -1198,6 +1230,19 @@ def recommend(p, uid=0):
     decks_table(con)
     for name, lst in con.execute("SELECT name, list FROM decks WHERE owner = ?", (uid,)):
         pools.append(("deck:" + name, set(list_counts(lst))))
+    gallery_tables(con)
+    ngal = 0
+    for name, lst in con.execute("SELECT name, list FROM decks WHERE public = 1 AND hidden = 0 AND owner <> ?", (uid,)):
+        pools.append(("galerie", set(list_counts(lst))))
+        ngal += 1
+    owned = owned_map(con, uid)
+    only_owned = g("owned") == "1"
+    try:
+        maxeur = float(g("maxeur").replace(",", ".")) if g("maxeur").strip() else 0
+    except ValueError:
+        maxeur = 0
+    def price_ok(r):
+        return not maxeur or (r["eur"] not in (None, "") and float(r["eur"]) <= maxeur) or r["name"] in owned
     # Siegquoten eigener Decks aus dem Spielprotokoll
     games_table(con)
     rate = {}
@@ -1225,7 +1270,7 @@ def recommend(p, uid=0):
         sims.append(sim)
         for n in cards - have:
             co[n] = co.get(n, 0) + sim * idf(n)
-            origin.setdefault(n, set()).add("Precons" if kind == "precon" else "eigenen Decks")
+            origin.setdefault(n, set()).add({"precon": "Precons", "galerie": "Galerie-Decks"}.get(kind, "eigenen Decks"))
         for n in shared:
             support[n] += sim
     terms, labels, tribal = synergy_terms(con, cmds) if cmds else ([], [], set())
@@ -1237,16 +1282,49 @@ def recommend(p, uid=0):
         r = con.execute("SELECT * FROM cards WHERE name = ? AND commander_legal = 1", (n,)).fetchone()
         if not r or "Land" in r["type_line"].split(" // ")[0] or any(x not in ci for x in r["color_identity"]):
             continue
+        if (only_owned and n not in owned) or not price_ok(r):
+            continue
         s_ = syn(r)
-        score = w * 3 + s_ * 1.5 + (1.5 if r["edhrec_rank"] and r["edhrec_rank"] < 3000 else 0)
+        score = w * 3 + s_ * 1.5 + (1.5 if r["edhrec_rank"] and r["edhrec_rank"] < 3000 else 0) + (1 if n in owned else 0)
         why = []
         if w:
             why.append("oft zusammen mit deinen Karten in " + " und ".join(sorted(origin.get(n, []))))
         if s_:
             why.append("passt zum Commander-Text")
         cand.append({"name": n, "score": round(score, 2), "why": "; ".join(why), "eur": r["eur"], "image": r["image"],
-                     "scryfall": r["scryfall_uri"], "mana": r["mana_cost"]})
+                     "scryfall": r["scryfall_uri"], "mana": r["mana_cost"], "owned": n in owned})
     cand.sort(key=lambda x: -x["score"])
+    # Lücken je Funktion (Richtwerte für 100-Karten-Commander) mit passenden Karten
+    cnt = {k: 0 for k in ROLE_TARGETS}
+    for r, q in ent:
+        for c in categories(r):
+            if c in cnt:
+                cnt[c] += q
+    gaps, taken = [], {x["name"] for x in cand[:15]}
+    comax = max(co.values()) if co else 1
+    for role, (label, target, likes) in ROLE_TARGETS.items():
+        if cnt[role] >= target:
+            continue
+        sql = ("SELECT * FROM cards WHERE commander_legal = 1 AND (" + " OR ".join("lower(oracle_text) LIKE ?" for _ in likes)
+               + ") ORDER BY CASE WHEN edhrec_rank IS NULL THEN 1 ELSE 0 END, edhrec_rank LIMIT 1500")
+        picks, seen = [], set()
+        for r in con.execute(sql, ["%" + x + "%" for x in likes]):
+            n = r["name"]
+            if n in have or n in seen or n in taken or role not in categories(r) or not role_ok(r, role) \
+                    or any(x not in ci for x in r["color_identity"]):
+                continue
+            if (only_owned and n not in owned) or not price_ok(r) or r["type_line"].startswith("Basic"):
+                continue
+            seen.add(n)
+            rk = r["edhrec_rank"] or 30000
+            sc = co.get(n, 0) / comax * 4 + min(syn(r), 3) + 6 * (1 - min(rk, 20000) / 20000) + (2 if n in owned else 0)
+            picks.append({"name": n, "score": round(sc, 2), "eur": r["eur"], "image": r["image"], "scryfall": r["scryfall_uri"],
+                          "mana": r["mana_cost"], "owned": n in owned})
+            if len(seen) >= 120:
+                break
+        picks.sort(key=lambda x: -x["score"])
+        taken |= {x["name"] for x in picks[:6]}
+        gaps.append({"role": role, "label": label, "have": cnt[role], "target": target, "cards": picks[:6]})
     # Streichkandidaten: wenig Rückhalt in ähnlichen Decks, wenig Synergie, wenig beliebt; nie Commander oder markierte Wincons
     tags = {}
     try:
@@ -1272,8 +1350,11 @@ def recommend(p, uid=0):
                      "scryfall": r["scryfall_uri"], "image": r["image"]})
     cuts.sort(key=lambda x: x["keep"])
     used = len(sims)
-    return {"add": cand[:15], "cut": cuts[:8], "compared": used, "frust": frust_index(ent), "labels": labels,
-            "hint": f"Grundlage: {used} ähnliche Decks (Precons und eigene gespeicherte Decks; gemeinsame seltene Karten zählen mehr als Allerweltskarten)"
+    return {"add": cand[:15], "cut": cuts[:8], "compared": used, "frust": frust_index(ent), "labels": labels, "gaps": gaps,
+            "counts": cnt, "gallery": ngal, "owned_filter": only_owned, "maxeur": maxeur,
+            "hint": f"Grundlage: {used} ähnliche Decks (Precons, eigene gespeicherte Decks"
+                    + (f" und {ngal} veröffentlichte Decks aus der Galerie" if ngal else "")
+                    + "; gemeinsame seltene Karten zählen mehr als Allerweltskarten)"
                     + (", Siegquoten aus dem Spielprotokoll" if rate else "") + " und der Text des Commanders. Ohne EDHREC-Daten."}
 
 
@@ -3385,7 +3466,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 39)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 40)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -3526,6 +3607,7 @@ body.printing>*:not(#printarea){display:none!important}
 #tfield.solo{height:min(62vh,640px)}body.mob #tfield.solo{height:calc(100vh - 290px);min-height:300px}
 @media (max-width:600px){#tfield .tcen{gap:2px;padding:2px 6px}#tfield .tcen button{min-width:28px;font-size:1em}#tfield .tz{font-size:1.6em}#tfield .tic button{padding:2px 7px;font-size:.85em}}body.mtg #tgame .pl{border-color:#a8843a;background:#241a12}
 #top{text-align:center;margin-top:8px}#top h2{margin-bottom:4px}.wotc{margin:0 0 10px;font-size:.95em}
+.recopt{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.owned{color:#3a9a4a;font-size:.85em}.recgap{margin:6px 0 10px}.recgcard{margin-left:14px}
 .galf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0 10px}.galci button{min-width:30px;padding:3px 6px;opacity:.45}.galci button.on{opacity:1;outline:2px solid #a8843a}
 .galgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.galcard{border:1px solid #a8843a;border-radius:10px;overflow:hidden;cursor:pointer;background:rgba(0,0,0,.18);display:flex;flex-direction:column}
 .galcard .gimg{height:110px;background:#2a1f15 center 22%/cover no-repeat}.galcard .gb{padding:7px 9px;flex:1}.galcard .gn{font-weight:bold}.galcard .gm{font-size:.86em;opacity:.85;margin-top:3px}
@@ -3724,7 +3806,8 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>↓ Maybe / Maybeboard:</b> Kandidaten, die (noch) nicht ins Deck zählen. Mit „↑ ins Deck“ holst du sie zurück; das Feld darüber nimmt neue Kandidaten auf.</li>
 <li><b>Tokens und Spielmaterial:</b> listet alle Tokens, die Karten des Decks erzeugen, mit der erzeugenden Karte.</li>
 <li><b>🖨 Proxys drucken:</b> öffnet eine Druckansicht mit Kartenbildern in Originalgröße (9 je A4-Seite). Optional nur die Karten, die in deiner Sammlung fehlen, mit Tokens und „PROXY“-Vermerk. Mit „Drucken / als PDF speichern“ entsteht eine PDF-Datei. Beim Drucken „Tatsächliche Größe“ bzw. 100 % wählen. Nur zum privaten Testen.</li>
-<li><b>💡 Empfehlungen:</b> sucht ähnliche Decks (Precons und deine gespeicherten Decks mit mindestens drei gemeinsamen Karten) und schlägt Karten vor, die dort oft mit deinen Karten zusammen gespielt werden oder zum Commander-Text passen. „Streichen erwägen“ nennt Karten mit wenig Rückhalt; mit 🏷 „Wincon“ oder „Combo“ markierte Karten werden nie vorgeschlagen. Decks mit guter Siegquote im Spielprotokoll zählen stärker.</li>
+<li><b>💡 Empfehlungen – Lücken und Filter:</b> Unter „Lücken nach Funktion“ zählt das Programm Ramp, Kartenziehen, gezieltes Removal und Board-Wipes und vergleicht mit Richtwerten (etwa 10 / 10 / 8 / 3). Fehlt etwas, stehen je Funktion sechs passende, verbreitete Karten in deinen Farben darunter (➕ fügt sie ein). „nur aus meiner Sammlung“ zeigt nur Karten, die du besitzt; „höchstens … € je Karte“ setzt eine Preisgrenze (eigene Karten gelten als kostenlos). Im Server-Betrieb fließen auch die veröffentlichten Galerie-Decks der anderen Benutzer ein.</li>
+<li><b>💡 Empfehlungen:</b> sucht ähnliche Decks (Precons, deine gespeicherten Decks und im Server-Betrieb die Galerie mit mindestens drei gemeinsamen Karten) und schlägt Karten vor, die dort oft mit deinen Karten zusammen gespielt werden oder zum Commander-Text passen. „Streichen erwägen“ nennt Karten mit wenig Rückhalt; mit 🏷 „Wincon“ oder „Combo“ markierte Karten werden nie vorgeschlagen. Decks mit guter Siegquote im Spielprotokoll zählen stärker.</li>
 <li><b>Frust-Index:</b> eigene Schätzung aus dem Kartentext, wie sehr ein Deck Mitspieler ärgern kann (Massen-Landzerstörung, Extra-Züge, Stax, Diebstahl, Gegenzauber, Tutoren, Game Changer). Er ersetzt die Salt-Werte von EDHREC, für die es keine offizielle Schnittstelle gibt.</li>
 <li><b>Preisentwicklung:</b> bei jeder Kartenaktualisierung (einmal täglich beim Start) werden geänderte Preise gesichert. Das Deck zeigt seinen Wert über die Zeit und die Karten mit den größten Änderungen der letzten 30 Tage.</li>
 <li><b>Notizen / Primer:</b> freier Text zum Deck. Tags, Maybeboard und Notizen werden mit dem Deck gespeichert und beim Laden wiederhergestellt.</li>
@@ -4114,7 +4197,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='39';
+const PAGE_VERSION='40';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -4242,9 +4325,12 @@ function cardsOut(o,groups,edit){
 }
 // ---- Maybeboard, Tags, Notizen
 function recBox(o){const hh=$('h4','Empfehlungen, Streichvorschläge und Frust-Index');hh.append(qBtn('anpassen'));o.append(hh);
- const b=$('button','💡 Empfehlungen berechnen');b.type='button';b.id='recbtn';const res=$('div');o.append(b,res);
+ const b=$('button','💡 Empfehlungen berechnen');b.type='button';b.id='recbtn';const res=$('div');
+ const ow=$('input');ow.type='checkbox';ow.id='recowned';const lo=$('label');lo.append(ow,' nur aus meiner Sammlung');
+ const me=$('input');me.id='receur';me.size=5;me.inputmode='decimal';me.placeholder='€';const lm=$('label');lm.append(' höchstens ',me,' € je Karte');
+ const opt=$('div');opt.className='recopt';opt.append(b,' ',lo,' ',lm);o.append(opt,res);
  b.onclick=async()=>{res.innerHTML='';P(res,'rechne ...','hint');
-  const r=await J('/api/recommend',{list:deck.export,commander:deck.commander||'',extra:JSON.stringify(deckExtra())});res.innerHTML='';
+  const r=await J('/api/recommend',{list:deck.export,commander:deck.commander||'',extra:JSON.stringify(deckExtra()),owned:ow.checked?1:0,maxeur:me.value});res.innerHTML='';
   if(r.error){P(res,r.error,'warn');return}
   const f=r.frust;P(res,'Frust-Index: '+f.level+' ('+String(f.score).replace('.',',')+' Punkte)'+(f.hits.length?' – '+f.hits.map(h=>h.label+': '+h.cards.length).join(', '):''),'big');
   if(f.hits.length){const d=$('details');d.append($('summary','Karten dazu'));f.hits.forEach(h=>d.append($('div',h.label+': '+h.cards.join(', '))));res.append(d)}
@@ -4253,10 +4339,21 @@ function recBox(o){const hh=$('h4','Empfehlungen, Streichvorschläge und Frust-I
   const list=(title,items,act)=>{const c=$('div');c.id=title.startsWith('Ergänzen')?'recadd':'reccut';c.append($('h4',title));
    if(!items.length)P(c,'Keine Vorschläge – zu wenig ähnliche Decks.','hint');
    items.forEach(x=>{const r=$('div');r.append(cardName(x.name,x.scryfall,x.image),' ',manaEl(x.mana||''),x.eur!=null?'  · '+Number(x.eur).toFixed(2)+' €':'');
+    if(x.owned){const ok=$('span',' ✓ Sammlung');ok.className='owned';r.append(ok)}
     const w=$('div',x.why);w.className='hint';r.append(act(x),w);c.append(r)});cols.append(c)};
   list('Ergänzen',r.add,x=>{const bt=$('button','➕');bt.type='button';bt.className='sw';bt.title='ins Deck';bt.onclick=()=>addCardToDeck(x.name);return bt});
   list('Streichen erwägen',r.cut,x=>{const bt=$('button','↓ Maybe');bt.type='button';bt.className='sw';bt.title='ins Maybeboard';
    bt.onclick=()=>{const gi=deck.groups.findIndex(g=>g.cards.some(c=>c.name==x.name));if(gi>=0)toMaybe(gi,deck.groups[gi].cards.findIndex(c=>c.name==x.name))};return bt});
+  if(r.gaps){const gb=$('div');gb.id='recgaps';res.append(gb);gb.append($('h4','Lücken nach Funktion'));
+   const ok=Object.entries(r.counts||{}).filter(([k])=>!r.gaps.some(g=>g.role==k));
+   if(!r.gaps.length)P(gb,'Ramp, Kartenziehen, Removal und Board-Wipes erreichen die Richtwerte (10 / 10 / 8 / 3).','hint');
+   r.gaps.forEach(g=>{const d=$('div');d.className='recgap';d.dataset.role=g.role;
+    d.append($('b',g.label+': '+g.have+' von etwa '+g.target),$('span',' – es fehlen '+(g.target-g.have)));
+    if(!g.cards.length)P(d,r.owned_filter?'Keine passende Karte in deiner Sammlung.':'Keine passende Karte gefunden'+(r.maxeur?' (Preisgrenze)':'')+'.','hint');
+    g.cards.forEach(x=>{const row=$('div');row.className='recgcard';row.append(cardName(x.name,x.scryfall,x.image),' ',manaEl(x.mana||''),x.eur!=null?'  · '+Number(x.eur).toFixed(2)+' €':'');
+     if(x.owned){const o2=$('span',' ✓ Sammlung');o2.className='owned';row.append(o2)}
+     const bt=$('button','➕');bt.type='button';bt.className='sw';bt.title='ins Deck';bt.onclick=()=>{addCardToDeck(x.name);bt.disabled=true};row.append(' ',bt);d.append(row)});gb.append(d)});
+   P(gb,'Richtwerte für 100-Karten-Commander-Decks; je nach Strategie (z. B. viel Ramp beim Landfall, wenig Wipes bei Kreaturendecks) bewusst abweichen.','hint')}
   P(res,r.hint,'hint')}}
 async function priceBox(o){const r=await J('/api/price_history',{list:deck.export,commander:deck.commander||''});if(r.error)return;
  o.append($('h4','Preisentwicklung'));if(!r.days.length){P(o,r.hint,'hint');return}
