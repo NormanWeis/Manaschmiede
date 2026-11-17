@@ -17,7 +17,7 @@ Das fertige Image liegt in der GitHub Container Registry:
 
 | Tag | Inhalt |
 |---|---|
-| `ghcr.io/normanweis/manaschmiede:32` | Version 32 (fest) |
+| `ghcr.io/normanweis/manaschmiede:33` | Version 32 (fest) |
 | `ghcr.io/normanweis/manaschmiede:latest` | immer die neueste gebaute Version |
 
 Enthalten: Ubuntu 24.04, Python 3.12, Java 17, Xvfb und Forge 2.0.16 – für x86_64-/amd64-Server.
@@ -38,7 +38,7 @@ docker run -d --name manaschmiede --restart unless-stopped \
   -e CDB_ADMIN_PASSWORD='ein-langes-eigenes-passwort' \
   -e CDB_MAX_DUELS=1 -e CDB_MAX_GAMES=20 \
   --memory 4g \
-  ghcr.io/normanweis/manaschmiede:32
+  ghcr.io/normanweis/manaschmiede:33
 ```
 - Aufruf: `http://SERVER-IP:8000`, Anmeldung mit dem Admin-Zugang.
 - Alle Daten (Kartendaten, Decks, Benutzer) liegen im Volume `manaschmiede_data` und bleiben bei Updates erhalten.
@@ -117,7 +117,7 @@ Regeln, Precons und Kartendaten aktualisieren sich bei jedem Start automatisch; 
 ## Einstellungen (.env)
 | Variable | Bedeutung | Standard |
 |---|---|---|
-| `CDB_IMAGE` | verwendetes Docker-Image | `ghcr.io/normanweis/manaschmiede:32` |
+| `CDB_IMAGE` | verwendetes Docker-Image | `ghcr.io/normanweis/manaschmiede:33` |
 | `CDB_DOMAIN`, `ACME_EMAIL` | Domain und E-Mail für HTTPS | – |
 | `CDB_ADMIN_USER`, `CDB_ADMIN_PASSWORD` | Admin wird bei jedem Start angelegt/gesetzt | – |
 | `CDB_MAX_DUELS` | gleichzeitige Forge-Duelle (weitere warten in einer Schlange) | 1 |

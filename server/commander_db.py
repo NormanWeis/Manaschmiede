@@ -17,6 +17,8 @@ Version 3: Deckansicht mit Kartenbildern, Vergleich mit offiziellen Commander-Pr
 (Decklisten: github.com/taw/magic-preconstructed-decks-data, auch Grundlage von mtg.wtf/MTGJSON).
 Version 4: Karten gezielt tauschen oder entfernen (mit Alternativen gleicher Aufgabe), Option ohne
 Game Changer, Liste nicht verfügbarer Karten, bessere Ramp-Erkennung.
+Version 33: Spieltisch mit Tischansicht im Stil von Lebenszähler-Apps (große Felder je Spieler, Tippen links/rechts,
+  Halten für ±10, Kartenbild des Commanders als Hintergrund, Vollbild); die Tabellenansicht bleibt umschaltbar.
 Version 32: Neuer Name „Manaschmiede“ (Titel, Willkommensseite, Web-App, Android-App).
 Version 31: Forge-Duell auch als Runde zu dritt (dein Deck gegen zwei Gegner).
 Version 30: Dauerscan – Karten nacheinander vor die Kamera halten, jede erkannte Karte landet automatisch in der Scanliste
@@ -71,7 +73,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "32"
+APP_VERSION = "33"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -3202,7 +3204,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 32)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 33)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -3308,7 +3310,32 @@ body.printing>*:not(#printarea){display:none!important}
 #tgame .pl{display:inline-block;vertical-align:top;border:2px solid #999;border-radius:10px;padding:8px;margin:4px;min-width:220px;text-align:center}
 #tgame .pl.out{opacity:.45;border-style:dashed}#tgame .life{font-size:3em;font-weight:bold;line-height:1.1}
 #tgame .pl button{min-width:44px;min-height:36px;margin:2px;font-size:1.05em}#tgame .cd{font-size:.9em;text-align:left;margin-top:4px}
-#tgame .cd button{min-width:30px;min-height:28px;padding:0}body.mtg #tgame .pl{border-color:#a8843a;background:#241a12}
+#tgame .cd button{min-width:30px;min-height:28px;padding:0}
+#tfield{-webkit-tap-highlight-color:transparent;position:relative;display:grid;gap:6px;height:min(80vh,780px);background:#0d0a08;padding:6px;border-radius:12px;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+#tfield:fullscreen{height:100vh;border-radius:0}#tfield .trow{display:grid;gap:6px;min-height:0}
+#tfield .tp{position:relative;border-radius:14px;overflow:hidden;color:#fff;background:#333 center/cover no-repeat;min-height:0;box-shadow:inset 0 0 0 2px rgba(255,255,255,.12)}
+#tfield .tp.act{box-shadow:inset 0 0 0 4px #f5d27a,0 0 14px rgba(245,210,122,.6)}#tfield .tp.out{filter:grayscale(1) brightness(.55)}
+#tfield .tp.pick{animation:tpick .35s ease-in-out 3}@keyframes tpick{50%{filter:brightness(1.8)}}
+#tfield .tpi{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.55))}
+#tfield .rot .tpi{transform:rotate(180deg)}
+#tfield .tpn{position:absolute;bottom:44px;left:0;right:0;text-align:center;font-weight:bold;text-shadow:0 1px 3px #000;font-size:clamp(.8em,2.2vh,1.2em);pointer-events:none}
+#tfield .tpn small{display:block;font-weight:normal;opacity:.85;font-size:.8em}
+#tfield .tl{font-size:clamp(2.2em,min(13vh,17vw),8em);font-weight:800;line-height:1;text-shadow:0 2px 8px #000;pointer-events:none;font-variant-numeric:tabular-nums}
+#tfield .tz{position:absolute;top:0;bottom:0;width:50%;display:flex;align-items:center;font-size:2.2em;opacity:.35;cursor:pointer}
+#tfield .tz.m{left:0;justify-content:flex-start;padding-left:4%}#tfield .tz.p{right:0;justify-content:flex-end;padding-right:4%}
+#tfield .tz:active{background:rgba(255,255,255,.08)}
+#tfield .tdl{position:absolute;top:18%;font-size:1.4em;font-weight:bold;text-shadow:0 1px 4px #000;pointer-events:none;opacity:0;transition:opacity .3s}
+#tfield .tdl.on{opacity:1}#tfield .tdl.neg{color:#ff8a80}#tfield .tdl.pos{color:#9cf29c}
+#tfield .tic{position:absolute;bottom:6px;left:0;right:0;display:flex;justify-content:center;gap:6px;z-index:2}
+#tfield .tic button{background:rgba(0,0,0,.55);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:16px;padding:3px 10px;font-size:.95em;min-height:30px}
+#tfield .tlost{position:absolute;top:62%;font-weight:bold;background:rgba(0,0,0,.6);padding:2px 10px;border-radius:8px;pointer-events:none}
+#tfield .tov{position:absolute;inset:0;background:rgba(10,8,6,.94);z-index:3;overflow:auto;padding:30px 10px 10px;text-align:center;font-size:.95em}
+#tfield .tov .r{display:flex;align-items:center;justify-content:center;gap:8px;margin:5px 0}
+#tfield .tov button{min-width:40px;min-height:34px;font-size:1.05em}#tfield .tov .x{position:absolute;top:4px;right:6px}
+#tfield .tcen{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;display:flex;gap:6px;align-items:center;background:rgba(20,15,11,.92);border:1px solid #a8843a;border-radius:22px;padding:4px 10px;color:#f1e3c6;white-space:nowrap}
+#tfield .tcen button{background:transparent;color:#f1e3c6;border:0;font-size:1.15em;min-width:34px;min-height:34px;cursor:pointer}
+#tgame .tvbar{margin:4px 0}
+@media (max-width:600px){#tfield .tcen{gap:2px;padding:2px 6px}#tfield .tcen button{min-width:28px;font-size:1em}#tfield .tz{font-size:1.6em}#tfield .tic button{padding:2px 7px;font-size:.85em}}body.mtg #tgame .pl{border-color:#a8843a;background:#241a12}
 #top{text-align:center;margin-top:8px}#top h2{margin-bottom:4px}.wotc{margin:0 0 10px;font-size:.95em}
 #mainnav{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:6px 0 12px}
 #mainnav a{padding:6px 12px;border:1px solid #bbb;border-radius:18px;text-decoration:none;color:inherit;background:#f4f4f4;cursor:pointer}
@@ -3425,7 +3452,8 @@ body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{o
 
 <h3 id=h-spieltisch>Spieltisch: Lebenszähler und Spielprotokoll</h3>
 <ul><li><b>Partie starten:</b> Spielerzahl (2–6) und Startleben wählen, Namen eintragen und je Spieler ein gespeichertes Deck auswählen oder frei eintippen.</li>
-<li><b>Zählen:</b> große Knöpfe für ±1 und ±5 Leben, Gift (ab 10 verloren) und Commander-Schaden je Gegner (ab 21 verloren). Wer verloren hat, wird ausgegraut. „Nächster Zug“ zählt die Runden. Der Stand bleibt beim Neuladen erhalten; am Handy bleibt der Bildschirm an.</li>
+<li><b>Tischansicht (Standard):</b> ein großes Feld je Spieler, die obere Reihe steht auf dem Kopf für die gegenüber Sitzenden (🔄 schaltet das ab). <b>Links tippen = −1, rechts tippen = +1, gedrückt halten = ±10</b> (wiederholt, solange der Finger liegt); die Änderung wird kurz angezeigt. Ist zum Spieler ein Deck mit Commander gespeichert oder ein Commander-Name eingetragen, erscheint dessen Kartenbild als Hintergrund. ☠/⚔ öffnet Gift, Commander-Schaden je Gegner, Monarch, „am Zug“ und Aufgeben. In der Mitte: 🎲 Startspieler auslosen, Zugzähler, ⏭ nächster Spieler, ⛶ Vollbild, 📋 Tabellenansicht.</li>
+<li><b>Tabellenansicht:</b> mit 📋 umschaltbar (🃏 wieder zurück, die Wahl wird gemerkt): Gift (ab 10 verloren) und Commander-Schaden je Gegner (ab 21 verloren). Wer verloren hat, wird ausgegraut. „Nächster Zug“ zählt die Runden. Der Stand bleibt beim Neuladen erhalten; am Handy bleibt der Bildschirm an.</li>
 <li><b>Partie beenden:</b> Sieger wählen (bleibt nur einer übrig, ist er vorausgewählt) und speichern. Die Statistik zeigt Partien, Siege und Siegquote je Deck und je Spieler sowie die letzten Partien.</li>
 <li><b>Forge-Ergebnisse:</b> nach einem Duell mit „Ins Spielprotokoll übernehmen“ zählen die KI-Partien mit (als „Forge“ gekennzeichnet).</li></ul>
 
@@ -3635,7 +3663,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='32';
+const PAGE_VERSION='33';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -4438,7 +4466,19 @@ async function tableSetup(){const o=E('tsetup');o.innerHTML='';if(tg){o.style.di
  o.append($('label','Spielerzahl: '),n,' ',$('label',' Startleben: '),lf,rows,dlist,go)}
 function lostWhy(p){if(p.conceded)return 'aufgegeben';if(p.life<=0)return 'Leben 0';if(p.poison>=10)return '10 Gift';
  const c=Object.entries(p.cmd).find(([k,v])=>v>=21);return c?'21 Commander-Schaden von '+tg.players[+c[0]].name:''}
+let tview='tisch';try{tview=localStorage.getItem('tableview')||'tisch'}catch(e){}
+const setTview=v=>{tview=v;try{localStorage.setItem('tableview',v)}catch(e){};tableGame()};
+// Farben ohne Kartenbild: nach Farbidentität des Commanders, sonst feste Reihenfolge
+const TCOL={W:'#c9b98f',U:'#2f6fae',B:'#3a3340',R:'#b5432f',G:'#3d7f45'},TPAL=['#7a3b8f','#2f6fae','#b5432f','#3d7f45','#a8843a','#4a5a6a'];
+const tArt={};async function tArtFor(p){const k=(p.deck||'').toLowerCase();if(!k)return null;if(k in tArt)return tArt[k];tArt[k]=null;
+ try{let cmd=p.deck;const dl=await J('/api/decks');const d=(Array.isArray(dl)?dl:(dl.decks||[])).find(x=>x.name.toLowerCase()==k);if(d&&d.commander)cmd=d.commander.split(' // ')[0].split(' + ')[0].trim();
+  const c=await J('/api/card?name='+encodeURIComponent(cmd));if(c&&c.name)tArt[k]={img:(c.image||'').replace('/normal/','/art_crop/'),ci:c.ci||''}}catch(e){}
+ return tArt[k]}
+function tPanelBg(el,p,i){el.style.backgroundColor=TPAL[i%TPAL.length];tArtFor(p).then(a=>{if(!a)return;
+ if(a.img)el.style.backgroundImage='url("'+a.img+'")';else if(a.ci){const cs=[...a.ci].map(c=>TCOL[c]).filter(Boolean);if(cs.length==1)el.style.backgroundColor=cs[0];else if(cs.length)el.style.backgroundImage='linear-gradient(135deg,'+cs.join(',')+')'}})}
 function tableGame(){const o=E('tgame');o.innerHTML='';if(!tg){keepAwake(false);return}keepAwake(true);
+ if(tview=='tisch'){tableTisch(o);return}
+ const vb=$('div');vb.className='tvbar';const tv=$('button','🃏 Tischansicht');tv.type='button';tv.id='tvtisch';tv.onclick=()=>setTview('tisch');vb.append(tv);o.append(vb);
  const bar=$('div');bar.append($('b','Zug '+tg.turn+' '));const nx=$('button','Nächster Zug');nx.type='button';nx.id='tnext';nx.onclick=()=>{tg.turn++;tgSave();tableGame()};bar.append(nx);o.append(bar);
  tg.players.forEach((p,i)=>{const d=$('div');const why=lostWhy(p);d.className='pl'+(why?' out':'');d.dataset.i=i;
   d.append($('b',p.name),p.deck?$('div',p.deck):'');const lv=$('div',String(p.life));lv.className='life';d.append(lv);
@@ -4450,7 +4490,8 @@ function tableGame(){const o=E('tgame');o.innerHTML='';if(!tg){keepAwake(false);
    r.append(bt('−',()=>{p.cmd[j]=Math.max(0,v-1);p.life++}),bt('+',()=>{p.cmd[j]=v+1;p.life--},'tcmd'));cd.append(r)});d.append(cd);
   if(why)d.append($('div','verloren: '+why));else d.append(bt('aufgeben',()=>p.conceded=true));
   o.append(d)});
- const alive=tg.players.map((p,i)=>[p,i]).filter(([p])=>!lostWhy(p));
+ tableEnd(o)}
+function tableEnd(o){const alive=tg.players.map((p,i)=>[p,i]).filter(([p])=>!lostWhy(p));
  const end=$('div');end.className='savebox';end.append($('b','Partie beenden: '));const ws=$('select');ws.id='twinner';
  const o0=$('option','kein Sieger / Unentschieden');o0.value=-1;ws.append(o0);tg.players.forEach((p,i)=>{const op=$('option',p.name);op.value=i;ws.append(op)});
  if(alive.length==1)ws.value=alive[0][1];const nt=$('input');nt.size=30;nt.placeholder='Notiz (optional)';nt.id='tnote';
@@ -4459,6 +4500,49 @@ function tableGame(){const o=E('tgame');o.innerHTML='';if(!tg){keepAwake(false);
   if(r.error){P(end,r.error,'warn');return}tg=null;tgSave();tableSetup();tableGame();tableStats(r)};
  const ab=$('button','Abbrechen ohne Speichern');ab.type='button';ab.onclick=()=>{if(ab.textContent!='Wirklich abbrechen?'){ab.textContent='Wirklich abbrechen?';return}tg=null;tgSave();tableSetup();tableGame()};
  end.append(ws,' ',nt,' ',sv,' ',ab);o.append(end)}
+// Tischansicht: ein großes Feld je Spieler; links tippen −1, rechts +1, halten ±10 (wiederholt)
+function tableTisch(o){const n=tg.players.length;if(tg.active==null)tg.active=0;if(tg.rot==null)tg.rot=true;
+ const f=$('div');f.id='tfield';const bot=Math.ceil(n/2),top=n-bot;
+ f.style.gridTemplateRows=top?'1fr 1fr':'1fr';
+ const mkRow=(idx,rot)=>{const r=$('div');r.className='trow'+(rot?' rot':'');r.style.gridTemplateColumns='repeat('+idx.length+',1fr)';idx.forEach(i=>r.append(tPanel(i)));return r};
+ const botIdx=[...Array(bot).keys()],topIdx=[...Array(top).keys()].map(k=>bot+k).reverse();
+ if(top)f.append(mkRow(topIdx,tg.rot));f.append(mkRow(botIdx,false));
+ const c=$('div');c.className='tcen';const cb=(t,ti,id,fn)=>{const b=$('button',t);b.type='button';b.title=ti;b.id=id;b.onclick=e=>{e.stopPropagation();fn()};return b};
+ const tn=$('b','Zug '+tg.turn);tn.id='tturn';
+ c.append(cb('🎲','Startspieler auslosen','tdice',()=>{const al=tg.players.map((p,i)=>i).filter(i=>!lostWhy(tg.players[i]));const k=al[Math.floor(Math.random()*al.length)];
+   tg.active=k;tgSave();tableGame();const el=document.querySelector('#tfield .tp[data-i="'+k+'"]');if(el)el.classList.add('pick')}),
+  tn,cb('⏭','Nächster Zug (nächster Spieler am Zug)','tnext',()=>{let k=tg.active;for(let s=0;s<n;s++){k=(k+1)%n;if(!lostWhy(tg.players[k]))break}tg.active=k;tg.turn++;tgSave();tableGame()}),
+  cb('🔄','obere Reihe drehen (gegenüber sitzend)','trot',()=>{tg.rot=!tg.rot;tgSave();tableGame()}),
+  cb('⛶','Vollbild','tfull',()=>{try{document.fullscreenElement?document.exitFullscreen():f.requestFullscreen()}catch(e){}}),
+  cb('📋','Tabellenansicht','tvliste',()=>{if(document.fullscreenElement)document.exitFullscreen();setTview('liste')}));
+ f.append(c);o.append(f);P(o,'Links tippen = −1, rechts tippen = +1, gedrückt halten = ±10. ☠/⚔ öffnet Gift, Commander-Schaden und weitere Zähler. 🎲 lost den Startspieler aus.','hint');
+ tableEnd(o)}
+function tPanel(i){const p=tg.players[i],why=lostWhy(p),d=$('div');d.className='tp'+(why?' out':'')+(tg.active==i?' act':'');d.dataset.i=i;tPanelBg(d,p,i);
+ const w=$('div');w.className='tpi';d.append(w);const nm=$('div',p.name+(tg.monarch==i?' 👑':''));nm.className='tpn';if(p.deck)nm.append($('small',p.deck));
+ const lv=$('div',String(p.life));lv.className='tl';const dl=$('div');dl.className='tdl';w.append(nm,lv,dl);
+ let acc=0,accT=null;const show=dv=>{acc+=dv;dl.textContent=(acc>0?'+':'')+acc;dl.className='tdl on '+(acc<0?'neg':'pos');clearTimeout(accT);accT=setTimeout(()=>{acc=0;dl.className='tdl'},1600)};
+ const change=dv=>{p.life+=dv;lv.textContent=p.life;show(dv);tgSave();const nw=!!lostWhy(p);if(nw!=d.classList.contains('out'))tableGame()};
+ [['m','−',-1],['p','+',1]].forEach(([cl,sym,sg])=>{const z=$('div',sym);z.className='tz '+cl;z.dataset.d=sg;let t=null,iv=null,held=false;
+  const stop=()=>{clearTimeout(t);clearInterval(iv);t=iv=null};
+  z.addEventListener('pointerdown',e=>{e.preventDefault();held=false;stop();t=setTimeout(()=>{held=true;change(10*sg);iv=setInterval(()=>change(10*sg),450)},500)});
+  z.addEventListener('pointerup',e=>{if(t||iv){const h=held;stop();if(!h)change(sg)}});
+  ['pointerleave','pointercancel'].forEach(ev=>z.addEventListener(ev,stop));z.addEventListener('contextmenu',e=>e.preventDefault());w.append(z)});
+ if(why){const l=$('div','💀 '+why);l.className='tlost';w.append(l)}
+ const ic=$('div');ic.className='tic';const cmax=Math.max(0,...Object.values(p.cmd));
+ const ib=(t,id,fn)=>{const b=$('button',t);b.type='button';b.className=id;b.onclick=e=>{e.stopPropagation();fn()};b.addEventListener('pointerdown',e=>e.stopPropagation());return b};
+ ic.append(ib('☠ '+p.poison,'tpo',()=>tOverlay(d,i)),ib('⚔ '+cmax,'tco',()=>tOverlay(d,i)));w.append(ic);return d}
+function tOverlay(d,i){const p=tg.players[i],w=d.querySelector('.tpi'),ov=$('div');ov.className='tov';
+ const x=$('button','✕');x.type='button';x.className='x';x.onclick=e=>{e.stopPropagation();tableGame()};ov.append(x,$('b',p.name));
+ const row=(lab,get,set,cls)=>{const r=$('div');r.className='r';const v=$('span',String(get()));v.style.minWidth='2em';
+  const b=(t,dv,c)=>{const bb=$('button',t);bb.type='button';if(c)bb.className=c;bb.onclick=e=>{e.stopPropagation();set(dv);v.textContent=get();tgSave()};return bb};
+  r.append($('span',lab),b('−',-1),v,b('+',1,cls));ov.append(r)};
+ row('☠ Gift',()=>p.poison,dv=>p.poison=Math.max(0,p.poison+dv),'tovpois');
+ ov.append($('div','⚔ Commander-Schaden erhalten von (zieht auch Leben ab):'));
+ tg.players.forEach((q,j)=>{if(j==i)return;row(q.name,()=>p.cmd[j]||0,dv=>{const v=p.cmd[j]||0;if(v+dv<0)return;p.cmd[j]=v+dv;p.life-=dv},'tovcmd')});
+ const r2=$('div');r2.className='r';const mo=$('button',tg.monarch==i?'👑 Monarch abgeben':'👑 Monarch');mo.type='button';mo.onclick=e=>{e.stopPropagation();tg.monarch=tg.monarch==i?null:i;tgSave();tableGame()};
+ const cq=$('button',p.conceded?'↩ Aufgabe zurücknehmen':'🏳 aufgeben');cq.type='button';cq.onclick=e=>{e.stopPropagation();p.conceded=!p.conceded;tgSave();tableGame()};
+ const ac=$('button','am Zug');ac.type='button';ac.onclick=e=>{e.stopPropagation();tg.active=i;tgSave();tableGame()};
+ r2.append(mo,cq,ac);ov.append(r2);ov.addEventListener('pointerdown',e=>e.stopPropagation());w.append(ov)}
 function tableStats(r){const o=E('tstats');o.innerHTML='';E('gamecount').textContent=r.count?'('+r.count+' Partien)':'';
  if(!r.count){P(o,'Noch keine Partien gespeichert.','hint');return}
  const tab=(title,list,id)=>{o.append($('div',title));const t=$('table');t.id=id;o.append(t);const hr=t.insertRow();['Name','Partien','Siege','Siegquote'].forEach(x=>hr.append($('th',x)));
@@ -4767,7 +4851,7 @@ class H(BaseHTTPRequestHandler):
             if path == "/api/card":
                 r, _ = lookup(con, g("name"), g("commander") == "1")
                 return {"name": r["name"], "ci": r["color_identity"], "can_be_commander": bool(r["can_be_commander"]),
-                        "legal": bool(r["commander_legal"])} if r else {}
+                        "legal": bool(r["commander_legal"]), "image": r["image"] or ""} if r else {}
             if path == "/api/info":
                 return {k: v for k, v in con.execute("SELECT key, value FROM meta")}
             if path == "/api/precons_all":
