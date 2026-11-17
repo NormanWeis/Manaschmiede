@@ -17,6 +17,8 @@ Version 3: Deckansicht mit Kartenbildern, Vergleich mit offiziellen Commander-Pr
 (Decklisten: github.com/taw/magic-preconstructed-decks-data, auch Grundlage von mtg.wtf/MTGJSON).
 Version 4: Karten gezielt tauschen oder entfernen (mit Alternativen gleicher Aufgabe), Option ohne
 Game Changer, Liste nicht verfügbarer Karten, bessere Ramp-Erkennung.
+Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
+  Magic- und Commander-Neulinge.
 Version 33: Spieltisch mit Tischansicht im Stil von Lebenszähler-Apps (große Felder je Spieler, Tippen links/rechts,
   Halten für ±10, Kartenbild des Commanders als Hintergrund, Vollbild); die Tabellenansicht bleibt umschaltbar.
 Version 32: Neuer Name „Manaschmiede“ (Titel, Willkommensseite, Web-App, Android-App).
@@ -73,7 +75,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "33"
+APP_VERSION = "34"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -362,6 +364,99 @@ def lookup(con, name, commander=False):
     r = con.execute(f"SELECT * FROM cards WHERE name = ? {pref}", (hits[0],)).fetchone()
     return r, f"„{name}“ nicht exakt gefunden – verwendet: {r['name']}."
 
+
+# Commander-Vorschläge ohne festen Commander: nach Farbidentität und/oder Thema (Text, Schlüsselwort, Kreaturtyp)
+TRIBES_DE = {"drache": "Dragon", "drachen": "Dragon", "elf": "Elf", "elfen": "Elf", "goblin": "Goblin", "goblins": "Goblin",
+             "vampir": "Vampire", "vampire": "Vampire", "zombie": "Zombie", "zombies": "Zombie", "engel": "Angel",
+             "dinosaurier": "Dinosaur", "dinos": "Dinosaur", "katze": "Cat", "katzen": "Cat", "ritter": "Knight",
+             "pirat": "Pirate", "piraten": "Pirate", "meervolk": "Merfolk", "schlange": "Snake", "schlangen": "Snake",
+             "spinne": "Spider", "spinnen": "Spider", "wolf": "Wolf", "wölfe": "Wolf", "werwolf": "Werewolf",
+             "werwölfe": "Werewolf", "elementar": "Elemental", "elementare": "Elemental", "krieger": "Warrior",
+             "zauberer": "Wizard", "dämon": "Demon", "dämonen": "Demon", "hydra": "Hydra", "hydren": "Hydra",
+             "eichhörnchen": "Squirrel", "ratte": "Rat", "ratten": "Rat", "soldat": "Soldier", "soldaten": "Soldier",
+             "menschen": "Human", "mensch": "Human", "schurke": "Rogue", "schurken": "Rogue", "kleriker": "Cleric",
+             "vögel": "Bird", "vogel": "Bird", "dämmerung": "Horror", "slivers": "Sliver", "sliver": "Sliver",
+             "eldrazi": "Eldrazi", "faerie": "Faerie", "feen": "Faerie", "riesen": "Giant", "riese": "Giant",
+             "zwerge": "Dwarf", "zwerg": "Dwarf", "hunde": "Dog", "hund": "Dog", "frösche": "Frog", "frosch": "Frog"}
+def theme_terms(theme):
+    """Liefert [(Beschreibung, SQL-Bedingung, Parameter)] für ein frei eingegebenes Thema (deutsch oder englisch)."""
+    out, t = [], theme.lower().strip()
+    if not t:
+        return out
+    key = ALIAS.get(t, t)
+    if key in THEMES:
+        words, typ = THEMES[key]
+        out.append((key.capitalize(), "(" + " OR ".join("lower(oracle_text) LIKE ?" for _ in words) + ")", [f"%{w.lower()}%" for w in words]))
+    for _rx, words, label in SYNERGY:
+        if label.lower() == t or label.lower().startswith(t) and len(t) >= 4:
+            out.append((label, "(" + " OR ".join("lower(oracle_text) LIKE ?" for _ in words) + ")", [f"%{w.lower()}%" for w in words]))
+    for w in re.split(r"[,\s]+", t):
+        if not w:
+            continue
+        sub = SUBTYPES or set()
+        eng = {st.lower(): st for st in sub}
+        eng.update({plural(st).lower(): st for st in sub})
+        tr = TRIBES_DE.get(w) or (eng.get(w) if len(w) >= 3 else None)
+        if tr:
+            out.append((f"Kreaturtyp {tr}", "(type_line LIKE ? OR oracle_text LIKE ?)", [f"%{tr}%", f"%{tr}%"]))
+    if not out:  # frei: Wort kommt im Regeltext oder in der Typzeile vor
+        ws = [w for w in re.split(r"[,\s]+", t) if len(w) >= 3]
+        if ws:
+            out.append((theme.strip(), "(" + " AND ".join("(lower(oracle_text) LIKE ? OR lower(type_line) LIKE ?)" for _ in ws) + ")",
+                        [x for w in ws for x in (f"%{w}%", f"%{w}%")]))
+    return out
+
+def suggest_commanders(p):
+    g = lambda k: (p.get(k) or [""])[0].strip()
+    ci = "".join(x for x in ORDER if x in g("ci").upper())
+    colorless = g("ci").upper() in ("C", "FARBLOS")
+    fewer, nogc, theme = g("fewer") == "1", g("nogc") == "1", g("theme")
+    maxeur = float(g("maxeur").replace(",", ".")) if re.fullmatch(r"\d+([.,]\d+)?", g("maxeur")) else 0
+    if not ci and not colorless and not theme:
+        return {"error": "Bitte eine Farbidentität oder ein Thema angeben."}
+    con = db()
+    con.row_factory = sqlite3.Row
+    try:
+        creature_subtypes(con)
+        where, args = ["can_be_commander = 1", "commander_legal = 1"], []
+        if nogc:
+            where.append("game_changer = 0")
+        if maxeur:
+            where.append("(eur IS NULL OR eur <= ?)"); args.append(maxeur)
+        terms = theme_terms(theme)
+        if theme and not terms:
+            return {"error": "Zum Thema wurde nichts gefunden – andere Begriffe probieren (z. B. Tokens, Drachen, Friedhof).", "cards": []}
+        rows = con.execute("SELECT * FROM cards WHERE " + " AND ".join(where), args).fetchall()
+        def ci_ok(r):
+            c = r["color_identity"] or ""
+            if colorless:
+                return c == ""
+            if not ci:
+                return True
+            return c == ci if not fewer else (c != "" and all(x in ci for x in c))
+        rows = [r for r in rows if ci_ok(r)]
+        hits, bonus = {}, {}
+        for label, cond, a in terms:
+            if label.startswith("Kreaturtyp "):  # Commander, deren Text den Typ nennt, sind die eigentlichen Stammes-Commander
+                for (nm,) in con.execute("SELECT name FROM cards WHERE can_be_commander = 1 AND oracle_text LIKE ?", (a[0],)):
+                    bonus[nm] = bonus.get(nm, 0) + 1
+            names = {x[0] for x in con.execute(f"SELECT name FROM cards WHERE can_be_commander = 1 AND {cond}", a)}
+            for r in rows:
+                if r["name"] in names:
+                    hits.setdefault(r["name"], []).append(label)
+        if theme:
+            rows = [r for r in rows if r["name"] in hits]
+        big = 10 ** 7
+        rows.sort(key=lambda r: (-len(hits.get(r["name"], [])), -bonus.get(r["name"], 0), r["edhrec_rank"] or big, r["name"]))
+        out = []
+        for r in rows[:int(g("limit") or 12)]:
+            txt = (r["oracle_text"] or "").replace("\n", " ")
+            out.append({"name": r["name"], "ci": r["color_identity"] or "", "type": r["type_line"], "image": r["image"] or "",
+                        "eur": r["eur"], "rank": r["edhrec_rank"], "gc": bool(r["game_changer"]),
+                        "why": hits.get(r["name"], []), "text": txt[:220] + ("…" if len(txt) > 220 else "")})
+        return {"cards": out, "total": len(rows), "ci": ci or ("C" if colorless else ""), "theme": theme}
+    finally:
+        con.close()
 
 def search(p):
     g = lambda k: (p.get(k) or [""])[0].strip()
@@ -3204,7 +3299,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 33)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 34)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -3343,7 +3438,27 @@ body.printing>*:not(#printarea){display:none!important}
 #mainnav{position:sticky;top:0;z-index:50;padding:6px 0}body:not(.mtg) #mainnav{background:#fff}body.mtg #mainnav{background:#140f0b}
 @media(max-width:700px){#mainnav{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;-webkit-overflow-scrolling:touch}#mainnav a{white-space:nowrap}}
 .hero{text-align:center;padding:28px 16px 18px;margin:8px auto 18px;max-width:860px;border-radius:16px;border:2px solid #bbb;background:linear-gradient(#fafafa,#eee)}
-.herot{font-size:2.1em;margin:.3em 0}.herosub{font-size:1.1em;max-width:640px;margin:0 auto 14px}
+.herot{font-size:2.1em;margin:.3em 0}
+.newbtn{display:inline-block;margin:10px auto 4px;padding:10px 18px;border-radius:24px;background:#2f7d3e;color:#fff!important;text-decoration:none;font-size:1.08em;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.newbtn:hover{background:#3b9a4d}#mainnav a.navneu{background:#2f7d3e;color:#fff}
+.guide{max-width:900px;margin:0 auto;line-height:1.5}.guide h3{margin-top:1.6em;border-bottom:2px solid #a8843a;padding-bottom:4px}
+.gcard{background:rgba(255,255,255,.55);border:1px solid #c9b78f;border-radius:10px;padding:10px 16px;margin:10px 0}
+body.mtg .gcard{background:rgba(30,22,16,.6);border-color:#6b5532}.gcard h4{margin:.2em 0 .4em}
+.gpick{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:12px 0}
+.gbtn{display:block;padding:12px;border-radius:10px;border:2px solid #a8843a;text-decoration:none;color:inherit;background:rgba(255,255,255,.5)}
+.gbtn b{display:block;font-size:1.08em}.gbtn span{font-size:.9em;opacity:.85}.gbtn.w{border-color:#c9b98f}.gbtn.u{border-color:#2f6fae}.gbtn.g{border-color:#3d7f45}.gbtn.r{border-color:#b5432f}
+body.mtg .gbtn{background:rgba(30,22,16,.6)}
+.gtab{border-collapse:collapse;width:100%}.gtab td,.gtab th{border-bottom:1px solid rgba(128,100,60,.35);padding:4px 8px;text-align:left;vertical-align:top}
+.gsteps li,.gbig li{margin:.35em 0}.gcol{list-style:none;padding-left:0}.gcol li{margin:.3em 0}
+.cibtns button,body.mtg .cibtns button{min-width:30px;height:30px;margin:0 2px;padding:0;border-radius:50%;border:2px solid transparent;opacity:.45;color:#111;font-weight:bold}
+body.mtg #mainnav a.navneu:not(.on):not([aria-selected=true]){background:#2f7d3e;color:#fff;border-color:#5fbf6f}
+.cibtns button.on,body.mtg .cibtns button.on{opacity:1;border-color:#f5d27a;box-shadow:0 0 6px #f5d27a}.cibtns button:disabled{opacity:.3}
+.csugbox{margin:12px 0;padding:10px 14px;border:1px dashed #a8843a;border-radius:10px}
+#csug .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-top:10px}
+#csug .cc{border:1px solid #c9b78f;border-radius:10px;padding:8px;background:rgba(255,255,255,.5);display:flex;flex-direction:column;gap:4px}
+body.mtg #csug .cc{background:rgba(30,22,16,.6);border-color:#6b5532}
+#csug .cc img{width:100%;border-radius:8px;aspect-ratio:626/457;object-fit:cover;background:#2a2018}#csug .cc .ctake{margin-top:auto}
+#csug .cc .why{font-size:.85em;color:#2f7d3e}body.mtg #csug .cc .why{color:#9cf29c}#csug .cc .tx{font-size:.82em;opacity:.85}.herosub{font-size:1.1em;max-width:640px;margin:0 auto 14px}
 #wquick input{font-size:1.1em;padding:8px 10px;width:min(440px,100%);box-sizing:border-box}#wquick .ac{display:inline-block;width:min(440px,100%)}#wquick button{font-size:1.1em;padding:8px 18px;margin-top:6px}
 .orbs{display:flex;justify-content:center;gap:12px}.orb{width:34px;height:34px;border-radius:50%;box-shadow:0 0 0 2px #0004 inset,0 2px 6px #0006}
 .orb.w{background:radial-gradient(circle at 35% 30%,#fffbe6,#e8dcae)}.orb.u{background:radial-gradient(circle at 35% 30%,#bfe3ff,#1f6fb5)}
@@ -3409,6 +3524,7 @@ body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{o
 <p>Alle Felder sind freiwillig – eine Angabe genügt.</p>
 <ul><li><b>Commander:</b> beim Tippen erscheinen Vorschläge; Tippfehler werden toleriert. Die Farbidentität wird automatisch übernommen. <b>Zwei Commander</b> (Partner, Hintergrund) mit „ + “ trennen, z. B. „Thrasios, Triton Hero + Tymna the Weaver“.</li>
 <li><b>Thema:</b> z. B. Mill, Lifegain, Tokens, Voltron – das Deck wird um dieses Thema herum gebaut.</li>
+<li><b>Noch kein Commander?</b> Lieblingsfarben über die Farbknöpfe (W U B R G ◇) anklicken und/oder ein Thema eintragen – deutsch oder englisch, z. B. „Drachen“, „Elfen“, „Tokens“, „Friedhof“, „Artefakte“, „Lebensgewinn“. „💡 Commander vorschlagen“ zeigt passende Commander mit Bild, Begründung und Regeltext, die beliebtesten zuerst. Normalerweise müssen die Farben genau passen; „auch mit weniger Farben“ zeigt zusätzlich Commander mit einem Teil der Farben. „Keine Game Changer“ und „Höchstpreis je Karte“ gelten auch hier. Mit „✔ Diesen Commander nehmen“ wird er übernommen. Wird ein Deck ohne Commander vorgeschlagen, erscheinen die Vorschläge automatisch.</li>
 <li><b>Farbidentität:</b> nur nötig, wenn du keinen Commander angibst (W = Weiß, U = Blau, B = Schwarz, R = Rot, G = Grün).</li>
 <li><b>Karten, die ins Deck sollen:</b> eigene Lieblingskarten, eine pro Zeile. Mit dem Feld darüber und Enter fügst du sie bequem hinzu.</li>
 <li><b>Keine Game Changer:</b> lässt besonders starke Karten weg – sinnvoll für entspannte Runden.</li>
@@ -3532,7 +3648,7 @@ body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{o
 <header id=top><h2>Manaschmiede</h2>
 <p class=wotc>Fan-Werkzeug für das Commander-Format von <b>Magic: The Gathering®</b> · Magic: The Gathering stammt von
 <a href="https://magic.wizards.com/de" target=_blank rel=noopener>Wizards of the Coast</a></p>
-<nav id=mainnav role=tablist><a href="#willkommen" data-v=willkommen>🏠 Willkommen</a><a href="#deck" data-v=deck>🛠 Deck bauen</a><a href="#gegner" data-v=gegner>⚔ Gegner &amp; Duell</a><a href="#decks" data-v=decks>📂 Meine Decks</a><a href="#sammlung" data-v=sammlung>📦 Sammlung</a><a href="#spieltisch" data-v=spieltisch>🎲 Spieltisch</a><a href="#suche" data-v=suche>🔎 Kartensuche</a><a href="#regeln" data-v=regeln>📖 Regeln</a></nav></header>
+<nav id=mainnav role=tablist><a href="#willkommen" data-v=willkommen>🏠 Willkommen</a><a href="#neu" data-v=neu class=navneu>🌱 Neu hier?</a><a href="#deck" data-v=deck>🛠 Deck bauen</a><a href="#gegner" data-v=gegner>⚔ Gegner &amp; Duell</a><a href="#decks" data-v=decks>📂 Meine Decks</a><a href="#sammlung" data-v=sammlung>📦 Sammlung</a><a href="#spieltisch" data-v=spieltisch>🎲 Spieltisch</a><a href="#suche" data-v=suche>🔎 Kartensuche</a><a href="#regeln" data-v=regeln>📖 Regeln</a></nav></header>
 <p class=info id=info></p>
 <div id=userbar class=hint></div>
 <div id=upd class=updbar>Prüfe auf Aktualisierungen ...</div>
@@ -3543,10 +3659,12 @@ body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{o
 <p class=herosub>Baue, teste und vergleiche deine Decks für das Commander-Format von <b>Magic: The Gathering</b> – 100 Karten, ein Commander und bis zu drei Gegner am Tisch.</p>
 <form id=wquick autocomplete=off><span class=ac><input id=wcmd placeholder="Mit welchem Commander möchtest du spielen?" size=40></span>
 <button class=primary>Deck bauen ✦</button></form>
-<p class=hint>Noch keine Idee? Einfach „Atraxa“, „Krenko“ oder „Edgar Markov“ eintippen – oder unten einen Bereich wählen.</p>
+<p class=hint>Noch keine Idee? Einfach „Atraxa“, „Krenko“ oder „Edgar Markov“ eintippen – oder <a href="#deck" id=wsug>💡 Commander nach Farbe und Thema vorschlagen lassen</a>.</p>
+<a href="#neu" class=newbtn>🌱 <b>Neu bei Magic oder Commander?</b> Hier in Ruhe starten – Grundlagen, erstes Deck, erste Partie</a>
 </div>
 <div id=recent></div>
 <div class=tiles>
+<a class="tile w" href="#neu"><span class=tt>Neu hier?</span><span class=ta>🌱</span><span class=tx>Magic und Commander von Grund auf: Karten, Zugablauf, Commander-Regeln, erstes Deck und erste Partie.</span></a>
 <a class="tile w" href="#deck"><span class=tt>Deck bauen</span><span class=ta>🛠</span><span class=tx>Der Assistent stellt ein vollständiges Deck zusammen – passend zu Commander, Budget und Sammlung. Danach frei anpassen.</span></a>
 <a class="tile r" href="#gegner"><span class=tt>Gegner &amp; Duell</span><span class=ta>⚔</span><span class=tx>Mit offiziellen Precons oder eigenen Decks vergleichen, Combos finden und KI-Partien mit Forge spielen lassen.</span></a>
 <a class="tile u" href="#decks"><span class=tt>Meine Decks</span><span class=ta>📂</span><span class=tx>Decks importieren (Moxfield, Archidekt, Dateien), speichern, Versionen vergleichen und teilen.</span></a>
@@ -3555,6 +3673,134 @@ body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{o
 <a class="tile c" href="#suche"><span class=tt>Kartensuche</span><span class=ta>🔎</span><span class=tx>Alle Commander-Karten nach Name, Text, Typ, Farbe und Manawert durchsuchen.</span></a>
 <a class="tile c" href="#regeln"><span class=tt>Regeln</span><span class=ta>📖</span><span class=tx>Die offiziellen Comprehensive Rules von Wizards of the Coast mit Suche und Glossar.</span></a>
 <a class="tile c" href="#" data-h=start><span class=tt>Hilfe</span><span class=ta>❓</span><span class=tx>Schritt für Schritt erklärt – auch für alle, die Commander noch nicht kennen.</span></a>
+</div>
+</section>
+<section id=v-neu class=page hidden>
+<div class=guide>
+<h2>🌱 Neu hier? So kommst du ins Spiel</h2>
+<p class=herosub style="margin-left:0">Du hast noch nie Magic gespielt oder kennst Magic, aber nicht Commander? Hier steht alles, was du für die erste Partie brauchst – in Ruhe zum Durchlesen, ohne Fachchinesisch.</p>
+<div class=gpick>
+<a href="#g-magic" class="gbtn w">✨ <b>Komplett neu bei Magic</b><span>Grundlagen: Karten, Mana, Zugablauf, Kampf</span></a>
+<a href="#g-commander" class="gbtn u">👑 <b>Neu bei Commander</b><span>Ich kenne Magic – was ist bei Commander anders?</span></a>
+<a href="#g-deck" class="gbtn g">🛠 <b>Mein erstes Deck</b><span>Fertiges Deck oder selbst bauen</span></a>
+<a href="#g-partie" class="gbtn r">🎲 <b>Die erste Partie</b><span>Schritt für Schritt vom Mischen bis zum Sieg</span></a>
+</div>
+
+<h3 id=g-magic>✨ Teil 1: Magic in zehn Minuten</h3>
+<div class=gcard><h4>Worum geht es?</h4>
+<p>Jede Person spielt mit einem eigenen Kartenstapel, dem <b>Deck</b>. Du spielst Länder, die dir <b>Mana</b> (die Energie für Zaubersprüche) geben, und mit diesem Mana wirkst du Kreaturen und Zauber. Ziel ist, dass die Gegner verlieren. Das passiert, wenn</p>
+<ul><li>ihre <b>Lebenspunkte auf 0</b> fallen (im Commander-Format startet jede Person mit 40),</li>
+<li>sie <b>10 Giftmarken</b> haben,</li>
+<li>sie eine Karte ziehen müssen, aber ihre <b>Bibliothek</b> (der Nachziehstapel) leer ist,</li>
+<li>oder eine Karte ausdrücklich sagt, dass jemand gewinnt oder verliert.</li></ul></div>
+
+<div class=gcard><h4>Die fünf Farben</h4>
+<p>Fast jede Karte gehört zu einer oder mehreren Farben. Jede Farbe hat ihren eigenen Stil:</p>
+<ul class=gcol>
+<li><span class="pip pW">W</span> <b>Weiß</b> – Ordnung und Gemeinschaft: viele kleine Kreaturen, Schutz, Lebenspunkte gewinnen, alles auf einmal zerstören.</li>
+<li><span class="pip pU">U</span> <b>Blau</b> – Wissen und Kontrolle: Karten ziehen, gegnerische Zauber verhindern, Dinge zurück auf die Hand schicken.</li>
+<li><span class="pip pB">B</span> <b>Schwarz</b> – Macht um jeden Preis: Kreaturen vernichten, Tote aus dem Friedhof zurückholen, Leben für Vorteile bezahlen.</li>
+<li><span class="pip pR">R</span> <b>Rot</b> – Feuer und Tempo: direkter Schaden, schnelle Angriffe, Chaos.</li>
+<li><span class="pip pG">G</span> <b>Grün</b> – Natur und Wachstum: große Kreaturen, zusätzliche Länder und viel Mana.</li>
+<li><span class="pip pC">◇</span> <b>Farblos</b> – Artefakte und manche Kreaturen passen in jedes Deck.</li></ul>
+<p>Das passende Land zu jeder Farbe: Ebene (Weiß), Insel (Blau), Sumpf (Schwarz), Gebirge (Rot), Wald (Grün).</p></div>
+
+<div class=gcard><h4>Kartenarten</h4>
+<table class=gtab>
+<tr><th>Art</th><th>Was sie tut</th></tr>
+<tr><td><b>Land</b></td><td>Gibt Mana. Du darfst <b>ein Land pro Zug</b> spielen, kostet nichts.</td></tr>
+<tr><td><b>Kreatur</b></td><td>Bleibt liegen und kann angreifen und blocken. Unten rechts stehen <b>Stärke/Widerstandskraft</b>, z. B. 3/2: macht 3 Schaden, stirbt bei 2 Schaden.</td></tr>
+<tr><td><b>Hexerei</b> (Sorcery)</td><td>Einmaliger Effekt, nur in deinem eigenen Zug, wenn sonst nichts passiert.</td></tr>
+<tr><td><b>Spontanzauber</b> (Instant)</td><td>Einmaliger Effekt, <b>jederzeit</b> – auch im Zug der anderen, als Reaktion.</td></tr>
+<tr><td><b>Artefakt</b> und <b>Verzauberung</b></td><td>Bleiben liegen und wirken dauerhaft, z. B. zusätzliches Mana oder ein laufender Vorteil.</td></tr>
+<tr><td><b>Planeswalker</b></td><td>Mächtige Verbündete mit Loyalität; einmal pro Zug eine ihrer Fähigkeiten nutzen. Können angegriffen werden.</td></tr>
+</table></div>
+
+<div class=gcard><h4>Mana und Kosten lesen</h4>
+<p>Oben rechts auf der Karte stehen die <b>Manakosten</b>. Beispiel: <span class=mana><span class="pip pC">2</span><span class="pip pG">G</span></span> heißt: ein grünes Mana und zwei beliebige weitere. Um ein Land zu nutzen, <b>tappst</b> du es (drehst es quer). Getappte Karten sind für diese Runde verbraucht und werden zu Beginn deines nächsten Zuges wieder gerade gedreht („enttappt“).</p></div>
+
+<div class=gcard><h4>Ein Zug läuft so ab</h4>
+<ol class=gsteps>
+<li><b>Enttappen</b> – alle deine Karten wieder gerade drehen.</li>
+<li><b>Versorgung</b> – Effekte „zu Beginn deines Zuges“ passieren jetzt.</li>
+<li><b>Ziehen</b> – eine Karte vom Deck nehmen.</li>
+<li><b>Erste Hauptphase</b> – Land spielen, Kreaturen und andere Karten wirken.</li>
+<li><b>Kampf</b> – du wählst angreifende Kreaturen (sie werden getappt) und wen sie angreifen. Jeder Angegriffene darf mit ungetappten Kreaturen blocken. Ungeblockter Schaden geht auf die Lebenspunkte, geblockte Kreaturen kämpfen gegeneinander.</li>
+<li><b>Zweite Hauptphase</b> – noch einmal Karten spielen (z. B. was du vor dem Angriff nicht zeigen wolltest).</li>
+<li><b>Ende</b> – mehr als sieben Handkarten? Überzählige abwerfen. Schaden an Kreaturen verschwindet.</li></ol>
+<p>Dann ist die nächste Person im Uhrzeigersinn dran.</p></div>
+
+<div class=gcard><h4>Reagieren: der Stapel</h4>
+<p>Wird etwas gewirkt, dürfen alle darauf antworten, etwa mit einem Spontanzauber. Antworten kommen „oben drauf“ und werden <b>zuerst</b> abgehandelt – der zuletzt gewirkte Zauber wirkt zuerst. Für den Anfang reicht: Bevor ein Zauber wirkt, kurz fragen, ob jemand reagieren möchte.</p></div>
+
+<div class=gcard><h4>Häufige Fähigkeiten</h4>
+<table class=gtab>
+<tr><td><b>Flugfähigkeit</b></td><td>kann nur von Kreaturen mit Flugfähigkeit oder Reichweite geblockt werden</td></tr>
+<tr><td><b>Eile</b></td><td>darf schon in dem Zug angreifen, in dem sie ins Spiel kommt</td></tr>
+<tr><td><b>Wachsamkeit</b></td><td>wird beim Angreifen nicht getappt, kann also danach noch blocken</td></tr>
+<tr><td><b>Trampelschaden</b></td><td>überzähliger Schaden geht trotz Blocker auf den Spieler</td></tr>
+<tr><td><b>Todesberührung</b></td><td>schon 1 Schaden zerstört die getroffene Kreatur</td></tr>
+<tr><td><b>Lebensverknüpfung</b></td><td>du gewinnst so viele Lebenspunkte, wie die Kreatur Schaden macht</td></tr>
+<tr><td><b>Erstschlag</b></td><td>macht im Kampf zuerst Schaden</td></tr>
+<tr><td><b>Fluchsicherheit</b></td><td>kann nicht zum Ziel gegnerischer Zauber werden</td></tr>
+<tr><td><b>Unzerstörbar</b></td><td>wird durch Schaden und „zerstöre“-Effekte nicht vernichtet</td></tr>
+</table>
+<p class=hint>Alle Begriffe im Detail: <a href="#regeln">📖 Regeln</a> (Glossar und Suche).</p></div>
+
+<h3 id=g-commander>👑 Teil 2: Was macht Commander besonders?</h3>
+<div class=gcard><ul class=gbig>
+<li><b>Ein Anführer:</b> Dein Deck hat einen <b>Commander</b> – meist eine legendäre Kreatur. Er liegt zu Beginn in der <b>Kommandozone</b> neben dem Spielfeld und kann von dort jederzeit gewirkt werden, als hättest du ihn auf der Hand.</li>
+<li><b>100 Karten, jede nur einmal:</b> Das Deck hat genau 100 Karten einschließlich Commander. Jede Karte darf nur einmal vorkommen – außer Standardländern (Ebene, Insel, Sumpf, Gebirge, Wald, Ödnis) und Karten, die es ausdrücklich erlauben.</li>
+<li><b>Farbidentität:</b> Alle Karten müssen zu den Farben deines Commanders passen. Gezählt werden alle Manasymbole auf der Karte, auch im Regeltext. Ein rot-grüner Commander erlaubt also nur rote, grüne und farblose Karten.</li>
+<li><b>40 Lebenspunkte</b> statt 20, und meist sitzen <b>drei oder vier Personen</b> am Tisch, jede gegen jede.</li>
+<li><b>Commander-Steuer:</b> Stirbt dein Commander oder würde er ins Exil gehen, darfst du ihn stattdessen in die Kommandozone zurücklegen. Jedes weitere Wirken kostet <b>2 Mana mehr</b> als das letzte Mal.</li>
+<li><b>Commander-Schaden:</b> Wer insgesamt <b>21 Kampfschaden von demselben Commander</b> erhalten hat, verliert – egal wie viele Lebenspunkte noch übrig sind.</li>
+<li><b>Freier Mulligan:</b> Gefällt dir die Starthand nicht, mischst du neu und ziehst sieben Karten. In Partien mit mehreren Gegnern ist der erste Mulligan frei, danach legst du je Mulligan eine Karte unter das Deck.</li>
+<li><b>Ziehen im ersten Zug:</b> In Partien mit mehr als zwei Personen zieht auch, wer anfängt, im ersten Zug eine Karte.</li></ul></div>
+
+<div class=gcard><h4>Spielstärke absprechen</h4>
+<p>Commander ist ein gemeinschaftliches Format: Alle sollen Spaß haben. Sprecht vor der Partie kurz ab, wie stark eure Decks sind („Rule 0“). Dafür gibt es offizielle <b>Brackets</b> (Stufen 1–5): von sehr gemütlichen Themendecks bis zu turnierstarken Decks. Fertige Precons liegen meist in Stufe 2. Besonders starke Karten stehen auf der Liste der <b>Game Changer</b> – die Manaschmiede markiert sie und kann sie beim Deckbau weglassen.</p></div>
+
+<div class=gcard><h4>Am Tisch mit mehreren</h4>
+<ul><li>Greif nicht immer dieselbe Person an – wer vorne liegt, wird zum Ziel.</li>
+<li>Absprachen („Ich greife dich nicht an, wenn …“) sind erlaubt, aber nicht bindend.</li>
+<li>Erkläre deine Karten, wenn jemand fragt, und lies sie bei Unsicherheit laut vor.</li>
+<li>Lebenspunkte und Commander-Schaden offen führen – der <a href="#spieltisch">🎲 Spieltisch</a> nimmt dir das ab.</li></ul></div>
+
+<h3 id=g-deck>🛠 Teil 3: Dein erstes Deck</h3>
+<div class=gcard><h4>Weg A – fertiges Deck (empfohlen für den Anfang)</h4>
+<p>Vorkonstruierte Commander-Decks („<b>Precons</b>“) sind sofort spielbar und untereinander ausgeglichen. Unter <a href="#gegner">⚔ Gegner &amp; Duell</a> findest du alle Precons mit Kartenliste und kannst sie gegeneinander antreten lassen – so siehst du vor dem Kauf, welches dir liegt.</p></div>
+<div class=gcard><h4>Weg B – selbst bauen mit dem Assistenten</h4>
+<ol class=gsteps>
+<li>Unter <a href="#deck">🛠 Deck bauen</a> die Lieblingsfarben anklicken und/oder ein Thema eintragen, z. B. „Drachen“, „Tokens“ oder „Friedhof“.</li>
+<li><b>„💡 Commander vorschlagen“</b> zeigt passende Commander mit Bild. Einen auswählen.</li>
+<li><b>„Deck vorschlagen“</b> stellt 100 Karten zusammen. Optional: Budget oder deine Sammlung berücksichtigen.</li>
+<li>Deck speichern, mit der Probehand testen und unter „Gegner &amp; Duell“ gegen Precons antreten lassen.</li></ol>
+<p><b>Faustregel für ein ausgewogenes Deck:</b> etwa 36–38 Länder, 10 Karten für zusätzliches Mana („Ramp“), 10 zum Kartenziehen, 8–10 zum Entfernen einzelner Bedrohungen und 2–3, die das ganze Spielfeld räumen. Der Rest unterstützt das Thema deines Commanders. Die Manaschmiede prüft das und zeigt Lücken an.</p></div>
+
+<h3 id=g-partie>🎲 Teil 4: Die erste Partie</h3>
+<div class=gcard><ol class=gsteps>
+<li><b>Aufbauen:</b> Commander offen in die Kommandozone legen, die übrigen 99 Karten mischen. Den <a href="#spieltisch">🎲 Spieltisch</a> öffnen, Namen eintragen, Partie starten.</li>
+<li><b>Startspieler:</b> im Spieltisch 🎲 antippen – das Los entscheidet.</li>
+<li><b>Starthand:</b> alle ziehen sieben Karten. Zu wenige oder zu viele Länder (gut sind 3–4)? Mulligan nehmen.</li>
+<li><b>Spielen:</b> Reihum im Uhrzeigersinn. In den ersten Zügen Länder legen und Ramp spielen, dann den Commander wirken.</li>
+<li><b>Leben zählen:</b> Im Spieltisch rechts tippen = +1, links = −1, gedrückt halten = ±10. Commander-Schaden über ⚔ eintragen.</li>
+<li><b>Ende:</b> Wer zuletzt übrig ist, gewinnt. Sieger im Spieltisch wählen und speichern – so entsteht deine Statistik.</li></ol></div>
+
+<div class=gcard><h4>Kleines Wörterbuch</h4>
+<table class=gtab>
+<tr><td><b>Friedhof</b></td><td>Ablagestapel für zerstörte und benutzte Karten</td></tr>
+<tr><td><b>Exil</b></td><td>Karten ganz aus dem Spiel entfernt</td></tr>
+<tr><td><b>Bibliothek</b></td><td>dein Nachziehstapel</td></tr>
+<tr><td><b>Ramp</b></td><td>Karten, die schneller mehr Mana bringen</td></tr>
+<tr><td><b>Removal</b></td><td>Karten, die gegnerische Karten entfernen</td></tr>
+<tr><td><b>Board Wipe</b></td><td>räumt alle Kreaturen (oder mehr) vom Feld</td></tr>
+<tr><td><b>Token / Spielstein</b></td><td>durch Effekte erzeugte Kreatur oder Gegenstand ohne echte Karte</td></tr>
+<tr><td><b>Staple</b></td><td>Karte, die in sehr vielen Decks steckt (z. B. Sol Ring)</td></tr>
+<tr><td><b>Combo</b></td><td>wenige Karten, die zusammen sofort gewinnen oder Endloses erzeugen</td></tr>
+<tr><td><b>Proxy</b></td><td>Platzhalter-Ausdruck zum Testen – <a href="#decks">📂 Meine Decks</a> kann sie drucken</td></tr>
+</table></div>
+<p class=hint>Noch Fragen? ❓ oben rechts erklärt jede Funktion der Manaschmiede. Das vollständige offizielle Regelwerk steht unter <a href="#regeln">📖 Regeln</a>.</p>
 </div>
 </section>
 <section id=v-deck class=page hidden>
@@ -3567,7 +3813,7 @@ body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{o
 <input name=theme placeholder="Thema: Mill, Lifegain, Stompy ..." size=26 list=th>
 <datalist id=th><option>Mill<option>Lifegain<option>Stompy<option>Tokens<option>Counters<option>Aristocrats<option>Spellslinger<option>Voltron</datalist>
 <input name=ci id=ci placeholder="Farbidentität (z. B. WUB)" size=22>
-<span class=hint id=cihint></span><br>
+<span id=cibtns class=cibtns></span> <span class=hint id=cihint></span><br>
 <span class=ac><input id=add placeholder="Karte hinzufügen (Enter)" size=30></span><br>
 <textarea name=cards id=cards rows=4 cols=70 placeholder="Karten, die ins Deck sollen (eine pro Zeile, optional)"></textarea><br>
 <label><input type=checkbox name=nogc id=nogc value=1>Keine Game Changer vorschlagen</label> &nbsp;
@@ -3579,6 +3825,9 @@ body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{o
 <button type=button id=exclear>Liste leeren</button><br>
 <textarea name=exclude id=exclude rows=4 cols=70 placeholder="Eine Karte pro Zeile"></textarea></details>
 <button class=primary>Deck vorschlagen</button></form>
+<div id=csugbox class=csugbox><b>💡 Noch keinen Commander?</b> Farben oben anklicken und/oder ein Thema eintragen (z. B. Drachen, Tokens, Friedhof, Lebensgewinn) –
+<button type=button id=csugbtn class=primary>Commander vorschlagen</button>
+<label><input type=checkbox id=cfewer> auch mit weniger Farben</label><div id=csug></div></div>
 <p class=view>Ansicht: <button type=button data-v=list>Liste</button><button type=button data-v=img>Kartenbilder</button></p>
 <div id=out></div>
 </section>
@@ -3663,7 +3912,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='33';
+const PAGE_VERSION='34';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -3721,11 +3970,11 @@ const cmd=E('cmd'),ci=E('ci'),cih=E('cihint');
 async function setCommander(n){
  if(n!==undefined){const parts=cmd.value.split(' + ');parts[parts.length-1]=n;cmd.value=parts.join(' + ')}
  const v=cmd.value.trim();
- if(!v){ci.readOnly=false;ci.value='';cih.textContent='';return}
+ if(!v){ci.readOnly=false;ci.value='';cih.textContent='';ciBtns();return}
  const ds=await Promise.all(v.split(' + ').slice(0,2).map(x=>J('/api/card?commander=1&name='+encodeURIComponent(x.trim()))));
- if(ds.some(d=>!d.name)){ci.readOnly=false;cih.textContent='Commander nicht gefunden';return}
+ if(ds.some(d=>!d.name)){ci.readOnly=false;cih.textContent='Commander nicht gefunden';ciBtns();return}
  cmd.value=ds.map(d=>d.name).join(' + ');
- ci.value=[...'WUBRG'].filter(c=>ds.some(d=>(d.ci||'').includes(c))).join('')||'C';ci.readOnly=true;
+ ci.value=[...'WUBRG'].filter(c=>ds.some(d=>(d.ci||'').includes(c))).join('')||'C';ci.readOnly=true;ciBtns();
  cih.textContent='aus Commander übernommen'+(ds.every(d=>d.can_be_commander)?'':' – Achtung: kein gültiger Commander');
  if(ds.length==2){const pc=await J('/api/partner_check?commander='+encodeURIComponent(cmd.value));if(pc.error){cih.textContent+=' – Achtung: '+pc.error;cih.className='warn'}else cih.className='hint'}
 }
@@ -3960,10 +4209,39 @@ function showDeck(){const d=deck,o=E('out');o.innerHTML='';
  ownBox(h('div'));manaBox(h('div'));handBox(h('div'));
  h('h4','Textliste zum Kopieren');const t=h('textarea');t.rows=10;t.cols=50;t.value=d.export;
  E('cmpbox').style.display='block'}
+// Farbknöpfe für die Farbidentität (Einsteiger müssen keine Buchstaben kennen)
+var CINAME={W:'Weiß',U:'Blau',B:'Schwarz',R:'Rot',G:'Grün',C:'Farblos'};
+const DV=(x,c)=>{const e=$('div',x);if(c)e.className=c;return e};
+function ciBtns(){const box=E('cibtns');if(!box)return;box.innerHTML='';const v=ci.value.toUpperCase();
+ ['W','U','B','R','G','C'].forEach(c=>{const b=$('button');b.type='button';b.className='pip p'+c+(c=='C'?(v=='C'?' on':''):(v.includes(c)&&v!='C'?' on':''));b.textContent=c=='C'?'◇':c;b.title=CINAME[c];b.disabled=ci.readOnly;b.dataset.c=c;
+  b.onclick=()=>{let x=ci.value.toUpperCase().replace(/[^WUBRGC]/g,'');if(c=='C')x=x=='C'?'':'C';else{x=x.replace('C','');x=x.includes(c)?x.replace(c,''):x+c}
+   ci.value=[...'WUBRGC'].filter(k=>x.includes(k)).join('');ciBtns()};box.append(b)})}
+ci.addEventListener('input',ciBtns);
+async function suggestCmd(auto){const box=E('csug');const th=(E('b').elements.theme.value||'').trim(),c=ci.readOnly?'':ci.value.trim();
+ if(!th&&!c){box.innerHTML='';P(box,'Bitte mindestens eine Farbe anklicken oder ein Thema eintragen.','hint');return}
+ box.textContent='Suche passende Commander ...';
+ const q=new URLSearchParams({ci:c,theme:th,fewer:E('cfewer').checked?'1':'',nogc:E('nogc').checked?'1':'',maxeur:E('maxprice').value||'',limit:'12'});
+ const r=await J('/api/commander_suggest?'+q);box.innerHTML='';
+ if(r.error){P(box,r.error,'hint');return}
+ if(!r.cards.length){P(box,'Keine passenden Commander gefunden. Tipp: „auch mit weniger Farben“ anhaken, eine Farbe mehr wählen oder ein anderes Thema probieren.','hint');return}
+ const cn=c?(c=='C'?'farblos':[...c].map(x=>CINAME[x]).join('-')):'alle Farben';
+ P(box,(auto?'Ein Commander ist im Format Pflicht – hier passende Vorschläge. ':'')+r.total+' Commander passen ('+cn+(th?', Thema „'+th+'“':'')+'); die beliebtesten zuerst:','hint');
+ const g=DV('','cgrid');
+ r.cards.forEach(x=>{const d=DV('','cc');if(x.image){const im=$('img');im.loading='lazy';im.alt=x.name;im.src=x.image.replace('/normal/','/art_crop/');d.append(im)}
+  const nb=$('b');nb.append(cardName(x.name,null,x.image));d.append(nb);const m=$('div');m.append(manaEl(x.ci?[...x.ci].map(k=>'{'+k+'}').join(''):'{C}'),' ',x.type);d.append(m);
+  if(x.why.length)d.append(DV('passt zu: '+x.why.join(', '),'why'));
+  if(x.gc)d.append(DV('⚠ Game Changer (sehr stark)','why'));
+  d.append(DV(x.text,'tx'));
+  const bt=$('button','✔ Diesen Commander nehmen');bt.type='button';bt.className='primary ctake';bt.onclick=async()=>{cmd.value='';await setCommander(x.name);ciBtns();E('csug').innerHTML='';
+   P(E('csug'),'Commander „'+x.name+'“ übernommen – jetzt „Deck vorschlagen“ klicken.','hint');cmd.scrollIntoView({block:'center'})};
+  d.append(bt);g.append(d)});box.append(g)}
+E('csugbtn').onclick=()=>suggestCmd(false);ciBtns();
+E('wsug').addEventListener('click',()=>setTimeout(()=>E('csugbox').scrollIntoView({block:'center'}),150));
 async function bd(e){e.preventDefault();
  const p=new URLSearchParams(new FormData(E('b')));
  E('out').textContent='Deck wird zusammengestellt ...';
  deck=await J('/api/build?'+p);showDeck();
+ if(!cmd.value.trim()&&deck&&!deck.error)suggestCmd(true);
  E('cmp').innerHTML='';E('pview').innerHTML='';precon=null;afterDeck()}
 function afterDeck(){loadPrecons();oppInfo();if(opp&&deck&&!deck.error)runCompare(opp);else{['combos','duel'].forEach(x=>E(x).innerHTML='')}}
 
@@ -4718,7 +4996,7 @@ async function rules(q){const o=E('rres');o.textContent='Suche ...';
   d.append(b);richText(d,x.text,words);o.append(d)})}
 E('rf').onsubmit=e=>{e.preventDefault();rules(E('rq').value.trim())};
 // Tabs der Seite (über die Adresse #name erreichbar, Zurück-Taste funktioniert)
-let rulesLoaded=false;const PAGES=['willkommen','deck','gegner','decks','sammlung','spieltisch','suche','regeln'];
+let rulesLoaded=false;const PAGES=['willkommen','neu','deck','gegner','decks','sammlung','spieltisch','suche','regeln'];
 function showView(v){if(v=='start')v='deck';if(!PAGES.includes(v))v='willkommen';
  document.querySelectorAll('section.page').forEach(x=>x.hidden=x.id!='v-'+v);
  document.querySelectorAll('#mainnav a[data-v]').forEach(a=>{a.classList.toggle('on',a.dataset.v==v);a.setAttribute('aria-selected',a.dataset.v==v)});
@@ -4728,6 +5006,8 @@ function showView(v){if(v=='start')v='deck';if(!PAGES.includes(v))v='willkommen'
  if(v=='gegner'){const ok=!!(deck&&!deck.error);E('nogegner').hidden=ok;E('cmpbox').style.display=ok?'block':'none'}}
 function goTab(v){if(location.hash!='#'+v)location.hash=v;else showView(v)}
 window.addEventListener('hashchange',()=>{showView(location.hash.slice(1));window.scrollTo(0,0)});
+// Sprungmarken innerhalb der Einsteiger-Seite (#g-…) nicht als Seitenwechsel behandeln
+document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a[href^="#g-"]');if(!a)return;e.preventDefault();const t=E(a.getAttribute('href').slice(1));if(t)t.scrollIntoView({behavior:'smooth',block:'start'})});
 showView(location.hash.slice(1));
 document.querySelectorAll('.tile[data-h]').forEach(t=>t.onclick=e=>{e.preventDefault();openHelp(t.dataset.h)});
 ac(E('wcmd'),{get:names(true),pick:n=>{E('wcmd').value=n}});
@@ -4846,6 +5126,8 @@ class H(BaseHTTPRequestHandler):
                 return ownership(p, uid)
             if path == "/api/search":
                 return search(p)
+            if path == "/api/commander_suggest":
+                return suggest_commanders(p)
             if path == "/api/suggest":
                 return find_names(con, g("q"), g("cmd") == "1")
             if path == "/api/card":
