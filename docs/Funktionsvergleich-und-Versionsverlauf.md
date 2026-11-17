@@ -4,10 +4,10 @@ Nov 15, 2026 · Norman
 
 ## Kurzfazit
 
-Mit den Versionen 16 bis 25 sind alle machbaren Punkte der Liste umgesetzt, jede Änderung als eigene Version und mit Prüfung (Verlauf unten). Neu sind unter anderem **Kartensammlung mit Besitzanteil**, **Maybeboard, Tags und Notizen**, **Spieltisch mit Lebenszähler und Siegquoten**, **Forge-Runden zu viert**, **Empfehlungen aus eigener Statistik**, **Preisverlauf**, **Proxy-Druck**, **Teilen per Link** und **deutsche Kartennamen**. Im Punktevergleich liegt die Commander-DB jetzt mit 37 von 48 Punkten vorn; offen bleiben vor allem ein Testspiel-Spielfeld, Community-Funktionen; ein Kartenscanner ist seit Version 29 dabei.
+Mit den Versionen 16 bis 25 sind alle machbaren Punkte der Liste umgesetzt, jede Änderung als eigene Version und mit Prüfung (Verlauf unten). Neu sind unter anderem **Kartensammlung mit Besitzanteil**, **Maybeboard, Tags und Notizen**, **Spieltisch mit Lebenszähler und Siegquoten**, **Forge-Runden zu viert**, **Empfehlungen aus eigener Statistik**, **Preisverlauf**, **Proxy-Druck**, **Teilen per Link** und **deutsche Kartennamen**. Im Punktevergleich liegt die Manaschmiede mit Version 37 bei 41 von 48 Punkten (85 %) und damit deutlich vor TopDecked (30) und ManaBox (29); offen bleiben vor allem ein Testspiel-Spielfeld und eine öffentliche Deck-Datenbank. Seit Version 29 gibt es einen Kartenscanner, seit Version 30 auch als Dauerscan.
 
 - **Stärken:** regelgetreue KI-Partien per Forge (1 gegen 1 und zu viert), Deckbau-Assistent mit Synergie, Budget und Sammlung, Manabasis nach Karsten, Combos mit Spellbook-Einstufung, Spieltisch mit Siegquoten, deutsche Oberfläche mit Hilfe und Regeln, lokal oder auf eigenem Server.
-- **Schwächen:** kein Spielfeld zum Testspielen (nur Probehand), keine öffentliche Deck-Datenbank und Community, kein Scanner, Empfehlungen auf schmalerer Datenbasis als EDHREC.
+- **Schwächen:** kein Spielfeld zum Testspielen (nur Probehand), keine öffentliche Deck-Datenbank (Decks lassen sich aber senden und per Link teilen), Empfehlungen auf schmalerer Datenbasis als EDHREC, Scanner langsamer als ManaBox.
 - **Vor dem Einsatz bei dir:** Docker-Image und APK einmal bauen; Spellbook-Funktionen und deutsche Namen einmal mit Live-Daten ansehen.
 
 ## Umgesetzt in Version 15
@@ -154,30 +154,32 @@ Vor einer öffentlichen Freigabe bleibt die rechtliche Klärung (Fan Content Pol
 
 Bewertet wurden 16 Funktionsbereiche mit 0 bis 3 Punkten: **0** = fehlt, **1** = einfach, **2** = gut, **3** = sehr gut. Grundlage sind die öffentlichen Beschreibungen der Anbieter (Stand November 2026) und bei der Commander-DB die eigenen Tests.
 
-| Kriterium | Commander-DB 29 | Moxfield | Archidekt | EDHREC | ManaBox | Playgroup.gg | TopDecked | Spellbook |
+| Kriterium | Manaschmiede 37 | Moxfield | Archidekt | EDHREC | ManaBox | Playgroup.gg | TopDecked | Spellbook |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Deck-Editor (Tags, Maybeboard, Notizen) | 2 | 3 | 3 | 0 | 2 | 2 | 2 | 0 |
 | Deck automatisch bauen | 3 | 0 | 0 | 2 | 1 | 2 | 1 | 0 |
 | Kartenempfehlungen (Datenbasis) | 2 | 1 | 2 | 3 | 2 | 3 | 2 | 0 |
 | Sammlung und Besitzanteil | 2 | 3 | 3 | 0 | 3 | 1 | 3 | 0 |
-| Kartenscanner | 2 | 0 | 0 | 0 | 3 | 1 | 2 | 0 |
+| Kartenscanner | 3 | 0 | 0 | 0 | 3 | 1 | 2 | 0 |
 | Preise und Preisverlauf | 2 | 2 | 2 | 1 | 3 | 1 | 3 | 0 |
 | Manabasis und Deck-Statistik | 3 | 2 | 2 | 1 | 2 | 2 | 2 | 0 |
 | Testspiel / Probehand | 1 | 3 | 3 | 0 | 2 | 3 | 3 | 0 |
 | Komplette KI-Partien nach allen Regeln | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Combos und Bracket-Einstufung | 3 | 2 | 2 | 2 | 1 | 1 | 1 | 3 |
-| Spieltisch, Spielprotokoll, Siegquoten | 2 | 0 | 0 | 0 | 0 | 3 | 2 | 0 |
+| Spieltisch, Spielprotokoll, Siegquoten | 3 | 0 | 0 | 0 | 0 | 3 | 2 | 0 |
 | Import und Export | 3 | 3 | 3 | 1 | 2 | 2 | 2 | 1 |
-| Teilen und Community | 1 | 3 | 3 | 2 | 2 | 2 | 2 | 2 |
+| Teilen und Community | 2 | 3 | 3 | 2 | 2 | 2 | 2 | 2 |
 | Deutsche Oberfläche, Hilfe, Regeln | 3 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
 | Selbst betreiben, Datenschutz, offline | 3 | 0 | 0 | 0 | 2 | 0 | 1 | 0 |
-| Plattformen (PC, Handy, Web) | 2 | 2 | 2 | 2 | 3 | 2 | 3 | 2 |
-| **Summe (max. 48)** | **37** | **25** | **26** | **15** | **29** | **26** | **30** | **9** |
-| Anteil | 77 % | 52 % | 54 % | 31 % | 60 % | 54 % | 62 % | 19 % |
+| Plattformen (PC, Handy, Web) | 3 | 2 | 2 | 2 | 3 | 2 | 3 | 2 |
+| **Summe (max. 48)** | **41** | **25** | **26** | **15** | **29** | **26** | **30** | **9** |
+| Anteil | 85 % | 52 % | 54 % | 31 % | 60 % | 54 % | 62 % | 19 % |
+
+*Neubewertung am 17.11.2026 (Version 37), gleiche Kriterien, die anderen Apps auf dem Recherchestand vom 15.11.2026:* Kartenscanner 2 → 3 (Dauerscan im Browser und in der App, aber langsamer als ManaBox); Spieltisch 2 → 3 (Lifetap-Ansicht, mehrere Handys an einem Tisch, Statistik); Teilen und Community 1 → 2 (Decks an Benutzer senden, Link mit QR-Code, gemeinsamer Tisch – aber keine öffentliche Deck-Datenbank); Plattformen 2 → 3 (Handyansicht mit Geräteerkennung, Android-App, Docker-Image, Web-App). Summe 37 → 41 von 48. Nicht in Punkte gefasst, weil es kein Kriterium der Tabelle ist: Commander-Vorschläge nach Farbe und Thema sowie der Einsteigerbereich „Neu hier?“ – beides bietet keine der verglichenen Apps in dieser Form.
 
 **Einordnung:**
 
-- **Commander-DB (37 Punkte, Stand Version 29):** am breitesten aufgestellt. Allein hat sie komplette KI-Partien nach allen Regeln; dazu kommen die deutsche Oberfläche und der Betrieb auf eigener Hardware. Schwach sind Testspiel und Community; der Scanner (seit Version 29) ist für einzelne Karten gut, aber langsamer als ManaBox.
+- **Manaschmiede (41 Punkte, Stand Version 37):** am breitesten aufgestellt. Allein hat sie komplette KI-Partien nach allen Regeln; dazu kommen die deutsche Oberfläche und der Betrieb auf eigener Hardware. Schwach sind Testspiel und eine öffentliche Deck-Datenbank. Neu seit Version 29: Dauerscan, Spieltisch im Lifetap-Stil mit mehreren Handys an einem Tisch, Decks senden, Handyansicht und ein Einsteigerbereich.
 - **TopDecked (30) und ManaBox (29):** die Handy-Allrounder mit Scanner, Sammlung und Marktpreisen; TopDecked mit Simulator für bis zu vier Decks.
 - **Archidekt (26), Playgroup.gg (26), Moxfield (25):** Archidekt und Moxfield führen bei Editor, Testspiel, Teilen und Community. Playgroup wertet erfasste Partien aus und empfiehlt Karten nach Siegquote.
 - **EDHREC (15) und Commander Spellbook (9):** Spezialisten für Empfehlungen bzw. Combos. Sie sind keine Allrounder, aber in ihrem Bereich führend; die Commander-DB nutzt Spellbook direkt.
