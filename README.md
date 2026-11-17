@@ -12,9 +12,9 @@ und getrennte Decks je Benutzer dazu.
 
 ## Schnellstart mit Docker
 Fertiges Image: **`ghcr.io/normanweis/manaschmiede:33`** (auch `:latest`) – Ubuntu 24.04, Python, Java 17, Forge 2.0.16,
-für x86_64-/amd64-Server. Ist das Paket privat, vorher einmal anmelden (Token mit Recht `read:packages`):
+für x86_64-/amd64-Server. Das Image ist **öffentlich** – Herunterladen ohne Anmeldung:
 ```
-docker login ghcr.io -u NormanWeis
+docker pull ghcr.io/normanweis/manaschmiede:33
 ```
 
 **docker run** – ein Container, ohne HTTPS (zum Ausprobieren oder hinter einem eigenen Reverse-Proxy):

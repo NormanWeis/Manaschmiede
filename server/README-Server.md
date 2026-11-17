@@ -21,9 +21,11 @@ Das fertige Image liegt in der GitHub Container Registry:
 | `ghcr.io/normanweis/manaschmiede:latest` | immer die neueste gebaute Version |
 
 Enthalten: Ubuntu 24.04, Python 3.12, Java 17, Xvfb und Forge 2.0.16 – für x86_64-/amd64-Server.
-Ist das Paket privat (Standard), meldet sich der Server einmal an. Dafür auf GitHub unter
-*Settings → Developer settings → Personal access tokens → Tokens (classic)* einen Token mit dem Recht
-`read:packages` erstellen, dann:
+Das Image ist **öffentlich**: `docker pull`, `docker run` und `docker compose pull` funktionieren ohne Anmeldung.
+
+*Optional – nur nötig, wenn das Paket wieder auf privat steht oder du ein eigenes privates Image verwendest:*
+auf GitHub unter *Settings → Developer settings → Personal access tokens → Tokens (classic)* einen Token mit dem
+Recht `read:packages` erstellen und auf dem Server einmal anmelden:
 ```
 docker login ghcr.io -u NormanWeis        # als Passwort den Token eingeben
 ```
