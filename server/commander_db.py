@@ -27,6 +27,9 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 42: Deck-Editor: eigene Gruppen per Ziehen und Ablegen (am Handy „verschieben nach …“), Rückgängig/Wiederherstellen,
+            Mehrfachauswahl (verschieben, taggen, ins Maybeboard, entfernen), Stapelansicht nach Manawert; Gruppen werden gespeichert,
+            auf der Teilen-Seite und im Archidekt-Export als Kategorien gezeigt.
 Version 41: Sammlung: Einkaufsliste über alle Decks, Wunschliste mit Zielpreis, Ordner (z. B. Tauschordner), Wertverlauf.
             Preise: Preisalarm auf der Startseite, zweite Preisquelle (US-Dollar/TCGplayer über Scryfall), Budget-Tausch je Deck.
 Version 40: Empfehlungen auch aus der Galerie (veröffentlichte Decks anderer Benutzer), Lückenanalyse für Ramp, Kartenziehen,
@@ -90,7 +93,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "41"
+APP_VERSION = "42"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -1658,11 +1661,14 @@ def shared_page(tok):
     except Exception:
         ex = {}
     tags = ex.get("tags") or {}
+    cgroups = ex.get("groups") or {}
     cmds = {r["name"] for r in resolve_cmds(con, d["commander"])}
     def kind(r):
         t = r["type_line"].split(" // ")[0]
         if r["name"] in cmds:
             return "Commander"
+        if cgroups.get(r["name"]):
+            return cgroups[r["name"]]
         for k in ("Creature", "Planeswalker", "Battle", "Instant", "Sorcery", "Artifact", "Enchantment", "Land"):
             if k in t:
                 return {"Creature": "Kreaturen", "Planeswalker": "Planeswalker", "Battle": "Schlachten", "Instant": "Spontanzauber",
@@ -1671,7 +1677,9 @@ def shared_page(tok):
     groups = {}
     for r, q in ent:
         groups.setdefault(kind(r), []).append((r, q))
-    order = ["Commander", "Kreaturen", "Planeswalker", "Spontanzauber", "Hexereien", "Artefakte", "Verzauberungen", "Schlachten", "Sonstige", "Länder"]
+    order = ["Commander"] + sorted({v for v in cgroups.values() if v} - {"Commander", "Länder"}) + \
+        ["Kreaturen", "Planeswalker", "Spontanzauber", "Hexereien", "Artefakte", "Verzauberungen", "Schlachten", "Sonstige", "Länder"]
+    order = list(dict.fromkeys(order))
     total = sum(q for _, q in ent)
     value = sum(float(r["eur"]) * q for r, q in ent if r["eur"] not in (None, "") and not r["type_line"].startswith("Basic"))
     e = H.escape
@@ -2959,7 +2967,9 @@ def deck_save(p, uid=0):
             ex = json.loads(extra)
             ex = {"maybe": [str(x)[:150] for x in (ex.get("maybe") or [])][:200],
                   "tags": {str(k)[:150]: [str(t)[:40] for t in v][:8] for k, v in list((ex.get("tags") or {}).items())[:300]},
-                  "notes": str(ex.get("notes") or "")[:20000]}
+                  "notes": str(ex.get("notes") or "")[:20000],
+                  "groups": {str(k)[:150]: re.sub(r"\s+", " ", str(v)).strip()[:40] for k, v in list((ex.get("groups") or {}).items())[:300]
+                             if str(v).strip()}}
             extra = json.dumps(ex, ensure_ascii=False)
         except Exception:
             extra = ""
@@ -3111,7 +3121,12 @@ def deck_export(p):
     name = g("name").strip() or " + ".join(cn) or "Commander-Deck"
     safe = re.sub(r'[\\/:*?"<>|]', "", name).strip()[:80] or "Deck"
     if fmt == "archidekt":
-        text = "\n".join([f"1x {r['name']} [Commander{{top}}]" for r in cmds] + [f"{q}x {r['name']}" for r, q in main])
+        try:
+            cg = json.loads(g("groups") or "{}")
+        except Exception:
+            cg = {}
+        cat = lambda n: f" [{re.sub(r'[\[\]{},]', '', str(cg[n]))[:40]}]" if cg.get(n) else ""
+        text = "\n".join([f"1x {r['name']} [Commander{{top}}]" for r in cmds] + [f"{q}x {r['name']}{cat(r['name'])}" for r, q in main])
         ext = "txt"
     elif fmt == "text":
         text = "\n".join([f"1 {r['name']}" for r in cmds] + [f"{q} {r['name']}" for r, q in main])
@@ -3739,7 +3754,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 41)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 42)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -3882,6 +3897,13 @@ body.printing>*:not(#printarea){display:none!important}
 #top{text-align:center;margin-top:8px}#top h2{margin-bottom:4px}.wotc{margin:0 0 10px;font-size:.95em}
 .recopt{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.owned{color:#3a9a4a;font-size:.85em}.recgap{margin:6px 0 10px}.recgcard{margin-left:14px}
 details.subbox{border:1px solid rgba(168,132,58,.55);border-radius:10px;padding:6px 12px;margin:10px 0}details.subbox>summary{cursor:pointer;padding:4px 0}
+#dropdock{position:fixed;left:0;right:0;bottom:0;z-index:300;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:#1d150fee;border-top:2px solid #a8843a;color:#e2bd5b}
+#dropdock .dz{border:1px dashed #a8843a;border-radius:8px;padding:6px 10px}#dropdock .dz.dropover{background:#a8843a;color:#140f0b}#dropdock .dzr{border-color:#c0362c}body:not(.mtg) #dropdock{background:#f4f4f4ee;color:#222}
+.edbar{margin:8px 0;display:flex;flex-wrap:wrap;gap:4px;align-items:center}.selbar{flex-basis:100%;display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:4px 6px;border:1px dashed #a8843a;border-radius:8px}
+.dgroup{border:1px solid transparent;border-radius:8px;padding:0 4px}.dgroup.dropover,#maybezone.dropover{border-color:#a8843a;background:rgba(168,132,58,.15)}.dragc{cursor:grab}.dragging{opacity:.4}
+.stacks{display:flex;gap:10px;overflow-x:auto;align-items:flex-start;padding-bottom:8px}.stackcol{min-width:130px;width:130px}.sth{font-weight:bold;text-align:center;margin-bottom:4px}
+.stc{position:relative;height:34px;cursor:pointer}.stc:last-child{height:auto}.stc img{width:130px;border-radius:6px;box-shadow:0 1px 4px #0008}.stc:hover{z-index:5}.stc:hover img{transform:translateY(-6px)}.stc.noimg{height:auto;border:1px solid #a8843a;border-radius:6px;padding:3px 6px;margin-bottom:3px;font-size:.88em}.stc .q{position:absolute;right:4px;top:2px;background:#000c;color:#fff;border-radius:6px;padding:0 4px;font-size:.8em}
+body.mob .stackcol{min-width:96px;width:96px}body.mob .stc img{width:96px}body.mob .stc{height:26px}
 .palert{max-width:720px;margin:12px auto;text-align:left;border:1px solid #a8843a;border-radius:10px;padding:8px 12px;background:rgba(168,132,58,.12)}
 .palert .up{color:#3a9a4a}.palert .down{color:#c0362c}.hit{color:#3a9a4a;font-weight:bold}.wishadd,.folderedit{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
 .ftable td,.ftable th{padding:2px 8px;text-align:left}.ftable td.r,.ftable th.r{text-align:right}.chips2 button{margin:2px}
@@ -4093,6 +4115,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>Preise</b> sind Euro-Richtwerte aus den Scryfall-Daten (Marktpreise von Cardmarket).</li>
 <li><b>Manabasis:</b> zählt je Farbe die Quellen (Länder einschließlich Fetch- und Suchländern, Mana-Artefakte/-Kreaturen bis Manawert 2; Ramp-Zauber bis Manawert 3, die ein Land suchen, zählen halb) und berechnet, wie wahrscheinlich du jede Karte rechtzeitig wirken kannst. „Zu wenig Quellen“ heißt: mehr Länder oder Mana dieser Farbe einplanen. Die schwierigsten Karten stehen rechts.</li>
 <li><b>Probehand:</b> zieht 7 zufällige Karten; „Karte ziehen“ simuliert die nächsten Züge, „Mulligan“ mischt neu (London-Mulligan). Darüber steht eine Statistik aus 20.000 Starthänden: wie oft die Hand behaltbar ist (2–5 Länder) und wie oft du in Zug 1–4 ein Land spielen kannst.</li>
+<li><b>Deck-Editor:</b> „↶ Rückgängig“ / „↷ Wiederherstellen“ (auch Strg+Z / Strg+Y) nehmen jede Änderung an der Liste zurück (60 Schritte). Eigene Gruppen: eine Karte in eine andere Gruppe ziehen – beim Ziehen erscheint unten eine Leiste mit allen Gruppen, dem Maybeboard und „Entfernen“ – oder bei der Karte ⇄ antippen und eine Gruppe wählen bzw. eine neue anlegen. Eigene Gruppen werden mit dem Deck gespeichert, auf der Teilen-Seite als Abschnitte gezeigt und beim Archidekt-Export als Kategorie mitgegeben. „☐ Mehrfachauswahl“ setzt Häkchen vor die Karten; die markierten Karten lassen sich gemeinsam verschieben, taggen, ins Maybeboard legen oder entfernen. Die Ansicht „Stapel“ zeigt die Karten als Bildstapel nach Manawert; antippen sucht Ersatz.</li>
 <li><b>🎮 Testspielfeld:</b> spielt das Deck allein Zug für Zug durch (Goldfischen). Commander in der Kommandozone (Steuer +2 pro Wurf), Bibliothek, Friedhof, Exil, Länderreihe, Spielfeld, Spielmarken, Zähler, Lebenspunkte, Mulligan, „Oberste X“ ansehen, Bibliothek durchsuchen und Rückgängig (40 Schritte). Karte antippen = ausspielen/tappen, gedrückt halten oder Rechtsklick = weitere Aktionen. Tasten: D ziehen, N nächster Zug, U enttappen, M mischen, Strg+Z rückgängig, Esc schließen.</li></ul>
 
 <h3 id=h-import>Importieren und Speichern</h3>
@@ -4384,7 +4407,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <div id=csugbox class=csugbox><b>💡 Noch keinen Commander?</b> Farben oben anklicken und/oder ein Thema eintragen (z. B. Drachen, Tokens, Friedhof, Lebensgewinn) –
 <button type=button id=csugbtn class=primary>Commander vorschlagen</button>
 <label><input type=checkbox id=cfewer> auch mit weniger Farben</label><div id=csug></div></div>
-<p class=view>Ansicht: <button type=button data-v=list>Liste</button><button type=button data-v=img>Kartenbilder</button></p>
+<p class=view>Ansicht: <button type=button data-v=list>Liste</button><button type=button data-v=img>Kartenbilder</button><button type=button data-v=stack>Stapel</button></p>
 <div id=out></div>
 </section>
 <section id=v-gegner class=page hidden>
@@ -4496,7 +4519,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='41';
+const PAGE_VERSION='42';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -4598,7 +4621,11 @@ ac(E('q'),{get:names(false),pick:n=>{E('q').value=n;go()}});
 function swapBtn(gi,ci){const b=$('button','⇄ Tauschen');b.type='button';b.className='sw';
  b.onclick=e=>{e.preventDefault();e.stopPropagation();openSwap(gi,ci)};return b}
 function cardsOut(o,groups,edit){
- groups.forEach((g,gi)=>{o.append($('h4',g.name+' ('+g.cards.reduce((s,c)=>s+c.qty,0)+')'));
+ if(view=='stack')return stackOut(o,groups,edit);
+ const O=o;
+ groups.forEach((g,gi)=>{const o=$('div');o.className='dgroup';o.dataset.g=g.name;O.append(o);
+  if(edit&&g.name!='Commander')dropZone(o,n=>moveToGroup(n,g.name));
+  o.append($('h4',g.name+' ('+g.cards.reduce((s,c)=>s+c.qty,0)+')'));
   const canSwap=c=>edit&&g.name!='Commander'&&!c.basic;
   if(view=='img'){const gr=$('div');gr.className='grid';o.append(gr);
    g.cards.forEach((c,ci)=>{const a=c.image?$('a',null,c.scryfall):$('div',c.name);if(c.swapped)a.classList.add('swapped');
@@ -4607,15 +4634,20 @@ function cardsOut(o,groups,edit){
     if(c.qty>1){const q=$('span','×'+c.qty);q.className='q';a.append(q)}
     if(c.gc){const s=$('span','Game Changer');s.className='g';a.append(s)}
     if(canSwap(c))a.append(swapBtn(gi,ci));
+    if(edit&&g.name!='Commander')dragSrc(a,c.name);
     gr.append(a)})}
-  else g.cards.forEach((c,ci)=>{const r=$('div');r.dataset.name=c.name;r.append(c.qty+'x ');r.append(cardName(c.name,c.scryfall,c.image));
+  else g.cards.forEach((c,ci)=>{const r=$('div');r.dataset.name=c.name;
+   if(edit&&g.name!='Commander'){dragSrc(r,c.name);if(DSEL.on){const cb=$('input');cb.type='checkbox';cb.className='selbox';cb.checked=DSEL.names.has(c.name);
+    cb.onchange=()=>{cb.checked?DSEL.names.add(c.name):DSEL.names.delete(c.name);selBar()};r.append(cb,' ')}}
+   r.append(c.qty+'x ');r.append(cardName(c.name,c.scryfall,c.image));
    if(c.gc){const s=$('span',' GC');s.className='gc';r.append(s)}
    if(c.swapped){const s=$('span','getauscht');s.className='tag';r.append(s)}
    r.append(' ',manaEl(c.mana),(c.eur!=null?'  · '+c.eur.toFixed(2)+' €':''));
    if(canSwap(c))r.append(swapBtn(gi,ci));
    if(c.tags&&c.tags.length)c.tags.forEach(t=>{const x=$('span',t);x.className='tagchip';r.append(' ',x)});
    if(edit&&g.name!='Commander'){const tb=$('button','🏷');tb.type='button';tb.className='sw';tb.title='Tags bearbeiten';tb.onclick=()=>tagDialog(c,g.name);
-    const mb=$('button','↓ Maybe');mb.type='button';mb.className='sw';mb.title='ins Maybeboard';mb.onclick=()=>toMaybe(gi,ci);r.append(tb,mb)}
+    const mb=$('button','↓ Maybe');mb.type='button';mb.className='sw';mb.title='ins Maybeboard';mb.onclick=()=>toMaybe(gi,ci);
+    const mv=$('button','⇄');mv.type='button';mv.className='sw mvbtn';mv.title='in eine andere Gruppe verschieben';mv.onclick=()=>moveDialog([c.name]);r.append(tb,mb,mv)}
    if(edit&&c.basic){const pl=$('button','+');pl.type='button';pl.className='sw';pl.title='eines mehr';
     pl.onclick=()=>{c.qty++;deck.msg='„'+c.name+'“: jetzt '+c.qty+'.';recalc()};r.append(pl)}
    if(edit&&g.name!='Commander'){const x=$('button',c.basic?'−':'✕');x.type='button';x.className='sw';x.title=c.basic?'eines entfernen':'entfernen';
@@ -4698,11 +4730,12 @@ function printProxies(imgs,mark,miss){let pa=E('printarea');if(!pa){pa=$('div');
  for(let i=0;i<imgs.length;i+=9){const pg=$('div');pg.className='ppage';imgs.slice(i,i+9).forEach(x=>{const c=$('div');c.className='pcard';
   const im=$('img');im.src=x.src;im.alt=x.name;c.append(im);if(mark){const m=$('span','PROXY');m.className='pmark';c.append(m)}pg.append(c)});pa.append(pg)}
  document.body.classList.add('printing');window.scrollTo(0,0)}
-function deckExtra(){const tags={};deck.groups.forEach(g=>g.cards.forEach(c=>{if(c.tags&&c.tags.length)tags[c.name]=c.tags}));
+function deckExtra(){const tags={},grp={};deck.groups.forEach(g=>g.cards.forEach(c=>{if(c.tags&&c.tags.length)tags[c.name]=c.tags;if(c.grp)grp[c.name]=c.grp}));
  (deck.maybe||[]).forEach(c=>{if(c.tags&&c.tags.length)tags[c.name]=c.tags});
- return {maybe:(deck.maybe||[]).map(c=>c.name),tags:tags,notes:deck.primer||''}}
+ return {maybe:(deck.maybe||[]).map(c=>c.name),tags:tags,notes:deck.primer||'',groups:grp}}
 async function applyExtra(raw){let ex={};try{ex=JSON.parse(raw||'{}')}catch(e){}
  const tags=ex.tags||{};deck.groups.forEach(g=>g.cards.forEach(c=>{if(tags[c.name])c.tags=tags[c.name]}));
+ Object.entries(ex.groups||{}).forEach(([n,gname])=>moveToGroup(n,gname,true));
  deck.primer=ex.notes||'';
  deck.maybe=(await Promise.all((ex.maybe||[]).map(n=>J('/api/card_info?name='+encodeURIComponent(n))))).filter(c=>!c.error).map(c=>Object.assign(c,{qty:1,tags:tags[c.name]||[]}))}
 function toMaybe(gi,ci){const g=deck.groups[gi],c=g.cards[ci];deck.maybe=deck.maybe||[];
@@ -4710,6 +4743,7 @@ function toMaybe(gi,ci){const g=deck.groups[gi],c=g.cards[ci];deck.maybe=deck.ma
  if(c.qty>1)c.qty--;else g.cards.splice(ci,1);if(!g.cards.length)deck.groups.splice(gi,1);
  deck.msg='„'+c.name+'“ ins Maybeboard verschoben.';recalc()}
 function maybeBox(o){const m=deck.maybe||[];const hh=$('h4','Maybeboard ('+m.length+') – Kandidaten, die nicht mitzählen');hh.append(qBtn('anpassen'));o.append(hh);
+ o.id='maybezone';dropZone(o,n=>{const gi=deck.groups.findIndex(g=>g.cards.some(c=>c.name==n));if(gi>=0)toMaybe(gi,deck.groups[gi].cards.findIndex(c=>c.name==n))});
  const row=$('div');const inp=$('input');inp.size=30;inp.placeholder='Karte fürs Maybeboard';inp.id='maybeadd';const sp=$('span');sp.className='ac';sp.append(inp);row.append(sp);o.append(row);
  const addM=async n=>{const c=await J('/api/card_info?name='+encodeURIComponent(n));if(c.error){deck.msg=c.error;showDeck();return}
   deck.maybe=deck.maybe||[];if(!deck.maybe.some(x=>x.name==c.name))deck.maybe.push(Object.assign(c,{qty:1,tags:[]}));inp.value='';showDeck()};
@@ -5017,6 +5051,74 @@ E('chistbox').addEventListener('toggle',()=>{if(E('chistbox').open)collHistory()
 J('/api/wishlist').then(r=>{if(r.items&&r.items.length)E('wishsum').textContent='('+r.items.length+' Karten'+(r.hits?', '+r.hits+' unter Zielpreis':'')+')'});
 priceAlerts();
 
+// ---- Deck-Editor: eigene Gruppen, Ziehen/Ablegen, Rückgängig, Mehrfachauswahl, Stapelansicht
+const DH={stack:[],pos:-1,deck:null,skip:false},DSEL={on:false,names:new Set()};
+function deckSnapshot(){return JSON.stringify({g:deck.groups,m:deck.maybe||[],p:deck.primer||''})}
+function deckRecord(){if(DH.deck!==deck){DH.deck=deck;DH.stack=[];DH.pos=-1;DSEL.names.clear()}
+ if(DH.skip){DH.skip=false;return}const s=deckSnapshot();if(DH.stack[DH.pos]===s)return;
+ DH.stack=DH.stack.slice(0,DH.pos+1);DH.stack.push(s);if(DH.stack.length>60)DH.stack.shift();DH.pos=DH.stack.length-1;
+ const u=E('dundo'),r=E('dredo');if(u)u.disabled=DH.pos<=0;if(r)r.disabled=true}
+function deckRestore(i){const x=JSON.parse(DH.stack[i]);DH.pos=i;deck.groups=x.g;deck.maybe=x.m;deck.primer=x.p;DH.skip=true;deck.msg=i<DH.stack.length-1?'Rückgängig gemacht.':'Wiederhergestellt.';recalc()}
+function deckUndo(){if(DH.pos>0)deckRestore(DH.pos-1)}
+function deckRedo(){if(DH.pos<DH.stack.length-1)deckRestore(DH.pos+1)}
+document.addEventListener('keydown',e=>{if(!(e.ctrlKey||e.metaKey)||E('pt')||!deck||deck.error||document.body.dataset.page!='deck')return;
+ const t=e.target;if(t&&(t.tagName=='INPUT'||t.tagName=='TEXTAREA'||t.isContentEditable))return;
+ const k=e.key.toLowerCase();if(k=='z'&&!e.shiftKey){e.preventDefault();deckUndo()}else if(k=='y'||(k=='z'&&e.shiftKey)){e.preventDefault();deckRedo()}});
+function findCard(n){for(let gi=0;gi<deck.groups.length;gi++){const ci=deck.groups[gi].cards.findIndex(c=>c.name==n);if(ci>=0)return [gi,ci]}return null}
+function moveToGroup(n,gname,quiet){gname=(gname||'').replace(/\\s+/g,' ').trim().slice(0,40);if(!gname||gname=='Commander')return;
+ const f=findCard(n);if(!f)return;const [gi,ci]=f;const src=deck.groups[gi];if(src.name=='Commander'||src.name==gname)return;
+ const c=src.cards.splice(ci,1)[0];let g=deck.groups.find(x=>x.name==gname);
+ if(!g){g={name:gname,cards:[],custom:true};const li=deck.groups.findIndex(x=>x.name=='Länder');if(li<0)deck.groups.push(g);else deck.groups.splice(li,0,g)}
+ c.grp=gname;g.cards.push(c);if(!src.cards.length)deck.groups.splice(deck.groups.indexOf(src),1);
+ if(!quiet){deck.msg='„'+n+'“ → '+gname+'.';recalc()}}
+function moveMany(names,gname){names.forEach(n=>moveToGroup(n,gname,true));DSEL.names.clear();deck.msg=names.length+' Karte(n) → '+gname+'.';recalc()}
+function dragSrc(el,name){el.draggable=true;el.classList.add('dragc');el.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/x-card',name);e.dataTransfer.effectAllowed='move';el.classList.add('dragging');dropDock(name)});
+ el.addEventListener('dragend',()=>{el.classList.remove('dragging');setTimeout(()=>{const d=E('dropdock');if(d)d.remove()},50)})}
+// Ablageleiste unten am Bildschirm, solange eine Karte gezogen wird – erreichbar, egal wie lang das Deck ist
+function dropDock(name){let d=E('dropdock');if(d)d.remove();d=$('div');d.id='dropdock';d.append($('span','Ablegen in: '));
+ const f=findCard(name),cur=f?deck.groups[f[0]].name:'';
+ groupNames().filter(n=>n!=cur).forEach(n=>{const z=$('span',n);z.className='dz';z.dataset.g=n;dropZone(z,x=>moveToGroup(x,n));d.append(z)});
+ if(deck.pendingGroup&&!groupNames().includes(deck.pendingGroup)){const z=$('span','➕ '+deck.pendingGroup);z.className='dz';z.dataset.g=deck.pendingGroup;dropZone(z,x=>{const g=deck.pendingGroup;deck.pendingGroup='';moveToGroup(x,g)});d.append(z)}
+ const mz=$('span','↓ Maybeboard');mz.className='dz dzm';mz.dataset.g='__maybe';dropZone(mz,x=>{const ff=findCard(x);if(ff)toMaybe(ff[0],ff[1])});
+ const rz=$('span','✕ Entfernen');rz.className='dz dzr';rz.dataset.g='__remove';dropZone(rz,x=>{const ff=findCard(x);if(ff){const g=deck.groups[ff[0]];g.cards.splice(ff[1],1);if(!g.cards.length)deck.groups.splice(ff[0],1);deck.msg='„'+x+'“ entfernt.';recalc()}});
+ d.append(mz,rz);document.body.append(d)}
+function dropZone(el,fn){el.addEventListener('dragover',e=>{if([...e.dataTransfer.types].includes('text/x-card')){e.preventDefault();el.classList.add('dropover')}});
+ el.addEventListener('dragleave',e=>{if(!el.contains(e.relatedTarget))el.classList.remove('dropover')});
+ el.addEventListener('drop',e=>{const n=e.dataTransfer.getData('text/x-card');el.classList.remove('dropover');if(n){e.preventDefault();e.stopPropagation();fn(n)}})}
+function groupNames(){return deck.groups.map(g=>g.name).filter(n=>n!='Commander')}
+function moveDialog(names){const b=dlgOpen(names.length==1?'„'+names[0]+'“ verschieben':names.length?names.length+' Karten verschieben':'Neue Gruppe');
+ if(names.length){P(b,'In welche Gruppe?','hint');const ch=$('div');ch.className='chips2';[...new Set([...(deck.pendingGroup?[deck.pendingGroup]:[]),...groupNames()])].forEach(n=>{const x=$('button',n);x.type='button';x.dataset.g=n;
+  x.onclick=()=>{closeSwap();names.length==1?moveToGroup(names[0],n):moveMany(names,n)};ch.append(x)});
+  const mb=$('button','↓ Maybeboard');mb.type='button';mb.id='mvmaybe';mb.onclick=()=>{closeSwap();names.forEach(n=>{const f=findCard(n);if(f)toMaybe(f[0],f[1])})};ch.append(mb);b.append(ch)}
+ const inp=$('input');inp.id='mvnew';inp.size=26;inp.maxLength=40;inp.placeholder='Name der neuen Gruppe, z. B. „Goblin-Erzeuger“';
+ const ok=$('button',names.length?'In neue Gruppe':'Gruppe anlegen');ok.type='button';ok.className='primary';ok.id='mvok';
+ const hint=P(b,names.length?'… oder eine neue Gruppe:':'Eine Gruppe entsteht, sobald eine Karte darin liegt. Name eingeben, dann Karten mit ⇄, Mehrfachauswahl oder per Ziehen hineinlegen.','hint');
+ ok.onclick=()=>{const n=inp.value.trim();if(!n)return;closeSwap();if(names.length)moveMany(names,n);else{deck.pendingGroup=n;deck.msg='Gruppe „'+n+'“: jetzt Karten hineinlegen (⇄ oder Mehrfachauswahl).';showDeck()}};
+ inp.onkeydown=e=>{if(e.key=='Enter')ok.click()};b.append(inp,' ',ok);setTimeout(()=>inp.focus(),50)}
+function selBar(){const sb=E('selbar');if(!sb)return;sb.innerHTML='';const ns=[...DSEL.names];
+ sb.append($('b',ns.length+' ausgewählt '));
+ const all=$('button','alle');all.type='button';all.onclick=()=>{deck.groups.filter(g=>g.name!='Commander').forEach(g=>g.cards.forEach(c=>DSEL.names.add(c.name)));showDeck()};
+ const none=$('button','keine');none.type='button';none.onclick=()=>{DSEL.names.clear();showDeck()};sb.append(all,' ',none,' ');
+ if(!ns.length)return;
+ const mv=$('button','⇄ Verschieben');mv.type='button';mv.id='selmove';mv.onclick=()=>moveDialog(ns);
+ if(deck.pendingGroup){const pg=$('button','→ '+deck.pendingGroup);pg.type='button';pg.id='selpending';pg.onclick=()=>{const g=deck.pendingGroup;deck.pendingGroup='';DSEL.names.clear();moveMany(ns,g)};sb.append(pg,' ')}
+ const tg=$('input');tg.id='seltag';tg.size=12;tg.placeholder='Tag';const ta=$('button','🏷 Tag setzen');ta.type='button';ta.id='seltagok';
+ ta.onclick=()=>{const t=tg.value.trim();if(!t)return;deck.groups.forEach(g=>g.cards.forEach(c=>{if(DSEL.names.has(c.name)){c.tags=[...new Set([...(c.tags||[]),t])].slice(0,8)}}));deck.msg='Tag „'+t+'“ für '+ns.length+' Karten.';DSEL.names.clear();showDeck()};
+ const my=$('button','↓ Maybeboard');my.type='button';my.id='selmaybe';my.onclick=()=>{ns.forEach(n=>{const f=findCard(n);if(f)toMaybe(f[0],f[1])});DSEL.names.clear();recalc()};
+ const rm=$('button','✕ Entfernen');rm.type='button';rm.id='selremove';rm.onclick=()=>{if(rm.textContent!='Wirklich?'){rm.textContent='Wirklich?';return}
+  ns.forEach(n=>{const f=findCard(n);if(f){const g=deck.groups[f[0]];g.cards.splice(f[1],1);if(!g.cards.length)deck.groups.splice(f[0],1)}});DSEL.names.clear();deck.msg=ns.length+' Karten entfernt.';recalc()};
+ sb.append(mv,' ',tg,ta,' ',my,' ',rm)}
+function stackOut(o,groups,edit){const cols={};let lands=[];
+ groups.forEach(g=>g.cards.forEach(c=>{if(g.name=='Commander')(cols.C=cols.C||[]).push(c);else if(c.land)lands.push(c);else{const k=Math.min(Math.floor(c.cmc||0),7);(cols[k]=cols[k]||[]).push(c)}}));
+ const wrap=$('div');wrap.className='stacks';wrap.id='stackview';o.append(wrap);
+ const col=(title,cards)=>{if(!cards.length)return;const d=$('div');d.className='stackcol';d.append($('div',title+' ('+cards.reduce((s,c)=>s+c.qty,0)+')'));d.firstChild.className='sth';
+  cards.sort((a,b)=>a.name.localeCompare(b.name)).forEach(c=>{const a=$('div');a.className='stc';a.dataset.name=c.name;a.title=c.name+(c.eur!=null?' · '+c.eur.toFixed(2)+' €':'');
+   if(c.image){const im=$('img');im.src=c.image;im.loading='lazy';im.alt=c.name;im.onerror=()=>{im.remove();a.classList.add('noimg');a.prepend($('span',c.name))};a.append(im)}else{a.classList.add('noimg');a.append($('span',c.name))}
+   if(c.qty>1){const q=$('span','×'+c.qty);q.className='q';a.append(q)}
+   a.onclick=()=>{const f=findCard(c.name);if(f&&edit&&!c.basic&&deck.groups[f[0]].name!='Commander')openSwap(f[0],f[1])};if(edit&&!c.basic)dragSrc(a,c.name);d.append(a)});wrap.append(d)};
+ col('Commander',cols.C||[]);for(let k=0;k<=7;k++)col(k==7?'7+':String(k),cols[k]||[]);col('Länder',lands);
+ P(o,'Stapel nach Manawert. Karte antippen = Ersatz suchen; ins Maybeboard ziehen = verschieben. Gruppen und Tags siehst du in der Listenansicht.','hint')}
+
 // Probehand und Starthand-Statistik (London-Mulligan)
 function libraryCards(){return deck.groups.filter(g=>g.name!='Commander').flatMap(g=>g.cards.flatMap(c=>Array(c.qty).fill(c)))}
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -5061,7 +5163,7 @@ function showDeck(){const d=deck,o=E('out');o.innerHTML='';
   if(r.error){sm.className='warn';sm.textContent=' '+r.error;return}
   d.name=r.name;sm.className='tag';sm.textContent=' ✓ Gespeichert als „'+r.name+'“ – zu finden unter „Deck importieren & gespeicherte Decks“.';
   myDecks(r.decks)};
- exportBox(h('div'),()=>({name:sn.value||d.name||'',commander:d.commander||'',list:d.export}));
+ exportBox(h('div'),()=>({name:sn.value||d.name||'',commander:d.commander||'',list:d.export,groups:JSON.stringify(deckExtra().groups)}));
  const n=d.groups.reduce((s,g)=>s+g.cards.reduce((t,c)=>t+c.qty,0),0);
  if(n!=100)P(o,'Das Deck hat gerade '+n+' statt 100 Karten.','warn');
  const gcs=d.groups.filter(g=>g.name!='Commander').reduce((s,g)=>s+g.cards.filter(c=>c.gc).length,0);
@@ -5080,7 +5182,15 @@ function showDeck(){const d=deck,o=E('out');o.innerHTML='';
  ab.onclick=()=>{if(ain.value.trim()){const v=ain.value.trim();ain.value='';addCardToDeck(v)}};
  ain.addEventListener('keydown',e=>{if(e.key=='Enter'){e.preventDefault();ab.onclick()}});
  if(d.msg){P(adr,d.msg,'hint');d.msg=''}
- cardsOut(o,d.groups,true);
+ const tb=h('div');tb.className='edbar';tb.id='edbar';
+ const un=$('button','↶ Rückgängig');un.type='button';un.id='dundo';un.title='Strg+Z';un.disabled=DH.pos<=0;un.onclick=deckUndo;
+ const re=$('button','↷ Wiederherstellen');re.type='button';re.id='dredo';re.title='Strg+Y';re.disabled=DH.pos>=DH.stack.length-1;re.onclick=deckRedo;
+ const se=$('button',DSEL.on?'☑ Auswahl beenden':'☐ Mehrfachauswahl');se.type='button';se.id='dselect';se.onclick=()=>{DSEL.on=!DSEL.on;DSEL.names.clear();showDeck()};
+ const ng=$('button','➕ Neue Gruppe');ng.type='button';ng.id='dnewgrp';ng.onclick=()=>moveDialog([]);
+ tb.append(un,' ',re,' ',se,' ',ng,$('span',' Karten in eine Gruppe ziehen oder ⇄ antippen – eigene Gruppen werden mit dem Deck gespeichert.'));tb.lastChild.className='hint';
+ if(DSEL.on){const sb=$('div');sb.id='selbar';sb.className='selbar';tb.append(sb)}
+ cardsOut(o,d.groups,true);if(DSEL.on)selBar();
+ deckRecord();
  recBox(h('div'));maybeBox(h('div'));tagBox(h('div'));notesBox(h('div'));tokenBox(h('div'));priceBox(h('div'));budgetBox(h('div'));
  ownBox(h('div'));manaBox(h('div'));handBox(h('div'));
  h('h4','Textliste zum Kopieren');const t=h('textarea');t.rows=10;t.cols=50;t.value=d.export;
@@ -5323,7 +5433,7 @@ async function ownBox(o){const r=await J('/api/ownership',{list:deck.export,comm
  if(r.shared.length)P(b,'Schon in anderen Decks verbaut (nicht genug Exemplare frei): '+r.shared.join(', '),'hint');
  if(r.missing.length){const bt=$('button','Fehlende Karten kopieren');bt.type='button';bt.onclick=async()=>{await copyText(r.missing.map(n=>'1 '+n).join('\\n'));bt.textContent='✓ kopiert'};
   const bw=$('button','⭐ Fehlende auf die Wunschliste');bw.type='button';bw.id='ownwish';bw.onclick=async()=>{const x=await J('/api/wish_add',{text:r.missing.map(n=>'1 '+n).join('\\n')});bw.textContent='✓ '+x.added+' auf der Wunschliste'};b.append(bt,' ',bw)}
- document.querySelectorAll('#out [data-name]').forEach(el=>{const c=r.cards[el.dataset.name];if(!c||c.basic)return;
+ document.querySelectorAll('#out [data-name]:not(.stc)').forEach(el=>{const c=r.cards[el.dataset.name];if(!c||c.basic)return;
   const t=$('span',c.owned?(c.free?' ✓':' ⚠ auch in '+c.other.join(', ')):' ✗ fehlt');t.className=c.owned?(c.free?'tag':'hint'):'warn';
   t.title=c.owned?c.owned+'× in deiner Sammlung':'nicht in deiner Sammlung';el.append(t)})}
 // ---- Kartenscanner: Foto / Live-Kamera / Android-App-Kamera -> Texterkennung -> Kartenname
