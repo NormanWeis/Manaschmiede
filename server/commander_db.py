@@ -27,6 +27,8 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 41: Sammlung: Einkaufsliste über alle Decks, Wunschliste mit Zielpreis, Ordner (z. B. Tauschordner), Wertverlauf.
+            Preise: Preisalarm auf der Startseite, zweite Preisquelle (US-Dollar/TCGplayer über Scryfall), Budget-Tausch je Deck.
 Version 40: Empfehlungen auch aus der Galerie (veröffentlichte Decks anderer Benutzer), Lückenanalyse für Ramp, Kartenziehen,
             Removal und Board-Wipes mit passenden Karten, Filter „nur aus meiner Sammlung“ und Höchstpreis je Karte.
 Version 39: Öffentliche Deck-Galerie im Server-Betrieb: Decks veröffentlichen, Galerie mit Filtern (Commander, Farben,
@@ -88,7 +90,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "40"
+APP_VERSION = "41"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -194,6 +196,11 @@ def do_import(path):
                       "CREATE INDEX IF NOT EXISTS idx_name ON cards(name COLLATE NOCASE); COMMIT;")
     NAMES = None
     record_prices(con, source_date)
+    usd = [(c["name"], float((c.get("prices") or {}).get("usd") or (c.get("prices") or {}).get("usd_foil")))
+           for c in data if c.get("layout") not in SKIP_LAYOUTS and ((c.get("prices") or {}).get("usd") or (c.get("prices") or {}).get("usd_foil"))]
+    con.execute("CREATE TABLE IF NOT EXISTS card_usd(name TEXT PRIMARY KEY, usd REAL)")
+    con.execute("DELETE FROM card_usd")
+    con.executemany("INSERT OR REPLACE INTO card_usd VALUES(?,?)", usd)
     con.execute("CREATE TABLE IF NOT EXISTS card_tokens(card TEXT, token TEXT, type_line TEXT, sid TEXT)")
     con.execute("DELETE FROM card_tokens")
     con.executemany("INSERT INTO card_tokens VALUES(?,?,?,?)", parts)
@@ -254,8 +261,11 @@ def price_history(p):
         if a is not None and b is not None and abs(b - a) >= 0.01:
             moves.append({"name": n, "from": a, "to": b, "diff": round((b - a) * q, 2), "pct": round(100 * (b - a) / a) if a else None})
     moves.sort(key=lambda x: -abs(x["diff"]))
-    return {"days": days, "series": series, "since": ref, "moves": moves[:10],
-            "hint": f"{len(days)} Stichtag(e) seit {first}. Preise: Scryfall (Cardmarket-Durchschnitt), Druckversion wie in der Kartendatenbank."}
+    um = usd_map(con, names)
+    usd = round(sum((um.get(n) or 0) * q for n, q in names.items()), 2) if um else None
+    return {"days": days, "series": series, "since": ref, "moves": moves[:10], "usd": usd, "usd_missing": sum(1 for n in names if n not in um) if um else None,
+            "hint": f"{len(days)} Stichtag(e) seit {first}. Preise: Scryfall (Euro = Cardmarket, Dollar = TCGplayer), "
+                    "Druckversion wie in der Kartendatenbank."}
 
 
 def upgrade_db():
@@ -1148,6 +1158,269 @@ def collection_export(con, uid=0):
     collection_table(con)
     rows = con.execute("SELECT name, qty FROM collection WHERE owner = ? ORDER BY name", (uid,)).fetchall()
     return "Count,Name\n" + "\n".join(f'{q},"{n.replace(chr(34), chr(39))}"' for n, q in rows) + "\n"
+
+
+# ---------------------------------------------------------------- Einkaufsliste, Wunschliste, Ordner, Preisalarm, Budget-Tausch
+def usd_map(con, names=None):
+    con.execute("CREATE TABLE IF NOT EXISTS card_usd(name TEXT PRIMARY KEY, usd REAL)")
+    if names is None:
+        return {n: u for n, u in con.execute("SELECT name, usd FROM card_usd")}
+    names = list(names)
+    out = {}
+    for i in range(0, len(names), 900):
+        part = names[i:i + 900]
+        out.update({n: u for n, u in con.execute(f"SELECT name, usd FROM card_usd WHERE name IN ({','.join('?' * len(part))})", part)})
+    return out
+
+
+def eur_map(con, names):
+    names, out = list(names), {}
+    for i in range(0, len(names), 900):
+        part = names[i:i + 900]
+        out.update({n: e for n, e in con.execute(f"SELECT name, min(CAST(eur AS REAL)) FROM cards WHERE name IN ({','.join('?' * len(part))}) "
+                                                 "AND eur IS NOT NULL AND eur <> '' GROUP BY name", part)})
+    return out
+
+
+def wish_table(con):
+    con.execute("CREATE TABLE IF NOT EXISTS wishlist(owner INTEGER, name TEXT, qty INTEGER, target REAL, added TEXT, PRIMARY KEY(owner, name))")
+
+
+def folder_table(con):
+    con.execute("CREATE TABLE IF NOT EXISTS coll_folders(owner INTEGER, folder TEXT, name TEXT, qty INTEGER, PRIMARY KEY(owner, folder, name))")
+
+
+def is_basic(con, name):
+    r = con.execute("SELECT type_line FROM cards WHERE name = ? LIMIT 1", (name,)).fetchone()
+    return bool(r and (r[0] or "").startswith("Basic"))
+
+
+def shopping_list(con, uid=0, share=True):
+    """Fehlende Karten über alle gespeicherten Decks. share: eine Karte kann zwischen Decks wandern (Bedarf = größte Menge
+    in einem Deck), sonst braucht jedes Deck eigene Exemplare (Bedarf = Summe)."""
+    decks_table(con)
+    need, where = {}, {}
+    for name, cmd, lst in con.execute("SELECT name, commander, list FROM decks WHERE owner = ?", (uid,)):
+        cnt = dict(list_counts(lst))
+        for c in [x.strip() for x in (cmd or "").split(" + ") if x.strip()]:
+            cnt.setdefault(c, 1)
+        for n, q in cnt.items():
+            need[n] = max(need.get(n, 0), q) if share else need.get(n, 0) + q
+            where.setdefault(n, []).append(name)
+    basics = {n for n in need if is_basic(con, n)}
+    own, wish = owned_map(con, uid), set()
+    wish_table(con)
+    wish = {n for n, in con.execute("SELECT name FROM wishlist WHERE owner = ?", (uid,))}
+    prices, usd = eur_map(con, need), usd_map(con, need)
+    items = []
+    for n, q in need.items():
+        if n in basics:
+            continue
+        miss = q - own.get(n, 0)
+        if miss > 0:
+            e = prices.get(n)
+            items.append({"name": n, "need": q, "have": own.get(n, 0), "missing": miss, "eur": e, "usd": usd.get(n),
+                          "total": round(e * miss, 2) if e is not None else None, "decks": sorted(where[n]), "wish": n in wish})
+    items.sort(key=lambda x: (-(x["total"] or 0), x["name"]))
+    total = round(sum(x["total"] or 0 for x in items), 2)
+    return {"items": items, "total": total, "cards": sum(x["missing"] for x in items), "decks": len({d for x in where.values() for d in x}),
+            "has_collection": bool(own), "noprice": sum(1 for x in items if x["eur"] is None), "share": share,
+            "text": "\n".join(f"{x['missing']} {x['name']}" for x in items)}
+
+
+def wish_list(con, uid=0):
+    wish_table(con)
+    rows = con.execute("SELECT name, qty, target, added FROM wishlist WHERE owner = ? ORDER BY name COLLATE NOCASE", (uid,)).fetchall()
+    prices, usd, own = eur_map(con, [r[0] for r in rows]), usd_map(con, [r[0] for r in rows]), owned_map(con, uid)
+    items = [{"name": n, "qty": q, "target": t, "added": a, "eur": prices.get(n), "usd": usd.get(n), "have": own.get(n, 0),
+              "hit": t is not None and prices.get(n) is not None and prices[n] <= t} for n, q, t, a in rows]
+    return {"items": items, "total": round(sum((x["eur"] or 0) * x["qty"] for x in items), 2), "hits": sum(1 for x in items if x["hit"])}
+
+
+def wish_add(con, uid, text, target=None):
+    """„2 Sol Ring“ je Zeile; bekannte Karten werden auf die Wunschliste gesetzt (Menge wird erhöht, Zielpreis bleibt)."""
+    wish_table(con)
+    con.row_factory = sqlite3.Row
+    added, unknown = [], []
+    for ln in (text or "").splitlines()[:500]:
+        m = re.match(r"^\s*(?:(\d+)\s*x?\s+)?(.+?)\s*$", ln)
+        if not m or not m.group(2).strip():
+            continue
+        r = lookup(con, m.group(2))[0]
+        if not r:
+            unknown.append(m.group(2))
+            continue
+        q = max(1, min(99, int(m.group(1) or 1)))
+        con.execute("INSERT INTO wishlist VALUES(?,?,?,?,?) ON CONFLICT(owner, name) DO UPDATE SET qty = max(qty, excluded.qty), "
+                    "target = coalesce(excluded.target, target)",
+                    (uid, r["name"], q, target, datetime.date.today().isoformat()))
+        added.append(r["name"])
+    con.row_factory = None
+    con.commit()
+    out = wish_list(con, uid)
+    out.update(added=len(added), unknown=unknown[:20])
+    return out
+
+
+def wish_set(con, uid, name, qty=None, target=None, remove=False):
+    wish_table(con)
+    if remove:
+        con.execute("DELETE FROM wishlist WHERE owner = ? AND name = ?", (uid, name))
+    else:
+        if qty is not None:
+            con.execute("UPDATE wishlist SET qty = ? WHERE owner = ? AND name = ?", (max(1, min(99, qty)), uid, name))
+        if target is not None:
+            con.execute("UPDATE wishlist SET target = ? WHERE owner = ? AND name = ?", (target if target > 0 else None, uid, name))
+    con.commit()
+    return wish_list(con, uid)
+
+
+def folder_overview(con, uid=0):
+    folder_table(con)
+    rows = con.execute("SELECT f.folder, count(*), sum(f.qty), sum(f.qty * coalesce((SELECT min(CAST(eur AS REAL)) FROM cards k "
+                       "WHERE k.name = f.name AND eur IS NOT NULL AND eur <> ''), 0)) FROM coll_folders f WHERE owner = ? "
+                       "GROUP BY folder ORDER BY folder COLLATE NOCASE", (uid,)).fetchall()
+    return {"folders": [{"name": f, "unique": u, "cards": c, "value": round(v or 0, 2)} for f, u, c, v in rows]}
+
+
+def folder_get(con, uid, folder):
+    folder_table(con)
+    rows = con.execute("SELECT name, qty FROM coll_folders WHERE owner = ? AND folder = ? ORDER BY name COLLATE NOCASE", (uid, folder)).fetchall()
+    prices, own = eur_map(con, [r[0] for r in rows]), owned_map(con, uid)
+    items = [{"name": n, "qty": q, "eur": prices.get(n), "have": own.get(n, 0)} for n, q in rows]
+    return {"folder": folder, "items": items, "value": round(sum((x["eur"] or 0) * x["qty"] for x in items), 2),
+            "text": "\n".join(f"{x['qty']} {x['name']}" for x in items)}
+
+
+def folder_put(con, uid, folder, text, mode="add"):
+    """Karten aus der Sammlung in einen Ordner legen (mode add) oder herausnehmen (mode remove). Mehr Exemplare,
+    als die Sammlung enthält, werden auf den Bestand begrenzt."""
+    folder = re.sub(r"\s+", " ", folder or "").strip()[:40]
+    if not folder:
+        return {"error": "Bitte einen Ordnernamen angeben."}
+    folder_table(con)
+    if mode == "add" and not con.execute("SELECT 1 FROM coll_folders WHERE owner = ? AND folder = ?", (uid, folder)).fetchone() \
+            and con.execute("SELECT count(DISTINCT folder) FROM coll_folders WHERE owner = ?", (uid,)).fetchone()[0] >= 50:
+        return {"error": "Höchstens 50 Ordner."}
+    own = owned_map(con, uid)
+    con.row_factory = sqlite3.Row
+    done, capped, unknown, notown = 0, [], [], []
+    for ln in (text or "").splitlines()[:2000]:
+        m = re.match(r"^\s*(?:(\d+)\s*x?\s+)?(.+?)\s*$", ln)
+        if not m or not m.group(2).strip():
+            continue
+        r = lookup(con, m.group(2))[0]
+        if not r:
+            unknown.append(m.group(2))
+            continue
+        n, q = r["name"], max(1, int(m.group(1) or 1))
+        cur = (con.execute("SELECT qty FROM coll_folders WHERE owner = ? AND folder = ? AND name = ?", (uid, folder, n)).fetchone() or [0])[0]
+        if mode == "remove":
+            new = max(0, cur - q)
+        else:
+            if not own.get(n):
+                notown.append(n)
+                continue
+            new = cur + q
+            if new > own[n]:
+                capped.append(n)
+                new = own[n]
+        if new:
+            con.execute("INSERT INTO coll_folders VALUES(?,?,?,?) ON CONFLICT(owner, folder, name) DO UPDATE SET qty = excluded.qty",
+                        (uid, folder, n, new))
+        else:
+            con.execute("DELETE FROM coll_folders WHERE owner = ? AND folder = ? AND name = ?", (uid, folder, n))
+        done += 1
+    con.row_factory = None
+    con.commit()
+    out = folder_get(con, uid, folder)
+    out.update(changed=done, capped=capped[:20], unknown=unknown[:20], notown=notown[:20])
+    return out
+
+
+def collection_history(con, uid=0):
+    """Wert der Sammlung je gesichertem Stichtag (letzter bekannter Preis jeder Karte bis zu diesem Tag)."""
+    collection_table(con); price_table(con)
+    own = owned_map(con, uid)
+    if not own:
+        return {"days": [], "series": [], "hint": "Noch keine Sammlung importiert."}
+    hist = {}
+    names = list(own)
+    for i in range(0, len(names), 900):
+        part = names[i:i + 900]
+        for n, d, e in con.execute(f"SELECT name, day, eur FROM price_hist WHERE name IN ({','.join('?' * len(part))}) ORDER BY day", part):
+            hist.setdefault(n, []).append((d, e))
+    days = sorted({d for h in hist.values() for d, _ in h})
+    series = []
+    for d in days[-120:]:
+        v = 0.0
+        for n, h in hist.items():
+            last = None
+            for dd, e in h:
+                if dd > d:
+                    break
+                last = e
+            v += (last or 0) * own[n]
+        series.append({"day": d, "value": round(v, 2)})
+    usd = usd_map(con, names)
+    return {"days": [x["day"] for x in series], "series": series, "usd": round(sum((usd.get(n) or 0) * q for n, q in own.items()), 2) if usd else None,
+            "hint": "Wert je gesichertem Stichtag (bei jeder Kartenaktualisierung)." if len(series) > 1 else
+                    "Der Verlauf entsteht mit den nächsten Kartenaktualisierungen (je Aktualisierung ein Stichtag)."}
+
+
+def price_alerts(con, uid=0, days=7, pct=20, min_eur=1.0):
+    """Wunschliste unter Zielpreis und starke Preisbewegungen in der Sammlung (Vergleich mit dem Stand vor etwa 7 Tagen)."""
+    wl = wish_list(con, uid)
+    hits = [x for x in wl["items"] if x["hit"]]
+    own = owned_map(con, uid)
+    price_table(con)
+    cut = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    moves = []
+    names = list(own)
+    cur = eur_map(con, names)
+    for i in range(0, len(names), 900):
+        part = names[i:i + 900]
+        for n, e in con.execute(f"SELECT h.name, h.eur FROM price_hist h JOIN (SELECT name, max(day) d FROM price_hist WHERE day <= ? "
+                                f"AND name IN ({','.join('?' * len(part))}) GROUP BY name) m ON m.name = h.name AND m.d = h.day",
+                                [cut] + part):
+            now = cur.get(n)
+            if now is None or not e:
+                continue
+            diff = now - e
+            if abs(diff) >= min_eur and abs(diff) / e * 100 >= pct:
+                moves.append({"name": n, "from": e, "to": now, "diff": round(diff, 2), "pct": round(diff / e * 100), "qty": own[n]})
+    moves.sort(key=lambda x: -abs(x["diff"] * x["qty"]))
+    return {"wish_hits": hits, "moves": moves[:15], "since": cut}
+
+
+def budget_swaps(p, uid=0):
+    """Günstigere Karten mit gleicher Aufgabe für teure Karten eines Decks."""
+    g = lambda k: (p.get(k) or [""])[0]
+    con = db()
+    con.row_factory = sqlite3.Row
+    ent, _ = entries_from_list(con, g("list"), g("commander"))
+    if not ent:
+        return {"error": "Leere Deckliste."}
+    cn = {r["name"] for r in resolve_cmds(con, g("commander"))}
+    try:
+        lim = float((g("min") or "5").replace(",", "."))
+    except ValueError:
+        lim = 5.0
+    own = owned_map(con, uid)
+    exp = sorted([(r, q) for r, q in ent if r["name"] not in cn and r["eur"] not in (None, "") and float(r["eur"]) >= lim
+                  and not front_type(r).startswith("Basic") and r["name"] not in own], key=lambda x: -float(x[0]["eur"]))[:20]
+    deck_names = "\n".join(r["name"] for r, _ in ent)
+    out, save = [], 0.0
+    for r, q in exp:
+        e = float(r["eur"])
+        alt = alternatives({"name": [r["name"]], "ci": [g("ci")], "deck": [deck_names], "maxeur": [str(round(e * 0.3, 2))], "limit": ["3"]})
+        cards = alt.get("cards") or []
+        if cards:
+            best = min(c["eur"] or 0 for c in cards)
+            save += (e - best) * q
+        out.append({"name": r["name"], "eur": e, "qty": q, "reason": alt.get("reason", ""), "alts": cards})
+    return {"items": out, "saving": round(save, 2), "min": lim,
+            "hint": f"Karten ab {lim:.2f} € (ohne Commander und ohne Karten aus deiner Sammlung); Ersatz kostet höchstens 30 % des Preises.".replace(".", ",", 1)}
 
 
 # ---------------------------------------------------------------- Empfehlungen und Frust-Index
@@ -3466,7 +3739,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 40)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 41)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -3608,6 +3881,10 @@ body.printing>*:not(#printarea){display:none!important}
 @media (max-width:600px){#tfield .tcen{gap:2px;padding:2px 6px}#tfield .tcen button{min-width:28px;font-size:1em}#tfield .tz{font-size:1.6em}#tfield .tic button{padding:2px 7px;font-size:.85em}}body.mtg #tgame .pl{border-color:#a8843a;background:#241a12}
 #top{text-align:center;margin-top:8px}#top h2{margin-bottom:4px}.wotc{margin:0 0 10px;font-size:.95em}
 .recopt{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.owned{color:#3a9a4a;font-size:.85em}.recgap{margin:6px 0 10px}.recgcard{margin-left:14px}
+details.subbox{border:1px solid rgba(168,132,58,.55);border-radius:10px;padding:6px 12px;margin:10px 0}details.subbox>summary{cursor:pointer;padding:4px 0}
+.palert{max-width:720px;margin:12px auto;text-align:left;border:1px solid #a8843a;border-radius:10px;padding:8px 12px;background:rgba(168,132,58,.12)}
+.palert .up{color:#3a9a4a}.palert .down{color:#c0362c}.hit{color:#3a9a4a;font-weight:bold}.wishadd,.folderedit{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
+.ftable td,.ftable th{padding:2px 8px;text-align:left}.ftable td.r,.ftable th.r{text-align:right}.chips2 button{margin:2px}
 .galf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0 10px}.galci button{min-width:30px;padding:3px 6px;opacity:.45}.galci button.on{opacity:1;outline:2px solid #a8843a}
 .galgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.galcard{border:1px solid #a8843a;border-radius:10px;overflow:hidden;cursor:pointer;background:rgba(0,0,0,.18);display:flex;flex-direction:column}
 .galcard .gimg{height:110px;background:#2a1f15 center 22%/cover no-repeat}.galcard .gb{padding:7px 9px;flex:1}.galcard .gn{font-weight:bold}.galcard .gm{font-size:.86em;opacity:.85;margin-top:3px}
@@ -3837,7 +4114,11 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <ul><li><b>Importieren:</b> im Bereich „Meine Sammlung“ eine CSV-Datei aus ManaBox, Moxfield, Deckbox, Archidekt oder Dragon Shield wählen oder eine Liste einfügen. „Hinzufügen“ zählt die Karten zur vorhandenen Sammlung dazu, „Ersetzen“ beginnt neu. Nicht erkannte Namen werden angezeigt.</li>
 <li><b>Besitzanteil:</b> bei jedem Deck steht, wie viel Prozent du besitzt und was fehlt (mit Preis). In der Liste markiert ✓ vorhandene Karten, ✗ fehlende und ⚠ Karten, die schon in einem anderen gespeicherten Deck stecken und von denen nicht genug Exemplare frei sind.</li>
 <li><b>Deckbau aus der Sammlung:</b> im Assistenten „Sammlung: bevorzugen“ (eigene Karten zuerst) oder „nur eigene Karten“ wählen. Standardländer gelten immer als vorhanden.</li>
-<li><b>📷 Karten scannen:</b> im Tab „Sammlung“ (oder in der Deckansicht neben „Hinzufügen“). Drei Wege: <b>Foto aufnehmen</b> (geht überall; am Handy öffnet sich die Kamera), <b>Live-Kamera</b> (im Browser nur über HTTPS bzw. am PC) und in der Android-App <b>„Mit der Handykamera scannen“</b> (Erkennung direkt auf dem Gerät, besonders schnell). Kartensprache einstellen, Karte formatfüllend und gerade aufnehmen. Erkannt wird der Name; bei Unsicherheit werden Alternativen angeboten. <b>Dauerscan:</b> in der Live-Kamera „🔁 Dauerscan starten“ (bzw. in der Android-App „Dauerscan mit der Handykamera“) – dann Karten nacheinander in den Rahmen legen; jede sicher erkannte Karte wird mit Ton automatisch in die Scanliste übernommen. Dieselbe Karte zählt erst wieder, wenn sie kurz aus dem Bild war; für mehrere gleiche Exemplare „+1“ tippen. Beim Einzelscan jede Karte mit „✓ Übernehmen“ in die Scanliste, Mengen mit + / − anpassen, am Ende „Zur Sammlung hinzufügen“ oder „Ins aktuelle Deck“. Beim allerersten Scan wird die Texterkennung einmalig geladen (rund 30 MB, Internet nötig), danach geht es ohne. Für sehr große Sammlungen sind spezialisierte Scanner-Apps (ManaBox, Delver Lens) schneller – deren CSV lässt sich weiterhin importieren.</li></ul>
+<li><b>📷 Karten scannen:</b> im Tab „Sammlung“ (oder in der Deckansicht neben „Hinzufügen“). Drei Wege: <b>Foto aufnehmen</b> (geht überall; am Handy öffnet sich die Kamera), <b>Live-Kamera</b> (im Browser nur über HTTPS bzw. am PC) und in der Android-App <b>„Mit der Handykamera scannen“</b> (Erkennung direkt auf dem Gerät, besonders schnell). Kartensprache einstellen, Karte formatfüllend und gerade aufnehmen. Erkannt wird der Name; bei Unsicherheit werden Alternativen angeboten. <b>Dauerscan:</b> in der Live-Kamera „🔁 Dauerscan starten“ (bzw. in der Android-App „Dauerscan mit der Handykamera“) – dann Karten nacheinander in den Rahmen legen; jede sicher erkannte Karte wird mit Ton automatisch in die Scanliste übernommen. Dieselbe Karte zählt erst wieder, wenn sie kurz aus dem Bild war; für mehrere gleiche Exemplare „+1“ tippen. Beim Einzelscan jede Karte mit „✓ Übernehmen“ in die Scanliste, Mengen mit + / − anpassen, am Ende „Zur Sammlung hinzufügen“ oder „Ins aktuelle Deck“. Beim allerersten Scan wird die Texterkennung einmalig geladen (rund 30 MB, Internet nötig), danach geht es ohne. Für sehr große Sammlungen sind spezialisierte Scanner-Apps (ManaBox, Delver Lens) schneller – deren CSV lässt sich weiterhin importieren.</li><li><b>🛒 Einkaufsliste:</b> zählt alle Karten, die dir für deine gespeicherten Decks fehlen, mit Preis und Deckzuordnung. „Karten wandern zwischen Decks“ (Standard) rechnet mit der größten Menge in einem Deck, sonst bekommt jedes Deck eigene Exemplare. Die Liste lässt sich kopieren – das Format „1 Kartenname“ je Zeile versteht auch die Wunschliste auf Cardmarket – oder komplett auf die eigene Wunschliste setzen.</li>
+<li><b>⭐ Wunschliste und Preisalarm:</b> Karten mit Anzahl und optionalem Zielpreis. Liegt der aktuelle Preis darunter, steht die Karte grün markiert in der Liste und als „🔔 Preisalarm“ auf der Startseite. Dort erscheinen auch Karten deiner Sammlung, deren Preis sich in etwa sieben Tagen um mindestens 20 % und 1 € verändert hat. Neue Preise kommen mit jeder Kartenaktualisierung.</li>
+<li><b>📁 Ordner:</b> Teile der Sammlung ordnen (z. B. Tauschordner, Binder). Ein Ordner enthält nur Karten, die du besitzt, und höchstens so viele, wie du hast; die Karten bleiben dabei Teil der Sammlung.</li>
+<li><b>📈 Wertverlauf:</b> der Wert der Sammlung je Stichtag (bei jeder Kartenaktualisierung) und zum Vergleich in Dollar.</li>
+<li><b>Zweite Preisquelle und Budget-Tausch:</b> Euro-Preise stammen von Cardmarket, Dollar-Preise von TCGplayer – beide liefert Scryfall mit den Kartendaten (Dollar ab der ersten Kartenaktualisierung mit Version 41). In der Deckansicht sucht „💸 Budget-Tausch“ für teure Karten (ab einstellbarem Preis, ohne eigene Karten) Ersatz mit gleicher Aufgabe für höchstens 30 % des Preises; ein Klick tauscht die Karte.</li></ul>
 
 <h3 id=h-spieltisch>Spieltisch: Lebenszähler und Spielprotokoll</h3>
 <ul><li><b>Partie starten:</b> Spielerzahl (2–6) und Startleben wählen, Namen eintragen und je Spieler ein gespeichertes Deck auswählen oder frei eintippen.</li>
@@ -3933,6 +4214,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <p class=herosub>Baue, teste und vergleiche deine Decks für das Commander-Format von <b>Magic: The Gathering</b> – 100 Karten, ein Commander und bis zu drei Gegner am Tisch.</p>
 <form id=wquick autocomplete=off><span class=ac><input id=wcmd placeholder="Mit welchem Commander möchtest du spielen?" size=40></span>
 <button class=primary>Deck bauen ✦</button></form>
+<div id=palert class=palert hidden></div>
 <p class=hint>Noch keine Idee? Einfach „Atraxa“, „Krenko“ oder „Edgar Markov“ eintippen – oder <a href="#deck" id=wsug>💡 Commander nach Farbe und Thema vorschlagen lassen</a>.</p>
 <a href="#neu" class=newbtn>🌱 <b>Neu bei Magic oder Commander?</b> Hier in Ruhe starten – Grundlagen, erstes Deck, erste Partie</a>
 </div>
@@ -4140,6 +4422,23 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <button type=button id=collgo class=primary>Sammlung importieren</button>
 <button type=button id=collexp>Als CSV herunterladen</button> <button type=button id=collclr>Sammlung leeren</button>
 <div id=collres></div></details>
+<details class=subbox id=shopbox><summary><b>🛒 Einkaufsliste über alle Decks</b> <span class=hint id=shopsum></span></summary>
+<p class=hint>Welche Karten fehlen dir für alle gespeicherten Decks zusammen? Standardländer zählen nicht.</p>
+<label><input type=checkbox id=shopshare checked> Karten wandern zwischen Decks (sonst braucht jedes Deck eigene Exemplare)</label>
+<button type=button class=primary id=shopgo>Einkaufsliste berechnen</button><div id=shopres></div></details>
+<details class=subbox id=wishbox><summary><b>⭐ Wunschliste &amp; Preisalarm</b> <span class=hint id=wishsum></span></summary>
+<p class=hint>Karten, die du kaufen möchtest. Mit Zielpreis erscheint auf der Startseite ein Hinweis, sobald der Preis darunter fällt (geprüft bei jeder Kartenaktualisierung).</p>
+<div class=wishadd><input id=wishname placeholder="Karte, z. B. Sol Ring" size=28><input id=wishqty size=3 value=1 inputmode=numeric title="Anzahl">
+<label>Zielpreis <input id=wishtarget size=5 inputmode=decimal placeholder="€"> €</label><button type=button id=wishgo>⭐ Hinzufügen</button></div>
+<div id=wishres></div></details>
+<details class=subbox id=folderbox><summary><b>📁 Ordner</b> <span class=hint id=foldersum></span></summary>
+<p class=hint>Teile deiner Sammlung ordnen, z. B. „Tauschordner“ oder „Binder 1“. Die Karten bleiben in der Sammlung; ein Ordner kann nur Karten enthalten, die du besitzt.</p>
+<div id=folderlist></div>
+<div class=folderedit><input id=foldername placeholder="Ordnername, z. B. Tauschordner" size=26 maxlength=40><br>
+<textarea id=foldertext rows=3 cols=50 placeholder="Karten, eine je Zeile, z. B. „2 Sol Ring“"></textarea><br>
+<button type=button id=folderadd class=primary>In den Ordner legen</button> <button type=button id=folderrem>Aus dem Ordner nehmen</button></div>
+<div id=folderres></div></details>
+<details class=subbox id=chistbox><summary><b>📈 Wertverlauf der Sammlung</b></summary><div id=chistres></div></details>
 </section>
 <section id=v-spieltisch class=page hidden><h3>Spieltisch: Lebenszähler &amp; Spielprotokoll <button type=button class=qh data-h=spieltisch>?</button></h3>
 <details open class=tabbox id=tablebox><summary><b>🎲 Spieltisch: Lebenszähler &amp; Spielprotokoll</b> <span class=hint id=gamecount></span> <button type=button class=qh data-h=spieltisch>?</button></summary>
@@ -4197,7 +4496,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='40';
+const PAGE_VERSION='41';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -4365,6 +4664,7 @@ async function priceBox(o){const r=await J('/api/price_history',{list:deck.expor
   const t=document.createElementNS(ns,'title');t.textContent=x.day+': '+x.value.toFixed(2).replace('.',',')+' €';c.append(t);svg.append(c)});
  o.append(svg);const a=s[0],z=s[s.length-1];
  P(o,'Deckwert '+a.day+': '+a.value.toFixed(2).replace('.',',')+' € → '+z.day+': '+z.value.toFixed(2).replace('.',',')+' € ('+(z.value>=a.value?'+':'')+(z.value-a.value).toFixed(2).replace('.',',')+' €)','big');
+ if(r.usd)P(o,'Zweite Preisquelle – TCGplayer (USA) über Scryfall: ca. '+r.usd.toFixed(2).replace('.',',')+' $'+(r.usd_missing?' ('+r.usd_missing+' Karten ohne Dollarpreis)':''),'hint');
  if(r.moves.length){const t=$('table');t.id='pricemoves';o.append($('div','Größte Änderungen seit '+r.since+':'),t);const hr=t.insertRow();['Karte','vorher','jetzt','Änderung'].forEach(x=>hr.append($('th',x)));
   r.moves.forEach(m=>{const tr=t.insertRow();tr.insertCell().append(cardName(m.name));[m.from.toFixed(2)+' €',m.to.toFixed(2)+' €',(m.diff>0?'+':'')+m.diff.toFixed(2)+' €'+(m.pct!=null?' ('+(m.pct>0?'+':'')+m.pct+' %)':'')].forEach(v=>tr.insertCell().textContent=v.replace(/\\./g,','))})}
  P(o,r.hint,'hint')}
@@ -4632,6 +4932,91 @@ async function galOpen(id){const d=await J('/api/gallery_deck?id='+id);await MEP
 MEP.then(m=>{document.querySelectorAll('.srvonly').forEach(x=>x.hidden=!m.server);
  if(!m.server){const a=document.querySelector('#mobmore a[data-v=galerie]');if(a)a.hidden=true}});
 
+// ---- Sammlung: Einkaufsliste, Wunschliste, Ordner, Wertverlauf; Preisalarm; Budget-Tausch
+const fe=v=>v==null?'–':Number(v).toFixed(2).replace('.',',')+' €';
+const fu=v=>v==null?'':Number(v).toFixed(2).replace('.',',')+' $';
+async function shopCalc(){const o=E('shopres');o.innerHTML='';P(o,'rechne …','hint');const r=await J('/api/shopping',{share:E('shopshare').checked?1:0});o.innerHTML='';
+ if(r.error){P(o,r.error,'warn');return}
+ if(!r.decks){P(o,'Noch keine Decks gespeichert.','hint');return}
+ if(!r.has_collection)P(o,'Noch keine Sammlung importiert – es fehlen deshalb alle Karten.','hint');
+ E('shopsum').textContent='('+r.cards+' Karten, ca. '+fe(r.total)+')';
+ P(o,r.items.length?r.cards+' fehlende Karten ('+r.items.length+' verschiedene) für '+r.decks+' Decks · zusammen ca. '+fe(r.total)+(r.noprice?' · '+r.noprice+' ohne Preis':''):'Dir fehlt keine Karte – alle Decks sind komplett.','big');
+ if(!r.items.length)return;
+ const bar=$('p');const cp=$('button','📋 Liste kopieren (für die Cardmarket-Wunschliste)');cp.type='button';cp.id='shopcopy';cp.onclick=async()=>{await copyText(r.text);cp.textContent='✓ kopiert'};
+ const wl=$('button','⭐ Alle auf die Wunschliste');wl.type='button';wl.id='shopwish';wl.onclick=async()=>{const x=await J('/api/wish_add',{text:r.text});wl.textContent='✓ '+x.added+' Karten auf der Wunschliste';wishShow(x)};
+ bar.append(cp,' ',wl);o.append(bar);
+ const t=$('table');t.className='ftable';t.id='shoptable';o.append(t);const hr=t.insertRow();['Karte','fehlt','hast','Preis','zusammen','in Decks'].forEach((x,i)=>{const th=$('th',x);if(i>0&&i<5)th.className='r';hr.append(th)});
+ r.items.slice(0,300).forEach(x=>{const tr=t.insertRow();const c0=tr.insertCell();c0.append(cardName(x.name));if(x.wish)c0.append(' ⭐');
+  [x.missing,x.have,fe(x.eur),fe(x.total)].forEach(v=>{const c=tr.insertCell();c.className='r';c.textContent=v});tr.insertCell().textContent=x.decks.join(', ')});
+ if(r.items.length>300)P(o,'… und '+(r.items.length-300)+' weitere (vollständig in der kopierten Liste).','hint')}
+function wishShow(r){const o=E('wishres');o.innerHTML='';if(r.error){P(o,r.error,'warn');return}
+ E('wishsum').textContent=r.items.length?'('+r.items.length+' Karten, ca. '+fe(r.total)+(r.hits?', '+r.hits+' unter Zielpreis':'')+')':'';
+ if(r.unknown&&r.unknown.length)P(o,'Nicht gefunden: '+r.unknown.join(', '),'warn');
+ if(!r.items.length){P(o,'Die Wunschliste ist leer.','hint');return}
+ const t=$('table');t.className='ftable';t.id='wishtable';o.append(t);const hr=t.insertRow();['Karte','Anzahl','Preis','Dollar','Zielpreis','',''].forEach((x,i)=>{const th=$('th',x);if(i>0&&i<5)th.className='r';hr.append(th)});
+ r.items.forEach(x=>{const tr=t.insertRow();tr.dataset.name=x.name;const c0=tr.insertCell();c0.append(cardName(x.name));if(x.have)c0.append($('span',' (hast '+x.have+')'));
+  const cq=tr.insertCell();cq.className='r';cq.textContent=x.qty;
+  const ce=tr.insertCell();ce.className='r'+(x.hit?' hit':'');ce.textContent=fe(x.eur);
+  const cu=tr.insertCell();cu.className='r';cu.textContent=fu(x.usd);
+  const ct=tr.insertCell();ct.className='r';const ti=$('input');ti.size=5;ti.className='wtarget';ti.inputMode='decimal';ti.value=x.target!=null?String(x.target).replace('.',','):'';ti.placeholder='–';
+  ti.onchange=async()=>wishShow(await J('/api/wish_set',{name:x.name,target:ti.value}));ct.append(ti,' €');
+  tr.insertCell().textContent=x.hit?'🔔 unter Zielpreis':'';
+  const cx=tr.insertCell();const rm=$('button','✕');rm.type='button';rm.className='mini';rm.title='von der Wunschliste nehmen';rm.onclick=async()=>wishShow(await J('/api/wish_set',{name:x.name,remove:1}));cx.append(rm)})}
+async function folderOverview(sel){const r=await J('/api/folders');const o=E('folderlist');o.innerHTML='';
+ E('foldersum').textContent=r.folders.length?'('+r.folders.length+')':'';
+ if(!r.folders.length){P(o,'Noch keine Ordner.','hint');return}
+ const ch=$('div');ch.className='chips2';r.folders.forEach(f=>{const b=$('button',f.name+' · '+f.cards+' Karten · '+fe(f.value));b.type='button';b.dataset.f=f.name;
+  b.onclick=()=>{E('foldername').value=f.name;folderShow(f.name)};ch.append(b)});o.append(ch);if(sel)folderShow(sel)}
+async function folderShow(name,r){r=r||await J('/api/folder',{folder:name});const o=E('folderres');o.innerHTML='';
+ if(r.error){P(o,r.error,'warn');return}
+ const msg=[];if(r.capped&&r.capped.length)msg.push('Auf den Bestand begrenzt: '+r.capped.join(', '));if(r.notown&&r.notown.length)msg.push('Nicht in deiner Sammlung: '+r.notown.join(', '));if(r.unknown&&r.unknown.length)msg.push('Unbekannt: '+r.unknown.join(', '));
+ msg.forEach(m=>P(o,m,'warn'));
+ o.append($('h4','📁 '+r.folder+' – '+r.items.reduce((a,x)=>a+x.qty,0)+' Karten, ca. '+fe(r.value)));
+ if(!r.items.length){P(o,'Der Ordner ist leer.','hint');return}
+ const t=$('table');t.className='ftable';t.id='foldertable';o.append(t);r.items.forEach(x=>{const tr=t.insertRow();const c=tr.insertCell();c.className='r';c.textContent=x.qty+'×';tr.insertCell().append(cardName(x.name));const p=tr.insertCell();p.className='r';p.textContent=fe(x.eur)});
+ const bar=$('p');const cp=$('button','📋 Ordner kopieren');cp.type='button';cp.onclick=async()=>{await copyText(r.text);cp.textContent='✓ kopiert'};
+ const del=$('button','Ordner auflösen');del.type='button';del.id='folderdel';del.onclick=async()=>{if(del.textContent!='Wirklich?'){del.textContent='Wirklich?';return}await J('/api/folder_delete',{folder:r.folder});o.innerHTML='';folderOverview()};
+ bar.append(cp,' ',del,$('span',' (die Karten bleiben in der Sammlung)'));o.append(bar)}
+async function folderPut(mode){const r=await J('/api/folder_put',{folder:E('foldername').value,text:E('foldertext').value,mode:mode});
+ if(!r.error)E('foldertext').value='';await folderOverview();folderShow(r.folder,r)}
+async function collHistory(){const o=E('chistres');o.innerHTML='';const r=await J('/api/collection_history');
+ if(!r.series.length){P(o,r.hint,'hint');return}
+ const s=r.series,a=s[0],z=s[s.length-1];
+ if(s.length>1){const ns='http://www.w3.org/2000/svg',W=520,H=110,max=Math.max(...s.map(x=>x.value)),min=Math.min(...s.map(x=>x.value)),svg=document.createElementNS(ns,'svg');
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.setAttribute('width','100%');svg.style.maxWidth=W+'px';svg.id='chistsvg';
+  const xp=i=>10+i*(W-20)/(s.length-1),yp=v=>max==min?H/2:H-12-(v-min)*(H-24)/(max-min);
+  const pl=document.createElementNS(ns,'polyline');pl.setAttribute('points',s.map((x,i)=>xp(i)+','+yp(x.value)).join(' '));pl.setAttribute('fill','none');pl.setAttribute('stroke','currentColor');pl.setAttribute('stroke-width','2');svg.append(pl);
+  s.forEach((x,i)=>{const c=document.createElementNS(ns,'circle');c.setAttribute('cx',xp(i));c.setAttribute('cy',yp(x.value));c.setAttribute('r',3);c.setAttribute('fill','currentColor');const t=document.createElementNS(ns,'title');t.textContent=x.day+': '+fe(x.value);c.append(t);svg.append(c)});o.append(svg)}
+ P(o,'Sammlungswert '+a.day+': '+fe(a.value)+(s.length>1?' → '+z.day+': '+fe(z.value)+' ('+(z.value>=a.value?'+':'')+fe(z.value-a.value)+')':'')+(r.usd?' · in Dollar (TCGplayer): '+fu(r.usd):''),'big');
+ P(o,r.hint,'hint')}
+async function priceAlerts(){const o=E('palert');if(!o)return;const r=await J('/api/price_alerts');if(r.error)return;o.innerHTML='';
+ if(!r.wish_hits.length&&!r.moves.length){o.hidden=true;return}o.hidden=false;
+ o.append($('b','🔔 Preisalarm'));
+ if(r.wish_hits.length){const d=$('div');d.id='palwish';d.append('Wunschliste unter Zielpreis: ');r.wish_hits.forEach((x,i)=>{if(i)d.append(', ');d.append(cardName(x.name),' '+fe(x.eur)+' (Ziel '+fe(x.target)+')')});o.append(d)}
+ if(r.moves.length){const d=$('div');d.id='palmove';d.append('Starke Bewegung in deiner Sammlung seit '+r.since+': ');
+  r.moves.slice(0,8).forEach((x,i)=>{if(i)d.append(', ');const sp=$('span',(x.diff>0?'▲ ':'▼ ')+fe(x.from)+' → '+fe(x.to)+' ('+(x.pct>0?'+':'')+x.pct+' %)');sp.className=x.diff>0?'up':'down';d.append(cardName(x.name),' ',sp)});o.append(d)}
+ const go=$('a','→ zur Wunschliste');go.href='#sammlung';go.onclick=()=>setTimeout(()=>{E('wishbox').open=true;E('wishbox').scrollIntoView()},300);o.append(' ',go)}
+async function budgetBox(o){const h=$('h4','💸 Budget-Tausch');o.append(h);
+ const lim=$('input');lim.id='budmin';lim.size=4;lim.value='5';lim.inputMode='decimal';const b=$('button','Günstigere Alternativen suchen');b.type='button';b.id='budgo';
+ const l=$('label');l.append('für Karten ab ',lim,' € ');const res=$('div');res.id='budres';o.append(l,b,res);
+ b.onclick=async()=>{res.innerHTML='';P(res,'suche …','hint');const r=await J('/api/budget_swaps',{list:deck.export,commander:deck.commander||'',ci:deck.ci||'',min:lim.value});res.innerHTML='';
+  if(r.error){P(res,r.error,'warn');return}
+  if(!r.items.length){P(res,'Keine Karte ab '+fe(r.min)+' (ohne Commander und eigene Karten).','hint');return}
+  P(res,'Mögliche Ersparnis mit der jeweils günstigsten Alternative: ca. '+fe(r.saving),'big');
+  r.items.forEach(x=>{const d=$('div');d.className='budrow';d.dataset.name=x.name;d.append($('b',x.name),' '+fe(x.eur)+' → ');
+   if(!x.alts.length)d.append($('span','keine günstige Alternative mit gleicher Aufgabe'));
+   x.alts.forEach(a=>{const bt=$('button',a.name+' ('+fe(a.eur)+')');bt.type='button';bt.className='mini budswap';bt.title='„'+x.name+'“ durch „'+a.name+'“ ersetzen';
+    bt.onclick=()=>{for(const g of deck.groups){const ci=g.cards.findIndex(c=>c.name==x.name);if(ci>=0){markOut(x.name);g.cards[ci]=Object.assign({},a,{qty:g.cards[ci].qty,swapped:true});recalc();return}}};d.append(bt,' ')});
+   const w=$('div',x.reason);w.className='hint';d.append(w);res.append(d)});P(res,r.hint,'hint')}}
+E('shopgo').onclick=shopCalc;
+E('wishgo').onclick=async()=>{const r=await J('/api/wish_add',{text:(E('wishqty').value||'1')+' '+E('wishname').value,target:E('wishtarget').value});if(!r.error){E('wishname').value='';E('wishtarget').value=''}wishShow(r)};
+E('folderadd').onclick=()=>folderPut('add');E('folderrem').onclick=()=>folderPut('remove');
+E('wishbox').addEventListener('toggle',()=>{if(E('wishbox').open)J('/api/wishlist').then(wishShow)});
+E('folderbox').addEventListener('toggle',()=>{if(E('folderbox').open)folderOverview()});
+E('chistbox').addEventListener('toggle',()=>{if(E('chistbox').open)collHistory()});
+J('/api/wishlist').then(r=>{if(r.items&&r.items.length)E('wishsum').textContent='('+r.items.length+' Karten'+(r.hits?', '+r.hits+' unter Zielpreis':'')+')'});
+priceAlerts();
+
 // Probehand und Starthand-Statistik (London-Mulligan)
 function libraryCards(){return deck.groups.filter(g=>g.name!='Commander').flatMap(g=>g.cards.flatMap(c=>Array(c.qty).fill(c)))}
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -4696,7 +5081,7 @@ function showDeck(){const d=deck,o=E('out');o.innerHTML='';
  ain.addEventListener('keydown',e=>{if(e.key=='Enter'){e.preventDefault();ab.onclick()}});
  if(d.msg){P(adr,d.msg,'hint');d.msg=''}
  cardsOut(o,d.groups,true);
- recBox(h('div'));maybeBox(h('div'));tagBox(h('div'));notesBox(h('div'));tokenBox(h('div'));priceBox(h('div'));
+ recBox(h('div'));maybeBox(h('div'));tagBox(h('div'));notesBox(h('div'));tokenBox(h('div'));priceBox(h('div'));budgetBox(h('div'));
  ownBox(h('div'));manaBox(h('div'));handBox(h('div'));
  h('h4','Textliste zum Kopieren');const t=h('textarea');t.rows=10;t.cols=50;t.value=d.export;
  E('cmpbox').style.display='block'}
@@ -4936,7 +5321,8 @@ async function ownBox(o){const r=await J('/api/ownership',{list:deck.export,comm
  const b=$('div');b.className='savebox';o.append(b);
  b.append($('b','Sammlung: '),String(r.percent)+' % des Decks besitzt du'+(r.missing.length?' · es fehlen '+r.missing.length+' Karten (ca. '+r.missing_eur.toFixed(2).replace('.',',')+' €)':' · alles vorhanden'));
  if(r.shared.length)P(b,'Schon in anderen Decks verbaut (nicht genug Exemplare frei): '+r.shared.join(', '),'hint');
- if(r.missing.length){const bt=$('button','Fehlende Karten kopieren');bt.type='button';bt.onclick=async()=>{await copyText(r.missing.map(n=>'1 '+n).join('\\n'));bt.textContent='✓ kopiert'};b.append(bt)}
+ if(r.missing.length){const bt=$('button','Fehlende Karten kopieren');bt.type='button';bt.onclick=async()=>{await copyText(r.missing.map(n=>'1 '+n).join('\\n'));bt.textContent='✓ kopiert'};
+  const bw=$('button','⭐ Fehlende auf die Wunschliste');bw.type='button';bw.id='ownwish';bw.onclick=async()=>{const x=await J('/api/wish_add',{text:r.missing.map(n=>'1 '+n).join('\\n')});bw.textContent='✓ '+x.added+' auf der Wunschliste'};b.append(bt,' ',bw)}
  document.querySelectorAll('#out [data-name]').forEach(el=>{const c=r.cards[el.dataset.name];if(!c||c.basic)return;
   const t=$('span',c.owned?(c.free?' ✓':' ⚠ auch in '+c.other.join(', ')):' ✗ fehlt');t.className=c.owned?(c.free?'tag':'hint'):'warn';
   t.title=c.owned?c.owned+'× in deiner Sammlung':'nicht in deiner Sammlung';el.append(t)})}
@@ -6140,6 +6526,11 @@ class H(BaseHTTPRequestHandler):
                 con.execute("DELETE FROM decks WHERE owner = ?", (int(g("id") or 0),))
                 collection_table(con)
                 con.execute("DELETE FROM collection WHERE owner = ?", (int(g("id") or 0),))
+                wish_table(con); folder_table(con); gallery_tables(con)
+                con.execute("DELETE FROM wishlist WHERE owner = ?", (int(g("id") or 0),))
+                con.execute("DELETE FROM coll_folders WHERE owner = ?", (int(g("id") or 0),))
+                con.execute("DELETE FROM deck_likes WHERE uid = ? OR deck_id NOT IN (SELECT id FROM decks)", (int(g("id") or 0),))
+                con.execute("DELETE FROM deck_comments WHERE deck_id NOT IN (SELECT id FROM decks)")
                 games_table(con)
                 con.execute("DELETE FROM games WHERE owner = ?", (int(g("id") or 0),))
                 con.commit()
@@ -6148,11 +6539,41 @@ class H(BaseHTTPRequestHandler):
                 return build(p, uid)
             if path == "/api/collection":
                 return collection_summary(con, uid)
+            if path == "/api/shopping":
+                return shopping_list(con, uid, g("share") != "0")
+            if path == "/api/wishlist":
+                return wish_list(con, uid)
+            if path == "/api/wish_add":
+                t = g("target").replace(",", ".")
+                return wish_add(con, uid, g("text"), float(t) if re.fullmatch(r"\d+(\.\d+)?", t) else None)
+            if path == "/api/wish_set":
+                t, q = g("target").replace(",", "."), g("qty")
+                return wish_set(con, uid, g("name"), int(q) if q.isdigit() else None,
+                                (float(t) if re.fullmatch(r"\d+(\.\d+)?", t) else 0.0) if "target" in p else None, g("remove") == "1")
+            if path == "/api/folders":
+                return folder_overview(con, uid)
+            if path == "/api/folder":
+                return folder_get(con, uid, g("folder"))
+            if path == "/api/folder_put":
+                return folder_put(con, uid, g("folder"), g("text"), g("mode") or "add")
+            if path == "/api/folder_delete":
+                folder_table(con)
+                con.execute("DELETE FROM coll_folders WHERE owner = ? AND folder = ?", (uid, g("folder")))
+                con.commit()
+                return folder_overview(con, uid)
+            if path == "/api/collection_history":
+                return collection_history(con, uid)
+            if path == "/api/price_alerts":
+                return price_alerts(con, uid)
+            if path == "/api/budget_swaps":
+                return budget_swaps(p, uid)
             if path == "/api/collection_import":
                 return collection_import(p, uid)
             if path == "/api/collection_clear":
                 collection_table(con)
                 con.execute("DELETE FROM collection WHERE owner = ?", (uid,))
+                folder_table(con)
+                con.execute("DELETE FROM coll_folders WHERE owner = ?", (uid,))
                 con.commit()
                 return collection_summary(con, uid)
             if path == "/api/scan_match":
