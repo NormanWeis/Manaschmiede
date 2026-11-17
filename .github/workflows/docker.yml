@@ -1,12 +1,12 @@
 # Baut das Docker-Image der Manaschmiede und legt es in der GitHub Container Registry (ghcr.io) ab.
-# Start: Actions -> "Docker-Image bauen" -> Run workflow (oder automatisch bei einem Tag wie v37)
+# Start: Actions -> "Docker-Image bauen" -> Run workflow (oder automatisch bei einem Tag wie v38)
 name: Docker-Image bauen
 on:
   workflow_dispatch:
     inputs:
       version:
         description: "Versionsnummer für das Image-Tag"
-        default: "37"
+        default: "38"
       forge:
         description: "Forge-Version (z. B. 2.0.16 oder latest)"
         default: "2.0.16"

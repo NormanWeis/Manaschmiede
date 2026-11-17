@@ -10,8 +10,8 @@ android {
         applicationId "de.commanderdb.app"
         minSdk 24
         targetSdk 34
-        versionCode 37
-        versionName "37"
+        versionCode 38
+        versionName "38"
     }
 
     // Optional signierte Release-Version: Schlüssel über Umgebungsvariablen (siehe README-Android.md)

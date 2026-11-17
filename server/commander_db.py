@@ -17,6 +17,8 @@ Version 3: Deckansicht mit Kartenbildern, Vergleich mit offiziellen Commander-Pr
 (Decklisten: github.com/taw/magic-preconstructed-decks-data, auch Grundlage von mtg.wtf/MTGJSON).
 Version 4: Karten gezielt tauschen oder entfernen (mit Alternativen gleicher Aufgabe), Option ohne
 Game Changer, Liste nicht verfügbarer Karten, bessere Ramp-Erkennung.
+Version 38: Testspielfeld – Deck ohne Gegner durchspielen (Bibliothek, Hand, Spielfeld, Friedhof, Exil, Kommandozone,
+  Mulligan, Tappen, Marken, Tokens, Scry/Suchen, Rückgängig).
 Version 37: Gemeinsamer Spieltisch – mehrere Handys an einem Tisch (Code/QR beitreten, jeder steuert sein Feld, Abgleich
   in Echtzeit); Decks an andere Benutzer senden (Postfach) bzw. per Link an andere Manaschmieden.
 Version 36: Commander-Vorschläge mit Abwechslung – jede Anfrage mischt beliebte Commander, Geheimtipps und günstige
@@ -81,7 +83,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "37"
+APP_VERSION = "38"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -3375,7 +3377,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 37)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 38)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -3578,6 +3580,36 @@ body.mtg #legal{border-top-color:#8a6a2c}a.back{font-weight:bold}
 .cname{white-space:nowrap}.tagchip{display:inline-block;font-size:.8em;padding:0 6px;border-radius:9px;background:#e7f1fb;color:#234;border:1px solid #9bc}
 body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{opacity:.85}.cname.miss{outline:2px dashed #c0362c;outline-offset:1px;border-radius:3px}
 </style>
+<style id=ptcss>
+#pt{position:fixed;inset:0;z-index:200;background:#0f1a12;color:#f1e3c6;display:flex;flex-direction:column;font-size:15px;overflow:hidden}
+#pt[hidden]{display:none}body.ptopen{overflow:hidden}
+#pt .ptbar{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:6px 8px;background:#1b140e;border-bottom:1px solid #a8843a}
+#pt .ptbar .ptmore{display:none}#pt .ptbar button{padding:4px 9px;min-height:32px;border-radius:8px;border:1px solid #a8843a;background:#2a1f15;color:#f1e3c6;cursor:pointer}
+#pt .ptinfo{margin-right:8px}#pt .ptlife{display:inline-flex;gap:4px;align-items:center;margin-right:6px}
+#pt .ptnote{background:#a8843a;color:#1b140e;padding:6px 10px;font-weight:bold}
+#pt .ptmain{flex:1;display:flex;min-height:0}
+#pt .ptside{width:170px;padding:6px;display:flex;flex-direction:column;gap:6px;background:rgba(0,0,0,.25);overflow:auto}
+#pt .ptzone{display:flex;justify-content:space-between;padding:8px;border-radius:8px;border:1px solid #a8843a;background:#2a1f15;color:#f1e3c6;cursor:pointer}
+#pt .ptcz{border:1px dashed #a8843a;border-radius:8px;padding:4px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:.85em}
+#pt .ptlog{font-size:.75em;opacity:.8;overflow:auto}
+#pt .ptfield{flex:1;display:flex;flex-direction:column;gap:6px;padding:8px;overflow:auto;background:radial-gradient(ellipse at center,#1d3524 0%,#0f1a12 80%)}
+#pt .ptrow{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;min-height:120px;padding:6px;border-radius:10px;border:1px dashed rgba(168,132,58,.35)}
+#pt .ptrow small{opacity:.5;align-self:center}
+#pt .pthand{background:#1b140e;border-top:1px solid #a8843a;padding:4px 8px;max-height:40vh;overflow:auto}
+#pt .pthand>div:first-child{font-size:.8em;opacity:.8}#pt .pthand .ptrow{flex-wrap:nowrap;overflow-x:auto;min-height:130px;border:0}
+#pt .ptc{position:relative;width:88px;height:123px;flex:0 0 auto;border-radius:6px;background:#2a2018;border:1px solid #6b5532;cursor:pointer;overflow:hidden;transition:transform .15s;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+#pt .ptc img{width:100%;height:100%;object-fit:cover;display:block}#pt .ptc .ptn{position:absolute;left:0;right:0;bottom:0;font-size:10px;line-height:1.15;padding:2px 3px;background:rgba(0,0,0,.65);color:#fff}
+#pt .ptc.tap{transform:rotate(90deg);margin:0 18px}#pt .ptc.tok{border:2px solid #9cf29c}
+#pt .ptc .ptctr,#pt .ptc .pttax{position:absolute;top:3px;right:3px;background:#2f7d3e;color:#fff;border-radius:9px;padding:0 6px;font-size:12px}#pt .ptc .pttax{background:#a8843a;color:#1b140e;left:3px;right:auto}
+#ptmenu{position:absolute;z-index:230;background:#241a12;border:1px solid #a8843a;border-radius:10px;padding:4px;display:flex;flex-direction:column;min-width:200px;box-shadow:0 6px 18px rgba(0,0,0,.6)}
+#ptmenu button{text-align:left;padding:8px 10px;background:none;border:0;color:#f1e3c6;cursor:pointer;border-radius:6px}#ptmenu button:hover{background:#3a2c20}
+#ptlist{position:absolute;left:5%;right:5%;top:8%;bottom:8%;z-index:220;background:#1b140e;border:1px solid #a8843a;border-radius:12px;padding:10px;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.7)}
+#ptlist .pth{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}#ptlist .ptgrid{display:flex;flex-wrap:wrap;gap:8px}
+#ptlist .ptgrid>button{padding:6px 10px;border-radius:8px;border:1px solid #a8843a;background:#2a1f15;color:#f1e3c6}
+@media (max-width:760px){#pt{font-size:14px}#pt .ptmain{flex-direction:column}#pt .ptside{width:auto;flex-direction:row;flex-wrap:wrap;align-items:flex-start}
+ #pt .ptcz{flex-direction:row}#pt .ptlog{display:none}#pt .ptc{width:64px;height:90px}#pt .ptc.tap{margin:0 13px}#pt .ptrow{min-height:96px}
+ #pt .ptbar button{padding:3px 7px;font-size:.88em}#pt .ptbar .ptsec{display:none}#pt .ptbar .ptmore{display:inline-block}#pt .ptinfo{width:100%}#pt .pthand .ptrow{min-height:96px}#ptlist{left:2%;right:2%;top:4%;bottom:4%}}
+</style>
 <style id=mobcss>
 /* ---------- Handyansicht (body.mob): wird per Geräteerkennung oder von Hand gesetzt ---------- */
 #layoutbtn{position:fixed;top:10px;right:330px;z-index:60;border:1px solid #999;background:#fff;border-radius:16px;padding:4px 10px;cursor:pointer}
@@ -3687,7 +3719,8 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>Manakurve:</b> wie viele Karten welche Kosten haben. Viele günstige Karten = schnelles Deck.</li>
 <li><b>Preise</b> sind Euro-Richtwerte aus den Scryfall-Daten (Marktpreise von Cardmarket).</li>
 <li><b>Manabasis:</b> zählt je Farbe die Quellen (Länder einschließlich Fetch- und Suchländern, Mana-Artefakte/-Kreaturen bis Manawert 2; Ramp-Zauber bis Manawert 3, die ein Land suchen, zählen halb) und berechnet, wie wahrscheinlich du jede Karte rechtzeitig wirken kannst. „Zu wenig Quellen“ heißt: mehr Länder oder Mana dieser Farbe einplanen. Die schwierigsten Karten stehen rechts.</li>
-<li><b>Probehand:</b> zieht 7 zufällige Karten; „Karte ziehen“ simuliert die nächsten Züge, „Mulligan“ mischt neu (London-Mulligan). Darüber steht eine Statistik aus 20.000 Starthänden: wie oft die Hand behaltbar ist (2–5 Länder) und wie oft du in Zug 1–4 ein Land spielen kannst.</li></ul>
+<li><b>Probehand:</b> zieht 7 zufällige Karten; „Karte ziehen“ simuliert die nächsten Züge, „Mulligan“ mischt neu (London-Mulligan). Darüber steht eine Statistik aus 20.000 Starthänden: wie oft die Hand behaltbar ist (2–5 Länder) und wie oft du in Zug 1–4 ein Land spielen kannst.</li>
+<li><b>🎮 Testspielfeld:</b> spielt das Deck allein Zug für Zug durch (Goldfischen). Commander in der Kommandozone (Steuer +2 pro Wurf), Bibliothek, Friedhof, Exil, Länderreihe, Spielfeld, Spielmarken, Zähler, Lebenspunkte, Mulligan, „Oberste X“ ansehen, Bibliothek durchsuchen und Rückgängig (40 Schritte). Karte antippen = ausspielen/tappen, gedrückt halten oder Rechtsklick = weitere Aktionen. Tasten: D ziehen, N nächster Zug, U enttappen, M mischen, Strg+Z rückgängig, Esc schließen.</li></ul>
 
 <h3 id=h-import>Importieren und Speichern</h3>
 <ul><li><b>Speichern:</b> im umrahmten Feld „💾 Deck speichern“ direkt unter der Deck-Überschrift einen Namen eingeben und <b>Speichern</b> klicken. Gleicher Name = altes Deck wird überschrieben.</li>
@@ -3915,7 +3948,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li>Unter <a href="#deck">🛠 Deck bauen</a> die Lieblingsfarben anklicken und/oder ein Thema eintragen, z. B. „Drachen“, „Tokens“ oder „Friedhof“.</li>
 <li><b>„💡 Commander vorschlagen“</b> zeigt passende Commander mit Bild. Einen auswählen.</li>
 <li><b>„Deck vorschlagen“</b> stellt 100 Karten zusammen. Optional: Budget oder deine Sammlung berücksichtigen.</li>
-<li>Deck speichern, mit der Probehand testen und unter „Gegner &amp; Duell“ gegen Precons antreten lassen.</li></ol>
+<li>Deck speichern, mit der Probehand und dem 🎮 Testspielfeld ein paar Züge allein durchspielen und unter „Gegner &amp; Duell“ gegen Precons antreten lassen.</li></ol>
 <p><b>Faustregel für ein ausgewogenes Deck:</b> etwa 36–38 Länder, 10 Karten für zusätzliches Mana („Ramp“), 10 zum Kartenziehen, 8–10 zum Entfernen einzelner Bedrohungen und 2–3, die das ganze Spielfeld räumen. Der Rest unterstützt das Thema deines Commanders. Die Manaschmiede prüft das und zeigt Lücken an.</p></div>
 
 <h3 id=g-partie>🎲 Teil 4: Die erste Partie</h3>
@@ -4054,7 +4087,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='37';
+const PAGE_VERSION='38';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -4309,6 +4342,123 @@ async function manaBox(o){const box=$('div');o.append(box);
   const st=tr.insertCell();st.textContent=c.status;st.className=c.avg>=90?'tag':(c.avg>=80?'hint':'warn');
   tr.insertCell().textContent=c.weak.slice(0,3).map(w=>w.name+' ('+w.prob+' %)').join(', ')||'–'}
  P(box,r.hint,'hint')}
+// ================= Testspielfeld (Goldfish): Deck ausprobieren ohne Gegner =================
+let PT=null;const PTU=[];
+const ptId=()=>Math.random().toString(36).slice(2,9);
+function ptCard(c,extra){return Object.assign({id:ptId(),name:c.name,image:c.image||'',land:!!c.land,mana:c.mana||'',cmc:c.cmc||0,scryfall:c.scryfall||'',tapped:false,ctr:0,token:false},extra||{})}
+function ptNew(){if(!deck||!deck.groups){alert('Bitte zuerst ein Deck bauen oder öffnen.');return}
+ const lib=shuffle(libraryCards().map(c=>ptCard(c)));
+ const cz=(deck.groups.find(g=>g.name=='Commander')||{cards:[]}).cards.map(c=>ptCard(c,{cmdr:true}));
+ PT={name:deck.name||(cz[0]&&cz[0].name)||'Deck',lib:lib,hand:[],bf:[],gy:[],ex:[],cz:cz,turn:1,life:40,mull:0,mullBottom:0,casts:{},log:[]};
+ PTU.length=0;ptDraw(7,true);ptLog('Partie gestartet – 7 Karten gezogen.');ptOpen()}
+function ptSnap(){PTU.push(JSON.stringify(PT));if(PTU.length>40)PTU.shift()}
+function ptUndo(){if(!PTU.length)return;PT=JSON.parse(PTU.pop());ptRender()}
+function ptLog(t){PT.log.unshift('Zug '+PT.turn+': '+t);PT.log.length=Math.min(PT.log.length,60)}
+function ptDraw(n,silent){for(let i=0;i<n;i++){const c=PT.lib.shift();if(!c){ptLog('Bibliothek leer – du würdest verlieren!');break}PT.hand.push(c)}if(!silent)ptLog(n+' Karte'+(n>1?'n':'')+' gezogen.')}
+const PTZ={hand:'Hand',bf:'Spielfeld',gy:'Friedhof',ex:'Exil',lib:'Bibliothek',cz:'Kommandozone'};
+function ptFind(id){for(const z of ['hand','bf','gy','ex','lib','cz']){const i=PT[z].findIndex(c=>c.id==id);if(i>=0)return [z,i]}return [null,-1]}
+// Karte verschieben; pos: 'top' | 'bottom' (Bibliothek)
+function ptMove(id,to,pos){ptSnap();const [z,i]=ptFind(id);if(!z)return;const c=PT[z].splice(i,1)[0];
+ if(c.token&&to!='bf'){ptLog('Token „'+c.name+'“ verschwindet.');ptRender();return}
+ c.tapped=false;if(to!='bf')c.ctr=0;
+ if(to=='lib'){pos=='bottom'?PT.lib.push(c):PT.lib.unshift(c)}else PT[to].push(c);
+ if(z=='cz'&&to=='bf'){PT.casts[c.name]=(PT.casts[c.name]||0)+1}
+ ptLog(c.name+': '+PTZ[z]+' → '+PTZ[to]+(to=='lib'?(pos=='bottom'?' (unten)':' (oben)'):''));ptRender()}
+function ptPlay(id){const [z,i]=ptFind(id);if(!z)return;const c=PT[z][i];
+ if(PT.mullBottom>0&&z=='hand'){ptSnap();PT.hand.splice(i,1);PT.lib.push(c);PT.mullBottom--;ptLog(c.name+' unter die Bibliothek (Mulligan).');ptRender();return}
+ if(c.land&&z=='hand'){const played=PT.bf.filter(x=>x.land&&x.playedTurn==PT.turn).length;c.playedTurn=PT.turn;if(played)ptLog('Hinweis: schon ein Land in diesem Zug gespielt.')}
+ ptMove(id,'bf')}
+function ptTap(id){const [z,i]=ptFind(id);if(z!='bf')return;ptSnap();PT.bf[i].tapped=!PT.bf[i].tapped;ptRender()}
+function ptNext(){ptSnap();PT.turn++;PT.bf.forEach(c=>c.tapped=false);ptDraw(1,true);ptLog('Neuer Zug: enttappt, 1 Karte gezogen.');ptRender()}
+function ptMull(){ptSnap();const n=PT.mull+1;PT.lib=shuffle(PT.lib.concat(PT.hand));PT.hand=[];ptDraw(7,true);PT.mull=n;PT.mullBottom=Math.max(0,n-1);
+ ptLog('Mulligan '+n+(n==1?' (in Mehrspieler-Partien frei)':'')+': 7 neue Karten'+(PT.mullBottom?', lege '+PT.mullBottom+' unter die Bibliothek':'')+'.');ptRender()}
+function ptShuffle(){ptSnap();PT.lib=shuffle(PT.lib);ptLog('Bibliothek gemischt.');ptRender()}
+function ptToken(name,img){ptSnap();PT.bf.push({id:ptId(),name:name,image:img||'',land:false,mana:'',tapped:false,ctr:0,token:true});ptLog('Token „'+name+'“ erzeugt.');ptRender()}
+function ptCtr(id,d){const [z,i]=ptFind(id);if(z!='bf')return;ptSnap();PT.bf[i].ctr=Math.max(0,(PT.bf[i].ctr||0)+d);ptRender()}
+function ptCopy(id){const [z,i]=ptFind(id);if(z!='bf')return;const c=PT.bf[i];ptToken(c.name+' (Kopie)',c.image)}
+// ---------- Darstellung ----------
+function ptOpen(){let o=E('pt');if(!o){o=$('div');o.id='pt';document.body.append(o);
+  document.addEventListener('keydown',e=>{if(!PT||!E('pt')||E('pt').hidden||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;
+   const k=e.key.toLowerCase();if((e.ctrlKey||e.metaKey)&&k=='z'){e.preventDefault();ptUndo()}else if(k=='d')ptDrawBtn();else if(k=='n')ptNext();else if(k=='u'){ptSnap();PT.bf.forEach(c=>c.tapped=false);ptRender()}
+   else if(k=='m')ptShuffle();else if(k=='z')ptUndo();else if(k=='escape')ptClose()})}
+ o.hidden=false;document.body.classList.add('ptopen');ptRender()}
+function ptClose(){const o=E('pt');if(o)o.hidden=true;document.body.classList.remove('ptopen')}
+function ptDrawBtn(){ptSnap();ptDraw(1);ptRender()}
+function ptMenu(ev,items){ev.preventDefault();ev.stopPropagation();const old=E('ptmenu');if(old)old.remove();
+ const m=$('div');m.id='ptmenu';items.forEach(([t,fn])=>{const b=$('button',t);b.type='button';b.onclick=e=>{e.stopPropagation();m.remove();fn()};m.append(b)});
+ const x=$('button','✕ schließen');x.type='button';x.onclick=()=>m.remove();m.append(x);E('pt').append(m);
+ const r=E('pt').getBoundingClientRect(),px=(ev.clientX||(ev.touches&&ev.touches[0].clientX)||r.width/2),py=(ev.clientY||(ev.touches&&ev.touches[0].clientY)||r.height/2);
+ m.style.left=Math.max(4,Math.min(px,r.width-210))+'px';m.style.top=Math.max(4,Math.min(py,r.height-m.offsetHeight-8))+'px'}
+function ptMenuFor(c,z){const it=[];const id=c.id;
+ if(z=='hand')it.push(['▶ Ausspielen',()=>ptPlay(id)]);
+ if(z=='bf')it.push([c.tapped?'↺ Enttappen':'↻ Tappen',()=>ptTap(id)],['+1 Marke',()=>ptCtr(id,1)],['−1 Marke',()=>ptCtr(id,-1)],['⧉ Kopie als Token',()=>ptCopy(id)]);
+ if(z!='hand')it.push(['✋ Auf die Hand',()=>ptMove(id,'hand')]);
+ if(z!='bf'&&z!='hand')it.push(['▶ Aufs Spielfeld',()=>ptMove(id,'bf')]);
+ if(z!='gy')it.push(['🪦 Friedhof',()=>ptMove(id,'gy')]);
+ if(z!='ex')it.push(['🌀 Exil',()=>ptMove(id,'ex')]);
+ it.push(['⬆ Oben auf die Bibliothek',()=>ptMove(id,'lib','top')],['⬇ Unter die Bibliothek',()=>ptMove(id,'lib','bottom')]);
+ if(c.cmdr&&z!='cz')it.push(['👑 In die Kommandozone',()=>ptMove(id,'cz')]);
+ return it}
+function ptCardEl(c,z){const d=$('div');d.className='ptc'+(c.tapped?' tap':'')+(c.token?' tok':'')+(c.land?' land':'');d.dataset.id=c.id;d.title=c.name;
+ if(c.image&&!c.token){const im=$('img');im.src=c.image;im.alt=c.name;im.loading='lazy';im.onerror=()=>{im.remove()};d.append(im)}else if(c.image){const im=$('img');im.src=c.image;im.alt=c.name;im.onerror=()=>im.remove();d.append(im)}
+ const nm=$('span',c.name);nm.className='ptn';d.append(nm);
+ if(c.ctr){const b=$('b','+'+c.ctr);b.className='ptctr';d.append(b)}
+ let t=null,long=false;
+ d.addEventListener('pointerdown',e=>{long=false;clearTimeout(t);t=setTimeout(()=>{long=true;ptMenu(e,ptMenuFor(c,z))},550)});
+ ['pointerup','pointerleave','pointercancel'].forEach(ev=>d.addEventListener(ev,()=>clearTimeout(t)));
+ d.addEventListener('contextmenu',e=>{clearTimeout(t);ptMenu(e,ptMenuFor(c,z))});
+ d.addEventListener('click',e=>{if(long){long=false;return}if(z=='hand')ptPlay(c.id);else if(z=='bf')ptTap(c.id);else if(z=='cz')ptMove(c.id,'bf');else ptMenu(e,ptMenuFor(c,z))});
+ return d}
+function ptZoneList(z,title){const o=E('pt');const old=E('ptlist');if(old)old.remove();const w=$('div');w.id='ptlist';
+ const h=$('div');h.className='pth';h.append($('b',title+' ('+PT[z].length+')'));const x=$('button','✕');x.type='button';x.onclick=()=>w.remove();h.append(x);w.append(h);
+ const list=z=='lib'?PT.lib.slice().sort((a,b)=>a.name.localeCompare(b.name)):PT[z].slice().reverse();
+ if(z=='lib')P(w,'Bibliothek durchsuchen: Karte antippen für Aktionen. Danach wird automatisch gemischt.','hint');
+ const g=$('div');g.className='ptgrid';list.forEach(c=>{const el=ptCardEl(c,z);el.onclick=e=>{e.stopPropagation();ptMenu(e,ptMenuFor(c,z).map(([t,fn])=>[t,()=>{fn();if(z=='lib'){PT.lib=shuffle(PT.lib)}w.remove()}]))};g.append(el)});
+ w.append(g);o.append(w)}
+function ptTopX(){const n=parseInt(prompt('Wie viele Karten von oben ansehen?','3')||'0',10);if(!n)return;const o=E('pt');const old=E('ptlist');if(old)old.remove();
+ const w=$('div');w.id='ptlist';const h=$('div');h.className='pth';h.append($('b','Oberste '+Math.min(n,PT.lib.length)+' Karten (oben = links)'));const x=$('button','✕ fertig');x.type='button';x.onclick=()=>{w.remove();ptRender()};h.append(x);w.append(h);
+ P(w,'Für jede Karte wählen: oben lassen, unter die Bibliothek (Scry), in den Friedhof (Mahlen/Surveil), auf die Hand oder aufs Spielfeld.','hint');
+ const g=$('div');g.className='ptgrid';PT.lib.slice(0,n).forEach(c=>{const el=ptCardEl(c,'lib');el.onclick=e=>{e.stopPropagation();ptMenu(e,[['✋ Auf die Hand',()=>{ptMove(c.id,'hand');el.remove()}],['▶ Aufs Spielfeld',()=>{ptMove(c.id,'bf');el.remove()}],['⬇ Unter die Bibliothek',()=>{ptMove(c.id,'lib','bottom');el.remove()}],['🪦 Friedhof',()=>{ptMove(c.id,'gy');el.remove()}],['🌀 Exil',()=>{ptMove(c.id,'ex');el.remove()}]])};g.append(el)});
+ w.append(g);o.append(w)}
+async function ptTokens(){const o=E('pt');const old=E('ptlist');if(old)old.remove();const w=$('div');w.id='ptlist';
+ const h=$('div');h.className='pth';h.append($('b','Token erzeugen'));const x=$('button','✕');x.type='button';x.onclick=()=>w.remove();h.append(x);w.append(h);
+ const f=$('div');const inp=$('input');inp.placeholder='Eigener Token, z. B. 1/1 Goblin';inp.id='pttokname';const ok=$('button','Erzeugen');ok.type='button';ok.onclick=()=>{if(inp.value.trim()){w.remove();ptToken(inp.value.trim())}};inp.onkeydown=e=>{if(e.key=='Enter')ok.click()};f.append(inp,' ',ok);w.append(f);
+ o.append(w);const lst=$('div');lst.className='ptgrid';w.append(lst);P(lst,'Lade Tokens deines Decks …','hint');
+ const cmd=(deck.groups.find(g=>g.name=='Commander')||{cards:[]}).cards.map(c=>c.name).join(' + ');
+ const list=deck.groups.flatMap(g=>g.cards.map(c=>c.qty+' '+c.name)).join('\\n');
+ const r=await J('/api/tokens',{list:list,commander:cmd});lst.innerHTML='';
+ (r.tokens||[]).forEach(t=>{const b=$('button',(t.name+(t.type?' – '+t.type:'')));b.type='button';b.title='aus: '+(t.from||[]).join(', ');b.onclick=()=>{w.remove();ptToken(t.name,t.image||'')};lst.append(b)});
+ if(!(r.tokens||[]).length)P(lst,'Keine Tokens im Deck erkannt – oben einen eigenen eintragen.','hint')}
+function ptRender(){const o=E('pt');if(!o||!PT)return;const keepList=E('ptlist');o.innerHTML='';
+ const bar=$('div');bar.className='ptbar';
+ const B=(t,ti,fn,id)=>{const b=$('button',t);b.type='button';b.title=ti;if(id)b.id=id;b.onclick=fn;return b};
+ const untapped=PT.bf.filter(c=>c.land&&!c.tapped).length,lands=PT.bf.filter(c=>c.land).length;
+ const info=$('span');info.className='ptinfo';info.innerHTML='';info.append($('b','🎮 '+PT.name),' · Zug ',$('b',String(PT.turn)),' · Länder '+untapped+'/'+lands+' ungetappt');
+ const life=$('span');life.className='ptlife';life.append(B('−','Leben −1',()=>{PT.life--;ptRender()},'ptlm'),$('b','❤ '+PT.life),B('+','Leben +1',()=>{PT.life++;ptRender()},'ptlp'));
+ bar.append(info,life,B('🃏 Ziehen','Karte ziehen (D)',ptDrawBtn,'ptdraw'),B('⏭ Nächster Zug','Enttappen und ziehen (N)',ptNext,'ptnext'),B('↺ Alle enttappen','U',()=>{ptSnap();PT.bf.forEach(c=>c.tapped=false);ptRender()}),
+  B('🔀 Mischen','M',ptShuffle),B('Mulligan','London-Mulligan',ptMull,'ptmull'),B('👁 Oberste X','Oberste Karten ansehen (Scry, Surveil, Mahlen)',ptTopX,'pttop'),B('🔎 Suchen','Bibliothek durchsuchen',()=>ptZoneList('lib','Bibliothek'),'ptsearch'),
+  B('✨ Token','Token erzeugen',ptTokens,'pttok'),B('🎲','Würfeln (W6/W20) und Münze',()=>{const r6=1+Math.floor(Math.random()*6),r20=1+Math.floor(Math.random()*20);ptLog('Würfel: W6 = '+r6+', W20 = '+r20+', Münze: '+(Math.random()<.5?'Kopf':'Zahl'));ptRender()}),
+  B('↶','Rückgängig (Z)',ptUndo,'ptundo'),B('⟲ Neu','Neue Partie',ptNew,'ptnew'),B('✕','Schließen (Esc)',ptClose,'ptclose'));
+ [...bar.querySelectorAll('button')].forEach(b=>{if(!['ptdraw','ptnext','ptundo','ptclose','ptlm','ptlp'].includes(b.id))b.classList.add('ptsec')});
+ const more=B('⋯','Weitere Aktionen',e=>ptMenu(e,[...bar.querySelectorAll('button.ptsec')].map(b=>[b.textContent+(b.title&&b.textContent.length<3?' '+b.title:''),()=>b.click()])),'ptmore');more.className='ptmore';bar.insertBefore(more,bar.querySelector('#ptclose'));
+ o.append(bar);
+ if(PT.mullBottom>0){const n=$('div','Mulligan: Tippe '+PT.mullBottom+' Handkarte'+(PT.mullBottom>1?'n':'')+' an, die unter die Bibliothek sollen.');n.className='ptnote';o.append(n)}
+ const main=$('div');main.className='ptmain';
+ const side=$('div');side.className='ptside';
+ const zb=(z,t,fn)=>{const b=$('button');b.type='button';b.className='ptzone';b.id='ptz-'+z;b.append($('span',t),$('b',String(PT[z].length)));b.onclick=fn;return b};
+ const czBox=$('div');czBox.className='ptcz';czBox.append($('div','👑 Kommandozone'));PT.cz.forEach(c=>{const el=ptCardEl(c,'cz');const tax=(PT.casts[c.name]||0)*2;if(tax){const t=$('b','+'+tax);t.className='pttax';t.title='Commander-Steuer';el.append(t)}czBox.append(el)});
+ if(!PT.cz.length)czBox.append($('small','–'));
+ side.append(czBox,zb('lib','📚 Bibliothek',()=>ptMenu({preventDefault(){},stopPropagation(){},clientX:120,clientY:200},[['🃏 Karte ziehen',ptDrawBtn],['👁 Oberste X ansehen',ptTopX],['🔎 Durchsuchen',()=>ptZoneList('lib','Bibliothek')],['🔀 Mischen',ptShuffle]])),
+  zb('gy','🪦 Friedhof',()=>ptZoneList('gy','Friedhof')),zb('ex','🌀 Exil',()=>ptZoneList('ex','Exil')));
+ const lg=$('div');lg.className='ptlog';PT.log.slice(0,8).forEach(l=>lg.append($('div',l)));side.append(lg);
+ const field=$('div');field.className='ptfield';
+ const r1=$('div');r1.className='ptrow';r1.dataset.row='perm';PT.bf.filter(c=>!c.land).forEach(c=>r1.append(ptCardEl(c,'bf')));if(!r1.childElementCount)r1.append($('small','Bleibende Karten (Kreaturen, Artefakte …)'));
+ const r2=$('div');r2.className='ptrow lands';r2.dataset.row='lands';PT.bf.filter(c=>c.land).forEach(c=>r2.append(ptCardEl(c,'bf')));if(!r2.childElementCount)r2.append($('small','Länder'));
+ field.append(r1,r2);main.append(side,field);o.append(main);
+ const hand=$('div');hand.className='pthand';hand.append($('div','✋ Hand ('+PT.hand.length+') – antippen = ausspielen, gedrückt halten / Rechtsklick = weitere Aktionen'));
+ const hr=$('div');hr.className='ptrow';PT.hand.forEach(c=>hr.append(ptCardEl(c,'hand')));hand.append(hr);o.append(hand);
+ if(keepList)o.append(keepList)}
+
 // Probehand und Starthand-Statistik (London-Mulligan)
 function libraryCards(){return deck.groups.filter(g=>g.name!='Commander').flatMap(g=>g.cards.flatMap(c=>Array(c.qty).fill(c)))}
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -4328,12 +4478,13 @@ function handBox(o){const box=$('div');o.append(box);const hh=$('h4','Probehand 
   P(area,(mull?'Mulligan '+mull+': '+(7-mull)+' behalten, '+mull+' unter die Bibliothek · ':'')+hand.length+' Karten · '+lands+' Länder','big');
   const gr=$('div');gr.className='grid';area.append(gr);
   hand.forEach(c=>{const a=c.image?$('a',null,c.scryfall):$('div',c.name);if(c.image){const im=$('img');im.src=c.image;im.alt=c.name;im.title=c.name;a.append(im)}else a.className='ph';gr.append(a)})};
+ const b0=$('button','🎮 Testspielfeld öffnen');b0.type='button';b0.className='primary';b0.id='ptopen';b0.title='Deck auf einem Spielfeld ohne Gegner durchspielen';b0.onclick=ptNew;
  const b1=$('button','🃏 Probehand ziehen');b1.type='button';b1.className='primary';
  const b2=$('button','Karte ziehen');b2.type='button';const b3=$('button','Mulligan');b3.type='button';
  b1.onclick=()=>{d=shuffle(lib);pos=7;mull=0;show()};
  b2.onclick=()=>{if(!d.length)return b1.onclick();if(pos<d.length)pos++;show()};
  b3.onclick=()=>{d=shuffle(lib);pos=7;mull=Math.min(mull+1,6);show()};
- row.append(b1,' ',b2,' ',b3)}
+ row.append(b0,' ',b1,' ',b2,' ',b3)}
 function setView(v){view=v;try{localStorage.setItem('view',v)}catch(e){}
  document.querySelectorAll('.view button').forEach(b=>b.classList.toggle('on',b.dataset.v==v));
  if(deck)showDeck();if(precon)showPrecon()}
