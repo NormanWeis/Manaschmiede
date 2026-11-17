@@ -6,7 +6,7 @@
 services:
   app:
     # Fertiges Image von GitHub (ghcr.io); mit „docker compose up -d --build“ stattdessen selbst bauen
-    image: ${CDB_IMAGE:-ghcr.io/normanweis/manaschmiede:34}
+    image: ${CDB_IMAGE:-ghcr.io/normanweis/manaschmiede:35}
     pull_policy: missing
     build: .
     restart: unless-stopped

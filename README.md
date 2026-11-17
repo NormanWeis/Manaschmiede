@@ -1,8 +1,8 @@
-# Manaschmiede (Commander-Deckbau-Datenbank) – Version 34
+# Manaschmiede (Commander-Deckbau-Datenbank) – Version 35
 
 | Teil | Inhalt | Anleitung |
 |---|---|---|
-| **Windows (lokal)** | Ordner `windows`: `commander_db_v34.py` + Startdateien – läuft ohne Server | `windows/README-Windows.md` |
+| **Windows (lokal)** | Ordner `windows`: `commander_db_v35.py` + Startdateien – läuft ohne Server | `windows/README-Windows.md` |
 | **Server (Internet)** | Ordner `server`: Docker-Image mit Python, Java, Forge, HTTPS über Caddy oder Cloudflare-Tunnel | `server/README-Server.md` |
 | **Android** | installierbare Web-App direkt vom Server **oder** eigene APK (Ordner `android`, Bau automatisch bei GitHub) | `android/README-Android.md` |
 | **Windows-App vom Server** | Serveradresse in Edge/Chrome öffnen → Installieren-Symbol in der Adressleiste → eigenes App-Fenster im Startmenü | – |
@@ -11,10 +11,10 @@ Alle Varianten zeigen dieselben Inhalte und Funktionen. Auf dem Server kommen An
 und getrennte Decks je Benutzer dazu.
 
 ## Schnellstart mit Docker
-Fertiges Image: **`ghcr.io/normanweis/manaschmiede:34`** (auch `:latest`) – Ubuntu 24.04, Python, Java 17, Forge 2.0.16,
+Fertiges Image: **`ghcr.io/normanweis/manaschmiede:35`** (auch `:latest`) – Ubuntu 24.04, Python, Java 17, Forge 2.0.16,
 für x86_64-/amd64-Server. Das Image ist **öffentlich** – Herunterladen ohne Anmeldung:
 ```
-docker pull ghcr.io/normanweis/manaschmiede:34
+docker pull ghcr.io/normanweis/manaschmiede:35
 ```
 
 **docker run** – ein Container, ohne HTTPS (zum Ausprobieren oder hinter einem eigenen Reverse-Proxy):
@@ -23,7 +23,7 @@ docker run -d --name manaschmiede --restart unless-stopped \
   -p 8000:8000 \
   -v manaschmiede_data:/data \
   -e CDB_ADMIN_USER=admin -e CDB_ADMIN_PASSWORD='ein-langes-eigenes-passwort' \
-  ghcr.io/normanweis/manaschmiede:34
+  ghcr.io/normanweis/manaschmiede:35
 ```
 Dann `http://SERVER-IP:8000` öffnen und als `admin` anmelden.
 
@@ -44,7 +44,7 @@ Ausführlich (Einstellungen, Benutzer, Sicherung, Updates): [`server/README-Serv
 | `windows/` | Programm und Startdateien für den lokalen Betrieb unter Windows |
 | `docker/` | Anleitung und Zusammenfüge-Datei für das Image als Datei in zwei Teilen |
 | `docs/` | Funktionsvergleich mit anderen Apps, Punktetabelle, Versionsverlauf, bekannte Grenzen |
-| `archiv/` | frühere Programmversionen 6–33 |
+| `archiv/` | frühere Programmversionen 6–32 |
 | `.github/workflows/` | automatischer Bau von Docker-Image (ghcr.io) und Android-APK |
 
 Downloads (Docker-Image als Datei, APK, Windows-Paket): unter **Releases** im Repository. Ein neues Release erstellt

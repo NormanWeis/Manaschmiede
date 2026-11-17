@@ -17,6 +17,8 @@ Version 3: Deckansicht mit Kartenbildern, Vergleich mit offiziellen Commander-Pr
 (Decklisten: github.com/taw/magic-preconstructed-decks-data, auch Grundlage von mtg.wtf/MTGJSON).
 Version 4: Karten gezielt tauschen oder entfernen (mit Alternativen gleicher Aufgabe), Option ohne
 Game Changer, Liste nicht verfügbarer Karten, bessere Ramp-Erkennung.
+Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen kompakter Kopf, Navigationsleiste unten,
+  einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
 Version 33: Spieltisch mit Tischansicht im Stil von Lebenszähler-Apps (große Felder je Spieler, Tippen links/rechts,
@@ -75,7 +77,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "34"
+APP_VERSION = "35"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -3299,7 +3301,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 34)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 35)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -3493,9 +3495,61 @@ body.mtg #legal{border-top-color:#8a6a2c}a.back{font-weight:bold}
 .cname{white-space:nowrap}.tagchip{display:inline-block;font-size:.8em;padding:0 6px;border-radius:9px;background:#e7f1fb;color:#234;border:1px solid #9bc}
 body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{opacity:.85}.cname.miss{outline:2px dashed #c0362c;outline-offset:1px;border-radius:3px}
 </style>
+<style id=mobcss>
+/* ---------- Handyansicht (body.mob): wird per Geräteerkennung oder von Hand gesetzt ---------- */
+#layoutbtn{position:fixed;top:10px;right:330px;z-index:60;border:1px solid #999;background:#fff;border-radius:16px;padding:4px 10px;cursor:pointer}
+body.mtg #layoutbtn{background:#241a12;color:#e2bd5b;border-color:#a8843a}
+#mobnav,#mobmore{display:none}
+body.mob{font-size:16px;padding-bottom:calc(68px + env(safe-area-inset-bottom));overflow-x:hidden}
+body.mob #top{margin-top:2px}body.mob #top h2{font-size:1.3em;margin:.15em 0 .1em;padding-right:120px;text-align:left;white-space:nowrap}
+body.mob .wotc{font-size:.72em;line-height:1.35;text-align:left;margin:0 0 6px;opacity:.85;position:static}
+body.mob #mainnav{display:none}
+body.mob #theme,body.mob #helpbtn,body.mob #layoutbtn{position:absolute;top:8px;margin:0;padding:0;width:34px;height:34px;min-height:0;font-size:0;z-index:70;border-radius:50%;overflow:hidden}
+body.mob #theme::before{content:'🎨';font-size:17px}body.mob #helpbtn::before{content:'❓';font-size:17px}body.mob #layoutbtn::before{content:'📱';font-size:17px}
+body.mob #helpbtn{right:8px}body.mob #theme{right:48px}body.mob #layoutbtn{right:88px}
+body.mob #info{font-size:.7em;line-height:1.35;opacity:.7;margin:4px 0;position:static}
+body.mob #upd{font-size:.8em;padding:4px 8px}body.mob #upd button{padding:2px 6px;min-height:0}
+body.mob input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]),body.mob select,body.mob textarea{width:100%!important;max-width:100%!important;box-sizing:border-box;font-size:16px;margin:3px 0}
+body.mob .ac{display:block;width:100%}
+body.mob button:not(.qh){min-height:40px}body.mob .qh{min-height:0}
+body.mob .pip,body.mob .cibtns button,body.mob #tfield button{min-height:0}
+body.mob table:not(.gtab){display:block;overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
+body.mob img,body.mob svg{max-width:100%}body.mob svg{height:auto}
+body.mob #out button,body.mob #cmp button{min-height:30px;padding:2px 7px;font-size:.85em;margin:1px}
+body.mob #mydecks table,body.mob #mydecks tbody,body.mob #mydecks tr,body.mob #mydecks td{display:block;width:auto}
+body.mob #mydecks thead,body.mob #mydecks tr:first-child th{display:none}
+body.mob #mydecks tr{border:1px solid rgba(168,132,58,.5);border-radius:10px;padding:6px 8px;margin:8px 0}
+body.mob #mydecks td{border:0;padding:1px 0}body.mob #mydecks td:first-child{font-weight:bold;font-size:1.05em}
+body.mob #mydecks td:last-child{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}body.mob #mydecks td:last-child button{min-height:34px;padding:2px 8px;font-size:.88em}
+body.mob h3{font-size:1.1em}
+body.mob details.tabbox,body.mob .openline,body.mob .csugbox,body.mob .gcard{padding:8px 10px}
+body.mob .openline{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+body.mob .hero{padding:14px 10px;margin:4px 0 12px}body.mob .orbs{display:none}body.mob .herot{font-size:1.45em}body.mob .herosub{font-size:.98em}
+body.mob .tiles{grid-template-columns:1fr 1fr;gap:8px}
+body.mob .tile{min-height:0;aspect-ratio:auto;padding:8px;display:flex;flex-direction:row;align-items:center;gap:8px}
+body.mob .tile .ta{font-size:1.6em;order:-1;margin:0;padding:0;background:none;border:0;min-height:0;height:auto;width:auto;box-shadow:none}
+body.mob .tile .tt{font-size:.92em;margin:0;padding:0;background:none;border:0;box-shadow:none}
+body.mob .tile .tx{display:none}
+body.mob .gpick{grid-template-columns:1fr 1fr}body.mob .gbtn{padding:8px}body.mob .gbtn span{display:none}
+body.mob #csug .cgrid{grid-template-columns:1fr 1fr;gap:6px}body.mob #csug .cc .tx{display:none}
+body.mob .cols{display:block}body.mob .cols>div{width:auto;min-width:0}
+body.mob #legal{font-size:.68em;padding:8px}
+body.mob #tfield{height:calc(100vh - 150px)}
+body.mob #dlg>div,body.mob #help>div{margin:4px;padding:8px 10px;max-height:calc(100vh - 90px)}
+body.mob #mobnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:80;background:#1b140e;border-top:1px solid #a8843a;padding:4px 2px calc(4px + env(safe-area-inset-bottom));justify-content:space-around}
+body.mob:not(.mtg) #mobnav{background:#fafafa;border-top-color:#bbb}
+#mobnav a,#mobnav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;font-size:.66em;text-decoration:none;color:#e2bd5b;background:none;border:0;padding:3px 0;min-height:48px;cursor:pointer;box-shadow:none}
+body:not(.mtg) #mobnav a,body:not(.mtg) #mobnav button{color:#333}
+#mobnav .i{font-size:1.75em;line-height:1.1}#mobnav .on{color:#fff;background:rgba(168,132,58,.35);border-radius:10px}
+body:not(.mtg) #mobnav .on{background:#e6dcc4;color:#000}
+#mobnav a.neu{color:#7bd88a}body:not(.mtg) #mobnav a.neu{color:#2f7d3e}
+body.mob #mobmore.open{display:block;position:fixed;left:0;right:0;bottom:calc(60px + env(safe-area-inset-bottom));z-index:79;background:#241a12;border-top:1px solid #a8843a;padding:8px;box-shadow:0 -6px 18px rgba(0,0,0,.5)}
+body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
+#mobmore a{display:block;padding:12px 10px;font-size:1.05em;text-decoration:none;color:inherit;border-bottom:1px solid rgba(128,100,60,.3)}
+</style>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <link rel=stylesheet href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap">
-<button type=button id=theme></button><button type=button id=helpbtn data-h=start>❓ Hilfe</button>
+<button type=button id=layoutbtn title="Ansicht: automatisch / Handy / PC"></button><button type=button id=theme></button><button type=button id=helpbtn data-h=start>❓ Hilfe</button>
 <div id=help><div><button type=button class=x id=helpx>✕ Schließen</button><h2 id=h-top>Hilfe zur Manaschmiede</h2>
 <nav class=htoc><a data-h=start>Erste Schritte</a> · <a data-h=commander>Was ist Commander?</a> · <a data-h=bauen>Deck bauen</a> ·
 <a data-h=anpassen>Deck anpassen</a> · <a data-h=import>Importieren &amp; Speichern</a> · <a data-h=export>Exportieren</a> ·
@@ -3504,7 +3558,8 @@ body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{o
 <a data-h=begriffe>Begriffe</a> · <a data-h=probleme>Probleme lösen</a></nav>
 
 <h3 id=h-start>Erste Schritte</h3>
-<ol><li><b>Starten:</b> Doppelklick auf <code>Commander-DB starten.bat</code> (oder in der Eingabeaufforderung <code>python commander_db_v27.py serve</code>). Ein schwarzes Fenster öffnet sich – <b>dieses Fenster offen lassen</b>, solange du die Datenbank benutzt. Der Browser öffnet die Seite automatisch (sonst <code>http://localhost:8000</code> eingeben).</li>
+<ol><li><b>Starten:</b> Doppelklick auf <code>Commander-DB starten.bat</code> (oder in der Eingabeaufforderung <code>python commander_db_v35.py serve</code>). Ein schwarzes Fenster öffnet sich – <b>dieses Fenster offen lassen</b>, solange du die Datenbank benutzt. Der Browser öffnet die Seite automatisch (sonst <code>http://localhost:8000</code> eingeben).</li>
+<li><b>Am Handy:</b> Die Manaschmiede erkennt Mobiltelefone und schaltet auf die Handyansicht um: Navigation als Leiste am unteren Rand (Start, Neu hier?, Deck, Duell, Tisch, ☰ Mehr), kompakter Kopf mit 📱 Ansicht, 🎨 Optik und ❓ Hilfe, Felder über die volle Breite. Mit dem Ansichts-Knopf (📱/🖥 oben rechts) wechselst du zwischen „automatisch“, „immer Handy“ und „immer PC“ – praktisch auf Tablets.</li>
 <li><b>Beim Start</b> prüft das Programm im Hintergrund, ob es neue Regeln, Precons oder Kartendaten gibt. Den Fortschritt siehst du oben im Balken. Du kannst währenddessen schon arbeiten.</li>
 <li><b>Gespeichertes Deck weiterbearbeiten:</b> oben im Tab „Deck bauen“ bei „📂 Gespeichertes Deck öffnen“ auswählen, oder auf der Willkommen-Seite unter „Zuletzt gespeichert“ anklicken. Verwalten (Versionen, Teilen, Löschen) im Tab „Meine Decks“.</li>
 <li><b>Ein erstes Deck:</b> auf der Willkommen-Seite (oder im Tab „Deck bauen“ bei „Commander“) einen Namen eintippen (z. B. „Atraxa“), Vorschlag anklicken und <b>Deck vorschlagen</b> drücken. Fertig – darunter erscheint ein vollständiges Deck mit 100 Karten.</li>
@@ -3892,6 +3947,7 @@ body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{o
 <table><thead><tr><th>Karte<th>Kosten<th>Typ<th>Farbid.<th>EDHREC<th>€<th>Links</thead><tbody id=r></tbody></table>
 </section>
 <div id=dlg><div id=dlgin></div></div><img id=cprev alt="">
+<nav id=mobnav aria-label="Navigation"></nav><div id=mobmore></div>
 <footer id=legal>
 <p><b>Magic: The Gathering</b> ist ein Spiel von <b>Wizards of the Coast LLC</b>. Die Manaschmiede (Commander-Deckbau-Datenbank) ist inoffizieller Fan-Inhalt
 im Sinne der <a href="https://company.wizards.com/en/legal/fancontentpolicy" target=_blank rel=noopener>Fan Content Policy</a>.
@@ -3912,7 +3968,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='34';
+const PAGE_VERSION='35';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -3936,6 +3992,31 @@ let theme='mtg';try{theme=localStorage.getItem('theme')||'mtg'}catch(e){}
 function setTheme(t){theme=t;document.body.classList.toggle('mtg',t=='mtg');
  E('theme').textContent=t=='mtg'?'Optik: Magic ✦ → neutral':'Optik: neutral → Magic ✦';try{localStorage.setItem('theme',t)}catch(e){}}
 E('theme').onclick=()=>setTheme(theme=='mtg'?'neutral':'mtg');setTheme(theme);
+// ---------- Endgerät erkennen: Handyansicht automatisch, von Hand umschaltbar ----------
+let layoutPref='auto';try{layoutPref=localStorage.getItem('layout')||'auto'}catch(e){}
+const UA_MOBILE=/Android|iPhone|iPod|Windows Phone|Mobile|CommanderDB-Android/i.test(navigator.userAgent);
+function isPhone(){const w=window.innerWidth;if(layoutPref=='mobile')return true;if(layoutPref=='desktop')return false;
+ return UA_MOBILE?w<1000:w<=760}
+const MOBMAIN=[['willkommen','🏠','Start'],['neu','🌱','Neu hier?'],['deck','🛠','Deck'],['gegner','⚔','Duell'],['spieltisch','🎲','Tisch']];
+const MOBMORE=[['decks','📂 Meine Decks'],['sammlung','📦 Sammlung'],['suche','🔎 Kartensuche'],['regeln','📖 Regeln']];
+function buildMobNav(){const n=E('mobnav'),m=E('mobmore');if(!n||n.childElementCount)return;
+ MOBMAIN.forEach(([v,i,t])=>{const a=$('a');a.href='#'+v;a.dataset.v=v;if(v=='neu')a.className='neu';const si=$('span',i);si.className='i';a.append(si,$('span',t));a.onclick=()=>m.classList.remove('open');n.append(a)});
+ const mb=$('button');mb.type='button';mb.id='mobmorebtn';const si=$('span','☰');si.className='i';mb.append(si,$('span','Mehr'));
+ mb.onclick=()=>m.classList.toggle('open');n.append(mb);
+ MOBMORE.forEach(([v,t])=>{const a=$('a',t);a.href='#'+v;a.dataset.v=v;a.onclick=()=>m.classList.remove('open');m.append(a)});
+ const hp=$('a','❓ Hilfe');hp.href='#';hp.onclick=e=>{e.preventDefault();m.classList.remove('open');E('helpbtn').click()};m.append(hp);
+ markMobNav((location.hash||'#willkommen').slice(1))}
+function markMobNav(v){if(v=='start')v='deck';document.querySelectorAll('#mobnav a').forEach(a=>a.classList.toggle('on',a.dataset.v==v));
+ const mb=E('mobmorebtn');if(mb)mb.classList.toggle('on',MOBMORE.some(x=>x[0]==v))}
+function applyLayout(){const ph=isPhone();document.body.classList.toggle('mob',ph);if(!ph&&E('mobmore'))E('mobmore').classList.remove('open');
+ const b=E('layoutbtn');if(b){b.textContent=layoutPref=='auto'?(ph?'📱 auto':'🖥 auto'):(layoutPref=='mobile'?'📱 Handy':'🖥 PC');
+  b.title='Ansicht: '+(layoutPref=='auto'?'automatisch ('+(ph?'Handy erkannt':'PC erkannt')+')':layoutPref=='mobile'?'immer Handy':'immer PC')+' – antippen zum Wechseln'}
+ if(ph)buildMobNav()}
+E('layoutbtn').onclick=()=>{layoutPref=layoutPref=='auto'?(isPhone()?'desktop':'mobile'):layoutPref=='mobile'?'desktop':'auto';
+ try{localStorage.setItem('layout',layoutPref)}catch(e){};applyLayout()};
+window.addEventListener('resize',()=>{if(layoutPref=='auto')applyLayout()});
+applyLayout();
+
 // Manakosten „{2}{U}{W/B}“ als farbige Symbole
 function manaEl(str){const s=$('span');s.className='mana';
  (str||'').split(' // ').forEach((part,k)=>{if(k)s.append(' // ');
@@ -4999,7 +5080,7 @@ E('rf').onsubmit=e=>{e.preventDefault();rules(E('rq').value.trim())};
 let rulesLoaded=false;const PAGES=['willkommen','neu','deck','gegner','decks','sammlung','spieltisch','suche','regeln'];
 function showView(v){if(v=='start')v='deck';if(!PAGES.includes(v))v='willkommen';
  document.querySelectorAll('section.page').forEach(x=>x.hidden=x.id!='v-'+v);
- document.querySelectorAll('#mainnav a[data-v]').forEach(a=>{a.classList.toggle('on',a.dataset.v==v);a.setAttribute('aria-selected',a.dataset.v==v)});
+ document.querySelectorAll('#mainnav a[data-v]').forEach(a=>{a.classList.toggle('on',a.dataset.v==v);a.setAttribute('aria-selected',a.dataset.v==v)});markMobNav(v);
  document.body.dataset.page=v;
  if(v=='regeln'&&!rulesLoaded){rulesLoaded=true;rules('')}
  if(v=='spieltisch'){tableSetup();tableGame();J('/api/games').then(tableStats)}
