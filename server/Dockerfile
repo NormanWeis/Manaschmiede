@@ -1,9 +1,10 @@
 # Manaschmiede (Commander-Deckbau-Datenbank) – Server-Image (Weboberfläche, Android-/Windows-App-Zugang, Forge-Duelle)
 # Basis Ubuntu 24.04 – identisch mit dem fertig gelieferten Image manaschmiede:NN
 FROM ubuntu:24.04
+ENV TZ=Europe/Berlin DEBIAN_FRONTEND=noninteractive
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 LANG=C.UTF-8
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 openjdk-17-jre xvfb xauth bzip2 ca-certificates tini fonts-dejavu-core util-linux passwd \
+ && apt-get install -y --no-install-recommends python3 openjdk-17-jre xvfb xauth bzip2 ca-certificates tzdata tini fonts-dejavu-core util-linux passwd \
  && rm -rf /var/lib/apt/lists/*
 # Ubuntu-Images bringen teils einen Benutzer „ubuntu“ mit UID 1000 mit – vorher entfernen
 RUN (userdel -r ubuntu 2>/dev/null || true) && useradd --create-home --uid 1000 cdb

@@ -27,6 +27,8 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 43: Tägliche Aktualisierung im Server-Betrieb: Regeln, Precons und Kartendaten (mit Preisen) werden jede Nacht
+            geprüft (Standard 4 Uhr, CDB_UPDATE_HOUR), Kartendaten täglich statt nach 7 Tagen neu geladen (CDB_CARDS_MAX_AGE_DAYS).
 Version 42: Deck-Editor: eigene Gruppen per Ziehen und Ablegen (am Handy „verschieben nach …“), Rückgängig/Wiederherstellen,
             Mehrfachauswahl (verschieben, taggen, ins Maybeboard, entfernen), Stapelansicht nach Manawert; Gruppen werden gespeichert,
             auf der Teilen-Seite und im Archidekt-Export als Kategorien gezeigt.
@@ -93,7 +95,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "42"
+APP_VERSION = "43"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -2346,8 +2348,19 @@ def rules_query(p):
 
 
 # ---------------------------------------------------------------- Automatische Aktualisierung beim Start
-UPDATE = {"running": False, "done": False, "items": {}, "at": ""}
-CARDS_MAX_AGE_DAYS = 7
+UPDATE = {"running": False, "done": False, "items": {}, "at": "", "next": "", "max_age": 0}
+def _int_env(name, default):
+    try:
+        return max(0, int(ENV(name, "") or default))
+    except ValueError:
+        return default
+
+
+# Kartendaten werden neu geladen, wenn Scryfall neuere hat und die eigenen mindestens so alt sind (Tage).
+# Server: täglich (Preise für Preisalarm und Verlauf), lokal: wöchentlich (der PC lädt nur beim Start).
+CARDS_MAX_AGE_DAYS = _int_env("CDB_CARDS_MAX_AGE_DAYS", 1 if SERVER else 7)
+# Stunde der nächtlichen Prüfung im Server-Betrieb; "off" schaltet sie ab. Lokal nur mit CDB_DAILY_UPDATE=1.
+UPDATE_HOUR = None if (ENV("CDB_UPDATE_HOUR", "") or "").lower() in ("off", "aus", "-1") else min(23, _int_env("CDB_UPDATE_HOUR", 4))
 
 
 def fetch_conditional(url, etag=""):
@@ -2398,7 +2411,8 @@ def update_cards(force=False):
     except ValueError:
         age = 999
     if not force and local not in ("", "unbekannt") and (remote <= local or age < CARDS_MAX_AGE_DAYS):
-        return f"aktuell genug (Stand {local}{'; neuere Daten von ' + remote + ' werden ab 7 Tagen Alter geladen' if remote > local else ''})"
+        tage = "1 Tag" if CARDS_MAX_AGE_DAYS == 1 else f"{CARDS_MAX_AGE_DAYS} Tagen"
+        return f"aktuell genug (Stand {local}{'; neuere Daten von ' + remote + ' werden ab ' + tage + ' Alter geladen' if remote > local else ''})"
     do_import(None)
     return f"neu geladen: Stand {setting('source_date')}, {setting('count')} Karten"
 
@@ -2423,6 +2437,27 @@ def auto_update(force=False, parts=("rules", "precons", "cards")):
 
 
 # ---------------------------------------------------------------- Benutzer und Anmeldung (Server-Modus)
+def next_update_time(now=None):
+    now = now or datetime.datetime.now()
+    t = now.replace(hour=UPDATE_HOUR, minute=7, second=0, microsecond=0)
+    return t if t > now else t + datetime.timedelta(days=1)
+
+
+def update_scheduler():
+    """Läuft im Hintergrund: einmal täglich (UPDATE_HOUR, 7 Minuten nach der vollen Stunde) auf neue Daten prüfen."""
+    while True:
+        nxt = next_update_time()
+        UPDATE["next"] = nxt.isoformat(sep=" ", timespec="minutes")
+        while datetime.datetime.now() < nxt:
+            time.sleep(min(300, max(1, (nxt - datetime.datetime.now()).total_seconds())))
+        print(f"Nächtliche Prüfung auf Aktualisierungen ({datetime.datetime.now():%d.%m.%Y %H:%M}) ...")
+        try:
+            auto_update(force=False)
+        except Exception as e:  # der Server läuft auf jeden Fall weiter
+            print("  Nächtliche Prüfung fehlgeschlagen:", e)
+        time.sleep(90)
+
+
 def users_tables(con):
     con.execute("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, name TEXT UNIQUE COLLATE NOCASE, pw TEXT, admin INTEGER, created TEXT)")
     con.execute("CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, uid INTEGER, expires REAL)")
@@ -3754,7 +3789,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 42)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 43)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -4519,7 +4554,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='42';
+const PAGE_VERSION='43';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -6072,6 +6107,7 @@ async function updStatus(){const s=await J('/api/update_status'),o=E('upd');o.in
  o.append($('b',s.running?'⟳ Prüfe auf Aktualisierungen: ':(s.done?'Aktualisierung'+(s.at?' ('+s.at+')':'')+': ':'Aktualisierung: ')));
  if(!items.length&&!s.running)o.append('beim Start übersprungen. ');
  items.forEach(it=>{const sp=$('span',it.label+' – '+it.status);sp.className=it.ok===false?'no':it.ok?'ok':'';o.append(sp,' · ')});
+ if(s.next){const nx=$('span','nächste automatische Prüfung: '+s.next+' · ');nx.id='updnext';o.append(nx)}
  await MEP;if(!s.running&&ME.admin){const b=$('button','Jetzt aktualisieren');b.type='button';b.onclick=()=>startUpd(0);
   const f=$('button','Alles neu laden');f.type='button';f.title='Regeln, Precons und Kartendaten neu herunterladen';f.onclick=()=>startUpd(1);o.append(b,f)}
  if(s.running){updWasRunning=true;clearTimeout(updTimer);updTimer=setTimeout(updStatus,2500)}
@@ -7011,6 +7047,10 @@ if __name__ == "__main__":
         if not a.no_update:
             print("Prüfe im Hintergrund auf neue Regeln, Precons und Kartendaten ...")
             threading.Thread(target=auto_update, daemon=True).start()
+        UPDATE["max_age"] = CARDS_MAX_AGE_DAYS
+        if UPDATE_HOUR is not None and (SERVER or ENV("CDB_DAILY_UPDATE", "") == "1"):
+            threading.Thread(target=update_scheduler, daemon=True).start()
+            print(f"Tägliche Prüfung auf neue Daten um {UPDATE_HOUR}:07 Uhr; Kartendaten werden ab {CARDS_MAX_AGE_DAYS} Tag(en) Alter neu geladen.")
         host = "127.0.0.1"
         if SERVER:
             ensure_admin()

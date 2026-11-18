@@ -17,7 +17,7 @@ Das fertige Image liegt in der GitHub Container Registry:
 
 | Tag | Inhalt |
 |---|---|
-| `ghcr.io/normanweis/manaschmiede:42` | Version 32 (fest) |
+| `ghcr.io/normanweis/manaschmiede:43` | Version 43 (fest) |
 | `ghcr.io/normanweis/manaschmiede:latest` | immer die neueste gebaute Version |
 
 Enthalten: Ubuntu 24.04, Python 3.12, Java 17, Xvfb und Forge 2.0.16 – für x86_64-/amd64-Server.
@@ -40,7 +40,7 @@ docker run -d --name manaschmiede --restart unless-stopped \
   -e CDB_ADMIN_PASSWORD='ein-langes-eigenes-passwort' \
   -e CDB_MAX_DUELS=1 -e CDB_MAX_GAMES=20 \
   --memory 4g \
-  ghcr.io/normanweis/manaschmiede:42
+  ghcr.io/normanweis/manaschmiede:43
 ```
 - Aufruf: `http://SERVER-IP:8000`, Anmeldung mit dem Admin-Zugang.
 - Alle Daten (Kartendaten, Decks, Benutzer) liegen im Volume `manaschmiede_data` und bleiben bei Updates erhalten.
@@ -53,7 +53,7 @@ docker run -d --name manaschmiede --restart unless-stopped \
 | Aufgabe | Befehl |
 |---|---|
 | Logs | `docker logs -f manaschmiede` |
-| Neue Version | `docker pull ghcr.io/normanweis/manaschmiede:42`, Container löschen (`docker rm -f manaschmiede`) und mit neuem Tag erneut starten |
+| Neue Version | `docker pull ghcr.io/normanweis/manaschmiede:43`, Container löschen (`docker rm -f manaschmiede`) und mit neuem Tag erneut starten |
 | Sicherung | `docker cp manaschmiede:/data/cards.db ./sicherung-$(date +%F).db` |
 | Benutzer anlegen | `docker exec -it manaschmiede python3 /opt/cdb/commander_db.py adduser NAME` |
 
@@ -113,13 +113,18 @@ Lokal gespeicherte Decks gehören danach dem ersten Administrator.
 | Neue Forge-Version | `docker compose build --no-cache app && docker compose up -d` |
 | Stoppen | `docker compose down` (Daten bleiben im Volume erhalten) |
 
-Regeln, Precons und Kartendaten aktualisieren sich bei jedem Start automatisch; Admins können oben
-„Jetzt aktualisieren“ klicken.
+Regeln, Precons und Kartendaten aktualisieren sich bei jedem Start und zusätzlich **jede Nacht um 4:07 Uhr**
+(einstellbar mit `CDB_UPDATE_HOUR`). Die Kartendaten mit den Preisen werden dabei täglich neu geladen, sobald
+Scryfall neuere hat – das hält Preisalarm, Wunschliste und Wertverlauf aktuell (rund 150 MB Download pro Tag).
+Admins sehen oben den Stand und die nächste automatische Prüfung und können „Jetzt aktualisieren“ klicken.
+
+Neue **Programmversionen** holt der Server nicht von selbst: nach einer neuen Version
+`docker compose pull && docker compose up -d` ausführen (bei `CDB_IMAGE=…:latest` genügt das immer).
 
 ## Einstellungen (.env)
 | Variable | Bedeutung | Standard |
 |---|---|---|
-| `CDB_IMAGE` | verwendetes Docker-Image | `ghcr.io/normanweis/manaschmiede:42` |
+| `CDB_IMAGE` | verwendetes Docker-Image | `ghcr.io/normanweis/manaschmiede:43` |
 | `CDB_DOMAIN`, `ACME_EMAIL` | Domain und E-Mail für HTTPS | – |
 | `CDB_ADMIN_USER`, `CDB_ADMIN_PASSWORD` | Admin wird bei jedem Start angelegt/gesetzt | – |
 | `CDB_MAX_DUELS` | gleichzeitige Forge-Duelle (weitere warten in einer Schlange) | 1 |
@@ -127,6 +132,9 @@ Regeln, Precons und Kartendaten aktualisieren sich bei jedem Start automatisch; 
 | `CDB_FORGE_XMX` | Java-Speicher je Duell | 2048m |
 | `CDB_MEM_LIMIT` | Speichergrenze des Containers | 4g |
 | `CDB_SESSION_DAYS` | Anmeldung bleibt so viele Tage gültig | 30 |
+| `CDB_UPDATE_HOUR` | Stunde der täglichen Prüfung auf neue Daten (0–23, `off` = aus) | 4 |
+| `CDB_CARDS_MAX_AGE_DAYS` | Kartendaten neu laden ab diesem Alter in Tagen, wenn Scryfall neuere hat | 1 (Server), 7 (Windows) |
+| `TZ` | Zeitzone für Uhrzeit und Zeitstempel | Europe/Berlin |
 
 Fehlt ein Admin in `.env`, erzeugt der Server beim ersten Start einen Benutzer „admin“ mit zufälligem
 Passwort und schreibt es ins Log (`docker compose logs app`).
