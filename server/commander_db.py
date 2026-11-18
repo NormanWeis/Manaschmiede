@@ -27,6 +27,9 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 44: Bracket-Einstufung je Deck nach den offiziellen Regeln (Game Changer, Massen-Landzerstörung, Extra-Züge,
+            Zwei-Karten-Combos) mit Begründung, eigenem Ziel-Bracket, Anzeige in Meine Decks, Galerie (mit Filter) und
+            Teilen-Seite sowie ausführlicher Erklärung der fünf Brackets in der Hilfe.
 Version 43: Tägliche Aktualisierung im Server-Betrieb: Regeln, Precons und Kartendaten (mit Preisen) werden jede Nacht
             geprüft (Standard 4 Uhr, CDB_UPDATE_HOUR), Kartendaten täglich statt nach 7 Tagen neu geladen (CDB_CARDS_MAX_AGE_DAYS).
 Version 42: Deck-Editor: eigene Gruppen per Ziehen und Ablegen (am Handy „verschieben nach …“), Rückgängig/Wiederherstellen,
@@ -95,7 +98,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "43"
+APP_VERSION = "44"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -1684,6 +1687,9 @@ def shared_page(tok):
     order = list(dict.fromkeys(order))
     total = sum(q for _, q in ent)
     value = sum(float(r["eur"]) * q for r, q in ent if r["eur"] not in (None, "") and not r["type_line"].startswith("Basic"))
+    bc = bracket_check(con, ent, cmds)
+    btxt = (f"Bracket {H.escape(ex['bracket'])} ({BRACKETS[int(ex['bracket'])][0]}) laut Besitzer · Schätzung {bc['bracket']}" if ex.get("bracket")
+            else f"Bracket-Schätzung {bc['bracket']} ({bc['name']}, ohne Combo-Prüfung)")
     e = H.escape
     out = [f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>{e(d['name'])} – Commander-Deck</title>",
            "<style>body{font:15px system-ui,sans-serif;max-width:900px;margin:auto;padding:12px;background:#f7f4ee;color:#222}"
@@ -1691,7 +1697,7 @@ def shared_page(tok):
            ".t{font-size:.8em;padding:0 5px;border-radius:8px;background:#e7f1fb;border:1px solid #9bc;margin-left:4px}"
            "#pv{position:fixed;right:10px;top:10px;width:240px;display:none;border-radius:10px;box-shadow:0 2px 12px #0006}"
            "pre{white-space:pre-wrap;background:#fff;padding:8px;border:1px solid #ddd}textarea{width:100%}</style>",
-           f"<h1>{e(d['name'])}</h1><p>Commander: <b>{e(d['commander'] or '–')}</b> · {total} Karten · ca. {f'{value:.2f}'.replace('.', ',')} € · Stand {e(d['saved_at'] or '')}</p>"]
+           f"<h1>{e(d['name'])}</h1><p>Commander: <b>{e(d['commander'] or '–')}</b> · {total} Karten · ca. {f'{value:.2f}'.replace('.', ',')} € · Stand {e(d['saved_at'] or '')}</p><p>{btxt}</p>"]
     if ex.get("notes"):
         out.append(f"<h3>Notizen</h3><pre>{e(ex['notes'])}</pre>")
     for k in order:
@@ -2130,9 +2136,9 @@ def analyze(entries):
         if r["eur"] not in (None, "") and not front_type(r).startswith("Basic"):
             price += float(r["eur"]) * q
     ranks.sort()
-    if m["mld"] or gc > 3:
+    if m["mld"] or gc > 3 or m["extra"] > EXTRA_TURN_LIMIT:
         bracket = "4"
-    elif gc or m["extra"] >= 3:
+    elif gc:
         bracket = "3"
     else:
         bracket = "1–2"
@@ -2971,6 +2977,8 @@ def decks_table(con):
         con.execute("ALTER TABLE decks ADD COLUMN extra TEXT DEFAULT ''")
     if "share" not in cols:  # Token für öffentlichen Nur-Lese-Link
         con.execute("ALTER TABLE decks ADD COLUMN share TEXT DEFAULT ''")
+    if "bracket_est" not in cols:  # Bracket-Schätzung beim Speichern (ohne Combo-Prüfung)
+        con.execute("ALTER TABLE decks ADD COLUMN bracket_est TEXT DEFAULT ''")
     if "public" not in cols:  # Galerie: 1 = veröffentlicht; hidden = vom Administrator ausgeblendet; pub_meta = Kennzahlen als JSON
         con.execute("ALTER TABLE decks ADD COLUMN public INTEGER DEFAULT 0")
         con.execute("ALTER TABLE decks ADD COLUMN hidden INTEGER DEFAULT 0")
@@ -3004,7 +3012,8 @@ def deck_save(p, uid=0):
                   "tags": {str(k)[:150]: [str(t)[:40] for t in v][:8] for k, v in list((ex.get("tags") or {}).items())[:300]},
                   "notes": str(ex.get("notes") or "")[:20000],
                   "groups": {str(k)[:150]: re.sub(r"\s+", " ", str(v)).strip()[:40] for k, v in list((ex.get("groups") or {}).items())[:300]
-                             if str(v).strip()}}
+                             if str(v).strip()},
+                  "bracket": str(ex.get("bracket") or "") if str(ex.get("bracket") or "") in ("1", "2", "3", "4", "5") else ""}
             extra = json.dumps(ex, ensure_ascii=False)
         except Exception:
             extra = ""
@@ -3088,8 +3097,14 @@ def deck_count(text):
 
 def deck_list(con, uid=0):
     decks_table(con)
-    return [{"id": i, "name": n, "commander": c, "saved_at": t, "count": deck_count(l), "shared": bool(sh), "public": bool(pb)}
-            for i, n, c, l, t, sh, pb in con.execute("SELECT id, name, commander, list, saved_at, share, public FROM decks WHERE owner = ? "
+    def tgt(ex):
+        try:
+            return (json.loads(ex or "{}").get("bracket") or "")
+        except Exception:
+            return ""
+    return [{"id": i, "name": n, "commander": c, "saved_at": t, "count": deck_count(l), "shared": bool(sh), "public": bool(pb),
+             "bracket": tgt(ex), "bracket_est": be or ""}
+            for i, n, c, l, t, sh, pb, ex, be in con.execute("SELECT id, name, commander, list, saved_at, share, public, extra, bracket_est FROM decks WHERE owner = ? "
                                              "ORDER BY name COLLATE NOCASE", (uid,))]
 
 
@@ -3326,6 +3341,105 @@ def fetch_combos(con, commanders, main):
                 (key, json.dumps(data), datetime.datetime.now().isoformat(sep=" ", timespec="minutes")))
     con.commit()
     return data
+
+
+# ---------------------------------------------------------------- Bracket-Einstufung (offizielles System, Beta)
+# Quelle: Wizards of the Coast / Commander Format Panel, „Introducing Commander Brackets Beta“ (11.02.2025) mit den
+# Aktualisierungen vom 22.04.2025, 21.10.2025 (Tutor-Regel entfällt) und 09.02.2026 (Game Changer: 53 Karten).
+# Die Einstufung ist eine Untergrenze aus den prüfbaren Regeln; Absicht und Spielweise entscheiden am Tisch.
+EXTRA_TURN_LIMIT = 3  # mehr Extra-Zug-Karten gelten als „Ketten“ – ab dann Bracket 4
+BRACKETS = {
+    1: ("Exhibition", "Thema vor Stärke, sehr locker; Partien dauern mindestens etwa 9 Züge."),
+    2: ("Core", "Unoptimiert und geradlinig, sozial; Partien dauern mindestens etwa 8 Züge."),
+    3: ("Upgraded", "Verstärkt mit guter Synergie und Kartenqualität; Partien dauern mindestens etwa 6 Züge."),
+    4: ("Optimized", "Tödlich, beständig und schnell, aber nicht auf das Turnier-Metagame ausgerichtet; mindestens etwa 4 Züge."),
+    5: ("cEDH", "Für das kompetitive Metagame gebaut; Partien können in jedem Zug enden."),
+}
+
+
+def bracket_check(con, entries, commander_names, combos=None):
+    """Prüft die Deckbau-Regeln der Brackets. combos: Ergebnis von combo_report (optional, braucht Internet)."""
+    gc, mld, extra, illegal = [], [], [], []
+    for r, q in entries:
+        if r["game_changer"]:
+            gc.append(r["name"])
+        cats = categories(r)
+        if "mld" in cats:
+            mld.append(r["name"])
+        if "extra" in cats:
+            extra += [r["name"]] * q
+        if not r["commander_legal"] and not front_type(r).startswith("Basic"):
+            illegal.append(r["name"])
+    two, early = [], []
+    if combos and combos.get("combos") is not None:
+        for c in combos["combos"]:
+            if c.get("win") and len(c["cards"]) <= 2:
+                two.append({"cards": c["cards"], "median": c.get("median"), "result": c.get("result", "")})
+                if (c.get("median") or 99) < 6:
+                    early.append(two[-1])
+    rules = [
+        {"key": "gc", "label": "Game Changer", "count": len(gc), "cards": gc,
+         "rule": "Bracket 1–2: keine · Bracket 3: höchstens 3 · ab Bracket 4: beliebig",
+         "min": 1 if not gc else (3 if len(gc) <= 3 else 4)},
+        {"key": "mld", "label": "Massen-Landzerstörung / Mana-Entzug", "count": len(mld), "cards": mld,
+         "rule": "in Bracket 1–3 nicht vorgesehen", "min": 4 if mld else 1},
+        {"key": "extra", "label": "Extra-Züge", "count": len(extra), "cards": sorted(set(extra)),
+         "rule": "Bracket 1: keine · Bracket 2–3: wenige, nicht hintereinander (ab mehr als 3 Karten gilt das als Kette) · ab 4: frei",
+         "min": 1 if not extra else (2 if len(extra) <= EXTRA_TURN_LIMIT else 4)},
+        {"key": "combo", "label": "Zwei-Karten-Combos, die das Spiel entscheiden", "count": len(two),
+         "cards": [" + ".join(c["cards"]) + (f" (frühestens etwa Zug {c['median']})" if c.get("median") else "") for c in two],
+         "rule": "Bracket 1–2: keine absichtlichen · Bracket 3: keine vor etwa Zug 6 · ab 4: frei",
+         "min": 1 if not two else (4 if early else 3), "checked": combos is not None and not (combos or {}).get("error")},
+    ]
+    low = max(r["min"] for r in rules)
+    if low == 1:
+        label, val = "1–2", 2
+        note = ("Keine eingeschränkten Karten gefunden. Ob Bracket 1 (Exhibition) oder 2 (Core), entscheidet die Absicht: "
+                "Steht ein Thema klar vor der Spielstärke, ist es Bracket 1.")
+    elif low == 2:
+        label, val, note = "2", 2, "Extra-Züge in geringer Zahl schließen Bracket 1 aus; sonst passt das Deck zu Bracket 2 (Core)."
+    elif low == 3:
+        label, val, note = "3", 3, "Eingeschränkte Karten in einem Umfang, der zu Bracket 3 (Upgraded) passt."
+    else:
+        label, val = "4–5", 4
+        note = ("Mindestens eine Regel geht über Bracket 3 hinaus. Ob 4 (Optimized) oder 5 (cEDH), hängt davon ab, ob das Deck für "
+                "das kompetitive Turnier-Metagame gebaut ist – das kann kein Programm aus der Liste ablesen.")
+    for r in rules:
+        r["ok_up_to"] = {1: "1–5", 2: "2–5", 3: "3–5", 4: "4–5"}[r["min"]]
+    out = {"bracket": label, "value": val, "name": BRACKETS[val][0] if low != 1 else "Exhibition oder Core",
+           "note": note, "rules": rules, "combos_checked": rules[3]["checked"], "illegal": illegal,
+           "spellbook": (combos or {}).get("spellbook") if combos else None}
+    if not rules[3]["checked"]:
+        out["note"] += " Zwei-Karten-Combos sind noch nicht geprüft (Knopf „Combos mitprüfen“, braucht Internet)."
+    return out
+
+
+def bracket_for(p, uid=0):
+    g = lambda k: (p.get(k) or [""])[0]
+    con = db()
+    con.row_factory = sqlite3.Row
+    ent, _ = entries_from_list(con, g("list"), g("commander").strip())
+    if not ent:
+        return {"error": "Leere Deckliste."}
+    cn = {r["name"] for r in resolve_cmds(con, g("commander"))}
+    rep = combo_report(con, ent, cn) if g("combos") == "1" else None
+    out = bracket_check(con, ent, cn, rep)
+    if rep and rep.get("error"):
+        out["combo_error"] = rep["error"]
+    out["brackets"] = {str(k): {"name": v[0], "text": v[1]} for k, v in BRACKETS.items()}
+    return out
+
+
+def bracket_quick(con, commander, lst):
+    """Schnelle Einstufung ohne Internet für Listen (Meine Decks, Galerie). Gibt z. B. "3" oder "1–2" zurück."""
+    con.row_factory = sqlite3.Row
+    try:
+        ent, _ = entries_from_list(con, lst, commander)
+        r = bracket_check(con, ent, {x["name"] for x in resolve_cmds(con, commander)}) if ent else None
+    finally:
+        con.row_factory = None
+    return r["bracket"] if r else ""
+
 
 
 ESTIMATE_URL = "https://backend.commanderspellbook.com/estimate-bracket"
@@ -3789,7 +3903,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 43)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 44)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -3939,6 +4053,8 @@ details.subbox{border:1px solid rgba(168,132,58,.55);border-radius:10px;padding:
 .stacks{display:flex;gap:10px;overflow-x:auto;align-items:flex-start;padding-bottom:8px}.stackcol{min-width:130px;width:130px}.sth{font-weight:bold;text-align:center;margin-bottom:4px}
 .stc{position:relative;height:34px;cursor:pointer}.stc:last-child{height:auto}.stc img{width:130px;border-radius:6px;box-shadow:0 1px 4px #0008}.stc:hover{z-index:5}.stc:hover img{transform:translateY(-6px)}.stc.noimg{height:auto;border:1px solid #a8843a;border-radius:6px;padding:3px 6px;margin-bottom:3px;font-size:.88em}.stc .q{position:absolute;right:4px;top:2px;background:#000c;color:#fff;border-radius:6px;padding:0 4px;font-size:.8em}
 body.mob .stackcol{min-width:96px;width:96px}body.mob .stc img{width:96px}body.mob .stc{height:26px}
+.brb{display:inline-block;border:1px solid #a8843a;border-radius:8px;padding:0 6px;font-size:.85em;white-space:nowrap}.brb.brt{background:rgba(168,132,58,.25);font-weight:bold}.brb.brwarn{border-color:#c0362c}
+.brbig{font-size:1.25em;margin:4px 0}.brtab td{vertical-align:top}.brtab td.no{color:#c0362c;font-weight:bold}.brtab td.ok{color:#3a9a4a}.brtarget{margin:8px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .palert{max-width:720px;margin:12px auto;text-align:left;border:1px solid #a8843a;border-radius:10px;padding:8px 12px;background:rgba(168,132,58,.12)}
 .palert .up{color:#3a9a4a}.palert .down{color:#c0362c}.hit{color:#3a9a4a;font-weight:bold}.wishadd,.folderedit{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
 .ftable td,.ftable th{padding:2px 8px;text-align:left}.ftable td.r,.ftable th.r{text-align:right}.chips2 button{margin:2px}
@@ -4097,7 +4213,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <div id=help><div><button type=button class=x id=helpx>✕ Schließen</button><h2 id=h-top>Hilfe zur Manaschmiede</h2>
 <nav class=htoc><a data-h=start>Erste Schritte</a> · <a data-h=commander>Was ist Commander?</a> · <a data-h=bauen>Deck bauen</a> ·
 <a data-h=anpassen>Deck anpassen</a> · <a data-h=import>Importieren &amp; Speichern</a> · <a data-h=export>Exportieren</a> ·
-<a data-h=gegner>Gegner &amp; Vergleich</a> · <a data-h=combos>Combos</a> · <a data-h=duell>Duell mit Forge</a> ·
+<a data-h=gegner>Gegner &amp; Vergleich</a> · <a data-h=combos>Combos</a> · <a data-h=brackets>Brackets</a> · <a data-h=duell>Duell mit Forge</a> ·
 <a data-h=regeln>Regeln</a> · <a data-h=suche>Kartensuche</a> · <a data-h=update>Aktualisierung</a> · <a data-h=geraete>Handy &amp; andere Geräte</a> ·
 <a data-h=begriffe>Begriffe</a> · <a data-h=probleme>Probleme lösen</a></nav>
 
@@ -4163,6 +4279,20 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>Importieren:</b> eine Liste einfügen (z. B. aus Moxfield „Export“), eine Datei wählen (.txt, .dck, .dec, .csv, .json) oder einen Link angeben (Archidekt, MTGGoldfish, TappedOut, Deckstats; Moxfield blockiert Links oft – dann die Liste kopieren). Dateien werden in jeder üblichen Zeichenkodierung erkannt, auch MTGO (.dek) und Cockatrice (.cod). Danach <b>Importieren</b>.</li>
 <li>Die Vorschau zeigt, ob der Commander erkannt wurde, welche Karten nicht gefunden oder korrigiert wurden und ob etwas nicht zur Farbidentität passt. Den Commander kannst du dort ändern; Partner mit „ + “ trennen.</li></ul>
 
+<h3 id=h-brackets>Brackets – die offiziellen Stärkestufen</h3>
+<p>Mit den <b>Commander Brackets</b> (von Wizards of the Coast und dem Commander Format Panel, offiziell noch „Beta“) sprecht ihr vor der Partie ab, wie stark eure Decks sind, damit ähnlich starke Decks gegeneinander spielen. Sie sind eine Gesprächshilfe, kein Bauverbot.</p>
+<table class=ftable><tr><th>Bracket</th><th>Was ihr erwarten könnt</th><th>Deckbau-Regeln</th></tr>
+<tr><td><b>1 – Exhibition</b></td><td>Thema oder Idee vor Stärke, kaum optimiert; Partien dauern mindestens etwa 9 Züge.</td><td>keine Game Changer, keine Massen-Landzerstörung, keine Extra-Züge, keine Zwei-Karten-Combos</td></tr>
+<tr><td><b>2 – Core</b></td><td>Unoptimiert und geradlinig, Siege kommen nach und nach und lassen sich stören; entspannt und gesellig; mindestens etwa 8 Züge.</td><td>keine Game Changer, keine Massen-Landzerstörung, keine absichtlichen Zwei-Karten-Combos, Extra-Züge nur wenige und nicht hintereinander</td></tr>
+<tr><td><b>3 – Upgraded</b></td><td>Verstärkt mit guter Synergie und Kartenqualität, kann Gegner stören; der Sieg kann in einem großen Zug kommen; mindestens etwa 6 Züge.</td><td>höchstens 3 Game Changer, keine Massen-Landzerstörung, keine Extra-Zug-Ketten, keine Zwei-Karten-Combos, die vor etwa Zug 6 gewinnen</td></tr>
+<tr><td><b>4 – Optimized</b></td><td>Tödlich, beständig und schnell, aber nicht auf das Turnier-Metagame ausgerichtet; mindestens etwa 4 Züge.</td><td>nur die Bannliste</td></tr>
+<tr><td><b>5 – cEDH</b></td><td>Für das kompetitive Metagame gebaut; Partien können in jedem Zug enden.</td><td>nur die Bannliste</td></tr></table>
+<ul><li><b>Game Changer:</b> eine offizielle Liste besonders spielstarker Karten (zurzeit 53, Stand 9. Februar 2026, z. B. Rhystic Study, Smothering Tithe, Demonic Tutor). Sie sind nicht verboten, bestimmen aber das Bracket. Die Kennzeichnung kommt mit den Kartendaten von Scryfall und ist nach jeder Aktualisierung aktuell.</li>
+<li><b>Massen-Landzerstörung / Mana-Entzug:</b> Karten wie Armageddon oder „Länder enttappen nicht“ – in Bracket 1–3 nicht vorgesehen.</li>
+<li><b>Extra-Züge:</b> wenige sind ab Bracket 2 in Ordnung, „Ketten“ (mehrere hintereinander oder in Schleife) erst ab Bracket 4. Das Programm wertet mehr als 3 Extra-Zug-Karten als Kette.</li>
+<li><b>Zwei-Karten-Combos:</b> zwei Karten, die zusammen das Spiel entscheiden (z. B. unendlich Schaden). Bracket 3 erlaubt sie nur, wenn sie nicht schon vor etwa Zug 6 zusammenkommen. Geprüft wird mit „🔗 Combos mitprüfen“ über Commander Spellbook (braucht Internet); der früheste Zug ist eine Schätzung aus vielen gezogenen Probehänden.</li>
+<li><b>So stuft die Manaschmiede ein:</b> In der Deckansicht zeigt „🎚 Bracket-Einstufung“ für jede Regel, was gefunden wurde, und daraus das niedrigste mögliche Bracket. Was ein Programm nicht sehen kann, bleibt offen: ob ein Deck ohne eingeschränkte Karten Bracket 1 oder 2 ist (Absicht) und ob ein starkes Deck 4 oder 5 ist (Turnier-Metagame). Deshalb legst du dein <b>Ziel-Bracket</b> selbst fest; es wird mit dem Deck gespeichert, steht als „B3“ in „Meine Decks“, in der Galerie (auch als Filter) und auf der Teilen-Seite. Ohne Angabe steht dort die Schätzung „≈B3“. Enthält das Deck Karten über dem gewählten Ziel, erscheint ⚠ mit den betreffenden Karten.</li>
+<li><b>Am Tisch:</b> Sagt euer Bracket an und nennt Besonderheiten (Combos, Extra-Züge, starke Commander). Der offizielle Stand steht bei Wizards: <a href="https://magic.wizards.com/en/news/announcements/introducing-commander-brackets-beta" target=_blank rel=noopener>Einführung</a>, <a href="https://magic.wizards.com/en/news/announcements/commander-brackets-beta-update-february-9-2026" target=_blank rel=noopener>letzte Aktualisierung (9.2.2026)</a>.</li></ul>
 <h3 id=h-galerie>Deck-Galerie (nur im Server-Betrieb)</h3>
 <ul><li><b>Veröffentlichen:</b> unter „📂 Meine Decks“ beim Deck „🌍 Veröffentlichen“ antippen. Das Deck erscheint dann für alle angemeldeten Benutzer dieses Servers in der Galerie; noch einmal antippen zieht es zurück. Änderungen am Deck werden beim Speichern übernommen.</li>
 <li><b>Suchen:</b> nach Commander, Deckname, Benutzer, Tags und Notizen; Farbfilter (höchstens/genau/mindestens diese Farben), Höchstpreis, Game Changer; sortiert nach neu, beliebt oder günstig.</li>
@@ -4373,7 +4503,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>Ziehen im ersten Zug:</b> In Partien mit mehr als zwei Personen zieht auch, wer anfängt, im ersten Zug eine Karte.</li></ul></div>
 
 <div class=gcard><h4>Spielstärke absprechen</h4>
-<p>Commander ist ein gemeinschaftliches Format: Alle sollen Spaß haben. Sprecht vor der Partie kurz ab, wie stark eure Decks sind („Rule 0“). Dafür gibt es offizielle <b>Brackets</b> (Stufen 1–5): von sehr gemütlichen Themendecks bis zu turnierstarken Decks. Fertige Precons liegen meist in Stufe 2. Besonders starke Karten stehen auf der Liste der <b>Game Changer</b> – die Manaschmiede markiert sie und kann sie beim Deckbau weglassen.</p></div>
+<p>Commander ist ein gemeinschaftliches Format: Alle sollen Spaß haben. Sprecht vor der Partie kurz ab, wie stark eure Decks sind („Rule 0“). Dafür gibt es offizielle <b>Brackets</b> (Stufen 1–5): von sehr gemütlichen Themendecks bis zu turnierstarken Decks. Viele fertige Precons liegen in Stufe 2 oder 3. Besonders starke Karten stehen auf der Liste der <b>Game Changer</b> – die Manaschmiede markiert sie und kann sie beim Deckbau weglassen. Die Stufe deines Decks zeigt die Deckansicht unter „🎚 Bracket-Einstufung“ mit Begründung; die ausführliche Erklärung steht in der Hilfe unter „Brackets“.</p></div>
 
 <div class=gcard><h4>Am Tisch mit mehreren</h4>
 <ul><li>Greif nicht immer dieselbe Person an – wer vorne liegt, wird zum Ziel.</li>
@@ -4516,6 +4646,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <span class=galci id=galci></span><select id=galcim title="Farbfilter"><option value=within>höchstens diese Farben</option><option value=exact>genau diese Farben</option><option value=contains>mindestens diese Farben</option></select>
 <label>bis <input id=galeur size=5 inputmode=decimal placeholder="€"> €</label>
 <select id=galgc title="Game Changer"><option value="">Game Changer: egal</option><option value=0>ohne Game Changer</option><option value=3>höchstens 3 Game Changer</option></select>
+<select id=galbr title="Bracket"><option value="">Bracket: egal</option><option value=12>Bracket 1–2</option><option value=3>Bracket 3</option><option value=45>Bracket 4–5</option></select>
 <select id=galsort><option value=new>neueste zuerst</option><option value=likes>beliebteste zuerst</option><option value=eur>günstigste zuerst</option></select>
 <button class=primary id=galgo>🔎 Suchen</button></form>
 <div id=galres></div></section>
@@ -4554,7 +4685,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='43';
+const PAGE_VERSION='44';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -4767,11 +4898,11 @@ function printProxies(imgs,mark,miss){let pa=E('printarea');if(!pa){pa=$('div');
  document.body.classList.add('printing');window.scrollTo(0,0)}
 function deckExtra(){const tags={},grp={};deck.groups.forEach(g=>g.cards.forEach(c=>{if(c.tags&&c.tags.length)tags[c.name]=c.tags;if(c.grp)grp[c.name]=c.grp}));
  (deck.maybe||[]).forEach(c=>{if(c.tags&&c.tags.length)tags[c.name]=c.tags});
- return {maybe:(deck.maybe||[]).map(c=>c.name),tags:tags,notes:deck.primer||'',groups:grp}}
+ return {maybe:(deck.maybe||[]).map(c=>c.name),tags:tags,notes:deck.primer||'',groups:grp,bracket:deck.bracketTarget||''}}
 async function applyExtra(raw){let ex={};try{ex=JSON.parse(raw||'{}')}catch(e){}
  const tags=ex.tags||{};deck.groups.forEach(g=>g.cards.forEach(c=>{if(tags[c.name])c.tags=tags[c.name]}));
  Object.entries(ex.groups||{}).forEach(([n,gname])=>moveToGroup(n,gname,true));
- deck.primer=ex.notes||'';
+ deck.primer=ex.notes||'';deck.bracketTarget=ex.bracket||'';
  deck.maybe=(await Promise.all((ex.maybe||[]).map(n=>J('/api/card_info?name='+encodeURIComponent(n))))).filter(c=>!c.error).map(c=>Object.assign(c,{qty:1,tags:tags[c.name]||[]}))}
 function toMaybe(gi,ci){const g=deck.groups[gi],c=g.cards[ci];deck.maybe=deck.maybe||[];
  if(!deck.maybe.some(x=>x.name==c.name))deck.maybe.push(Object.assign({},c,{qty:1}));
@@ -4960,7 +5091,7 @@ function galInit(){const c=E('galci');if(!c||c.childElementCount)return;
   b.className='pip p'+x;b.textContent=x=='C'?'◇':x;b.onclick=()=>{GAL.ci.has(x)?GAL.ci.delete(x):GAL.ci.add(x);b.classList.toggle('on',GAL.ci.has(x))};c.append(b)});
  E('galf').onsubmit=e=>{e.preventDefault();galSearch()}}
 async function galSearch(){const o=E('galres');o.innerHTML='';P(o,'Suche …','hint');
- const r=await J('/api/gallery',{q:E('galq').value,ci:[...GAL.ci].join(''),cimode:E('galcim').value,maxeur:E('galeur').value,gc:E('galgc').value,sort:E('galsort').value});
+ const r=await J('/api/gallery',{q:E('galq').value,ci:[...GAL.ci].join(''),cimode:E('galcim').value,maxeur:E('galeur').value,gc:E('galgc').value,bracket:E('galbr').value,sort:E('galsort').value});
  o.innerHTML='';if(r.error){P(o,r.error,'warn');return}
  if(!r.decks.length){P(o,r.total===0&&!E('galq').value&&!GAL.ci.size?'Noch keine Decks veröffentlicht. Veröffentliche eins unter „📂 Meine Decks“ mit „🌍 Veröffentlichen“.':'Keine Decks zu diesen Filtern.','hint');return}
  P(o,r.total+' Deck'+(r.total==1?'':'s')+(r.total>r.decks.length?' – angezeigt werden die ersten '+r.decks.length:''),'hint');
@@ -4971,12 +5102,13 @@ async function galSearch(){const o=E('galres');o.innerHTML='';P(o,'Suche …','h
   const m=$('div');m.className='gm';m.append(manaEl((d.ci||'C').split('').map(x=>'{'+x+'}').join('')),' ');
   m.append((d.commander||'ohne Commander')+' · von '+d.owner);
   const m2=$('div','♥ '+d.likes+' · 💬 '+d.comments+' · '+galEur(d.eur)+' · '+d.cards+' Karten'+(d.gc?' · '+d.gc+' GC':'')+(d.hidden?' · ausgeblendet':''));m2.className='gm';
+  if(d.bracket||d.bracket_est){m2.prepend(brBadge(d.bracket,d.bracket_est),' ')}
   const t=$('div');t.className='gt';(d.themes||[]).forEach(x=>t.append($('span',x)));
   b.append(n,m,m2,t);c.append(im,b);c.onclick=()=>galOpen(d.id);g.append(c)})}
 async function galOpen(id){const d=await J('/api/gallery_deck?id='+id);await MEP;
  const b=dlgOpen(d.error?'Galerie':d.name);if(d.error){P(b,d.error,'warn');return}
  const h=$('p');h.append(manaEl((d.ci||'C').split('').map(x=>'{'+x+'}').join('')),' ');
- h.append($('b',d.commander||'ohne Commander'),' · von '+d.owner+' · veröffentlicht '+(d.pub_at||'')+' · '+d.cards+' Karten · '+galEur(d.eur)+(d.gc?' · '+d.gc+' Game Changer':''));b.append(h);
+ h.append($('b',d.commander||'ohne Commander'),' ',brBadge(d.bracket,d.bracket_est),' · von '+d.owner+' · veröffentlicht '+(d.pub_at||'')+' · '+d.cards+' Karten · '+galEur(d.eur)+(d.gc?' · '+d.gc+' Game Changer':''));b.append(h);
  if(d.themes&&d.themes.length){const t=$('div');t.className='galtags';d.themes.forEach(x=>t.append($('span',x),' '));b.append(t)}
  const bar=$('div');bar.style.margin='8px 0';
  const lk=$('button',(d.liked?'♥ ':'♡ ')+d.likes);lk.type='button';lk.id='gallike';lk.title='Gefällt mir';
@@ -5154,6 +5286,39 @@ function stackOut(o,groups,edit){const cols={};let lands=[];
  col('Commander',cols.C||[]);for(let k=0;k<=7;k++)col(k==7?'7+':String(k),cols[k]||[]);col('Länder',lands);
  P(o,'Stapel nach Manawert. Karte antippen = Ersatz suchen; ins Maybeboard ziehen = verschieben. Gruppen und Tags siehst du in der Listenansicht.','hint')}
 
+// ---- Bracket-Einstufung
+const BRN={'1':'Exhibition','2':'Core','3':'Upgraded','4':'Optimized','5':'cEDH'};
+function brBadge(tgt,est){const s=$('span');s.className='brb'+(tgt?' brt':'');
+ if(tgt){s.textContent='B'+tgt;s.title='Bracket '+tgt+' ('+BRN[tgt]+') – vom Besitzer angegeben'+(est?'; Schätzung des Programms: '+est:'')}
+ else if(est){s.textContent='≈B'+est;s.title='Bracket-Schätzung des Programms (ohne Combo-Prüfung): '+est}else s.textContent='–';
+ if(tgt&&est){const lo=parseInt(est);if(lo>parseInt(tgt)){s.classList.add('brwarn');s.textContent+=' ⚠';s.title+=' – das Deck enthält Karten über diesem Bracket'}}
+ return s}
+async function bracketBox(o,combos){o.id='brbox';o.innerHTML='';const hh=$('h4','🎚 Bracket-Einstufung');hh.append(qBtn('brackets'));o.append(hh);
+ const res=$('div');o.append(res);P(res,combos?'prüfe Combos bei Commander Spellbook …':'prüfe …','hint');
+ const r=await J('/api/bracket',{list:deck.export,commander:deck.commander||'',combos:combos?1:0});res.innerHTML='';
+ if(r.error){P(res,r.error,'warn');return}
+ const big=$('div');big.className='brbig';big.id='brresult';big.append($('b','Bracket '+r.bracket),' – '+r.name);res.append(big);
+ P(res,r.note,'hint');
+ const t=$('table');t.className='ftable brtab';t.id='brrules';res.append(t);const hr=t.insertRow();['Regel','gefunden','erlaubt ab Bracket','Karten'].forEach(x=>hr.append($('th',x)));
+ r.rules.forEach(x=>{const tr=t.insertRow();tr.dataset.k=x.key;const c0=tr.insertCell();c0.append($('b',x.label));const sm=$('div',x.rule);sm.className='hint';c0.append(sm);
+  const c1=tr.insertCell();c1.textContent=x.key=='combo'&&!x.checked?'nicht geprüft':(x.count?String(x.count):'keine');c1.className=x.key=='combo'&&!x.checked?'':(x.min>2?'no':(x.count?'':'ok'));
+  tr.insertCell().textContent=x.key=='combo'&&!x.checked?'–':x.ok_up_to;
+  const c3=tr.insertCell();x.cards.forEach((n,i)=>{if(i)c3.append(', ');c3.append(x.key=='combo'?n:cardName(n))})});
+ if(r.illegal&&r.illegal.length)P(res,'Nicht Commander-legal (gebannt): '+r.illegal.join(', '),'warn');
+ if(r.combo_error)P(res,r.combo_error,'warn');
+ const sb=r.spellbook;if(sb&&sb.name)P(res,'Zum Vergleich – Commander Spellbook stuft das Deck als „'+sb.name+'“ ein.','hint');
+ // Ziel-Bracket des Besitzers
+ const row=$('div');row.className='brtarget';const sel=$('select');sel.id='brtarget';
+ [['','– noch nicht festgelegt –'],['1','1 – Exhibition'],['2','2 – Core'],['3','3 – Upgraded'],['4','4 – Optimized'],['5','5 – cEDH']].forEach(([v,l])=>{const op=$('option',l);op.value=v;sel.append(op)});
+ sel.value=deck.bracketTarget||'';const msg=$('span');msg.id='brmsg';
+ const cmp=()=>{const tv=sel.value;msg.className='';if(!tv){msg.textContent=' Lege fest, in welchem Bracket du das Deck spielen willst – es wird mit dem Deck gespeichert und in Galerie und Teilen-Seite gezeigt.';return}
+  if(r.value>parseInt(tv)&&!(r.bracket=='1–2'&&tv=='1')){msg.className='warn';msg.textContent=' ⚠ Das Deck enthält Karten über Bracket '+tv+': '+r.rules.filter(x=>x.min>parseInt(tv)).map(x=>x.label+' ('+x.cards.slice(0,4).join(', ')+(x.cards.length>4?', …':'')+')').join('; ')+'.'}
+  else if(parseInt(tv)>=4&&r.value<4){msg.className='hint';msg.textContent=' Keine Regel verbietet das – ob das Deck wirklich so schnell und beständig ist, zeigen Testspiel, Statistik und Forge-Duelle.'}
+  else{msg.className='ok';msg.textContent=' ✓ passt zu den prüfbaren Regeln'+(r.combos_checked?'':' (Combos noch ungeprüft)')+'.'}};
+ sel.onchange=()=>{deck.bracketTarget=sel.value;cmp();deck.msg='Ziel-Bracket gesetzt – mit „Speichern“ übernehmen.'};
+ row.append($('b','Mein Ziel-Bracket: '),sel,msg);res.append(row);cmp();
+ if(!combos){const bc=$('button','🔗 Combos mitprüfen (Commander Spellbook)');bc.type='button';bc.id='brcombos';bc.onclick=()=>bracketBox(o,true);res.append(bc)}}
+
 // Probehand und Starthand-Statistik (London-Mulligan)
 function libraryCards(){return deck.groups.filter(g=>g.name!='Commander').flatMap(g=>g.cards.flatMap(c=>Array(c.qty).fill(c)))}
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -5226,7 +5391,7 @@ function showDeck(){const d=deck,o=E('out');o.innerHTML='';
  if(DSEL.on){const sb=$('div');sb.id='selbar';sb.className='selbar';tb.append(sb)}
  cardsOut(o,d.groups,true);if(DSEL.on)selBar();
  deckRecord();
- recBox(h('div'));maybeBox(h('div'));tagBox(h('div'));notesBox(h('div'));tokenBox(h('div'));priceBox(h('div'));budgetBox(h('div'));
+ bracketBox(h('div'));recBox(h('div'));maybeBox(h('div'));tagBox(h('div'));notesBox(h('div'));tokenBox(h('div'));priceBox(h('div'));budgetBox(h('div'));
  ownBox(h('div'));manaBox(h('div'));handBox(h('div'));
  h('h4','Textliste zum Kopieren');const t=h('textarea');t.rows=10;t.cols=50;t.value=d.export;
  E('cmpbox').style.display='block'}
@@ -5634,8 +5799,9 @@ async function myDecks(list){list=list||await J('/api/decks');
  if(!list.length){o.append($('p','Noch keine Decks gespeichert.'));return}
  c.append($('span','Eigene Decks als Gegner: '));
  const t=$('table');o.append(t);
- const hr=t.insertRow();['Deck','Commander','Karten','Gespeichert',''].forEach(x=>hr.append($('th',x)));
- for(const d of list){const tr=t.insertRow();[d.name,d.commander||'–',d.count,d.saved_at].forEach(x=>tr.insertCell().textContent=x);
+ const hr=t.insertRow();['Deck','Commander','Karten','Bracket','Gespeichert',''].forEach(x=>hr.append($('th',x)));
+ for(const d of list){const tr=t.insertRow();[d.name,d.commander||'–',d.count].forEach(x=>tr.insertCell().textContent=x);
+  const bcell=tr.insertCell();bcell.className='dbr';bcell.append(brBadge(d.bracket,d.bracket_est));tr.insertCell().textContent=d.saved_at;
   const a=tr.insertCell();const get=()=>J('/api/deck_get?id='+d.id);
   const b1=$('button','Mein Deck');b1.type='button';b1.onclick=async()=>useMine(await get());
   const b2=$('button','Gegner');b2.type='button';b2.onclick=async()=>useOpp(await get(),E('impres'));
@@ -6376,8 +6542,13 @@ def deck_meta(con, commander, lst, extra):
         pass
     themes = [t for t, _ in sorted(tags.items(), key=lambda x: -x[1])[:6]]
     img = cmds[0]["image"] if cmds and cmds[0]["image"] else ""
+    est = bracket_check(con, ent, {r["name"] for r in cmds})["bracket"] if ent else ""
+    try:
+        tgt = json.loads(extra or "{}").get("bracket") or ""
+    except Exception:
+        tgt = ""
     con.row_factory = None
-    return {"ci": ci or "C", "eur": round(eur, 2), "cards": sum(q for _, q in ent), "gc": gc, "themes": themes, "image": img}
+    return {"bracket": tgt, "bracket_est": est, "ci": ci or "C", "eur": round(eur, 2), "cards": sum(q for _, q in ent), "gc": gc, "themes": themes, "image": img}
 
 
 def deck_public(con, did, on, uid=0):
@@ -6446,6 +6617,11 @@ def gallery_list(con, p, uid=0, admin=False):
             continue
         if gcmax == "3" and (m.get("gc") or 0) > 3:
             continue
+        bf = g("bracket")
+        if bf:
+            b = m.get("bracket") or {"1–2": "2", "4–5": "4"}.get(m.get("bracket_est") or "", m.get("bracket_est") or "")
+            if bf == "12" and b not in ("1", "2") or bf in ("3",) and b != "3" or bf == "45" and b not in ("4", "5"):
+                continue
         out.append({"id": i, "name": n, "commander": c, "owner": oname, "mine": own == uid, "pub_at": at, "likes": likes,
                     "liked": bool(mine), "comments": ncom, "hidden": bool(hid), **m})
     srt = g("sort") or "new"
@@ -6775,6 +6951,8 @@ class H(BaseHTTPRequestHandler):
                 return alternatives(p)
             if path == "/api/combos":
                 return combos_for(p)
+            if path == "/api/bracket":
+                return bracket_for(p, uid)
             if path == "/api/forge":
                 return forge_status()
             if path == "/api/forge_dir":
@@ -6801,7 +6979,11 @@ class H(BaseHTTPRequestHandler):
             if path == "/api/deck_save":
                 r = deck_save(p, uid)
                 if r.get("ok"):
+                    con.execute("UPDATE decks SET bracket_est = ? WHERE owner = ? AND name = ?",
+                                (bracket_quick(db(), g("commander"), g("list")), uid, r["name"]))
+                    con.commit()
                     gallery_refresh(con, uid, r["name"])
+                    r["decks"] = deck_list(con, uid)
                 return r
             if path == "/api/deck_get":
                 return deck_get(con, int(g("id") or 0), uid) or {"error": "Deck nicht gefunden."}
