@@ -27,6 +27,9 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 47: Cardmarket-Preise direkt aus der öffentlichen Cardmarket-Preisliste (täglich): Preis je Karte = günstigste
+            Druckversion (Trendpreis), dazu Tiefstpreis, Durchschnitt 1/7/30 Tage, Foil und Zahl der Drucke; Links zur
+            günstigsten Druckversion auf Cardmarket; Preisalarm nutzt die Cardmarket-Durchschnitte. Kennzeichnung als Cardmarket-Preise.
 Version 46: Neuer Bereich „📦 Precons“: alle offiziellen Commander-Precons nach Set mit Suche, Farbfilter, Wert,
             Bracket-Schätzung und Sammlungsanteil; Deckliste ansehen, im Editor öffnen, in Meine Decks speichern, als Gegner
             setzen, kopieren oder als gekauftes Precon in die Sammlung übernehmen.
@@ -103,7 +106,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "46"
+APP_VERSION = "47"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -277,8 +280,10 @@ def price_history(p):
     um = usd_map(con, names)
     usd = round(sum((um.get(n) or 0) * q for n, q in names.items()), 2) if um else None
     return {"days": days, "series": series, "since": ref, "moves": moves[:10], "usd": usd, "usd_missing": sum(1 for n in names if n not in um) if um else None,
-            "hint": f"{len(days)} Stichtag(e) seit {first}. Preise: Scryfall (Euro = Cardmarket, Dollar = TCGplayer), "
-                    "Druckversion wie in der Kartendatenbank."}
+            "hint": (f"{len(days)} Stichtag(e) seit {first}. Euro-Preise: Cardmarket-Preisliste vom {setting('cm_at')} "
+                     "(günstigste Druckversion, Trendpreis); Dollar: TCGplayer über Scryfall." if setting("cm_at") else
+                     f"{len(days)} Stichtag(e) seit {first}. Preise: Scryfall (Euro = Cardmarket, Dollar = TCGplayer), "
+                     "Druckversion wie in der Kartendatenbank.")}
 
 
 def upgrade_db():
@@ -595,6 +600,7 @@ def search(p):
             rows = [dict(zip(keys, r)) for r in con.execute(sql.split(" WHERE ")[0].split(" ORDER BY ")[0] + " WHERE name = ? LIMIT 5", (al[0],))]
     for r in rows:
         r["eur"] = float(r["eur"]) if r["eur"] not in (None, "") else None
+        r["cardmarket"] = cm_link(r["name"]) or r["cardmarket"]
     return rows
 
 
@@ -602,7 +608,7 @@ def card_dict(r, qty=1):
     eur = r["eur"]
     return {"name": r["name"], "mana": r["mana_cost"], "cmc": r["cmc"], "qty": qty,
             "eur": float(eur) if eur not in (None, "") else None, "image": r["image"],
-            "scryfall": r["scryfall_uri"], "cardmarket": r["cardmarket_uri"], "gc": bool(r["game_changer"]),
+            "scryfall": r["scryfall_uri"], "cardmarket": cm_link(r["name"]) or r["cardmarket_uri"], "gc": bool(r["game_changer"]),
             "land": "Land" in r["type_line"].split(" // ")[0]}
 
 
@@ -1232,7 +1238,7 @@ def shopping_list(con, uid=0, share=True):
         miss = q - own.get(n, 0)
         if miss > 0:
             e = prices.get(n)
-            items.append({"name": n, "need": q, "have": own.get(n, 0), "missing": miss, "eur": e, "usd": usd.get(n),
+            items.append({"name": n, "need": q, "have": own.get(n, 0), "missing": miss, "eur": e, "usd": usd.get(n), "cm": cm_link(n),
                           "total": round(e * miss, 2) if e is not None else None, "decks": sorted(where[n]), "wish": n in wish})
     items.sort(key=lambda x: (-(x["total"] or 0), x["name"]))
     total = round(sum(x["total"] or 0 for x in items), 2)
@@ -1245,7 +1251,7 @@ def wish_list(con, uid=0):
     wish_table(con)
     rows = con.execute("SELECT name, qty, target, added FROM wishlist WHERE owner = ? ORDER BY name COLLATE NOCASE", (uid,)).fetchall()
     prices, usd, own = eur_map(con, [r[0] for r in rows]), usd_map(con, [r[0] for r in rows]), owned_map(con, uid)
-    items = [{"name": n, "qty": q, "target": t, "added": a, "eur": prices.get(n), "usd": usd.get(n), "have": own.get(n, 0),
+    items = [{"name": n, "qty": q, "target": t, "added": a, "eur": prices.get(n), "usd": usd.get(n), "have": own.get(n, 0), "cm": cm_link(n),
               "hit": t is not None and prices.get(n) is not None and prices[n] <= t} for n, q, t, a in rows]
     return {"items": items, "total": round(sum((x["eur"] or 0) * x["qty"] for x in items), 2), "hits": sum(1 for x in items if x["hit"])}
 
@@ -1402,8 +1408,24 @@ def price_alerts(con, uid=0, days=7, pct=20, min_eur=1.0):
             diff = now - e
             if abs(diff) >= min_eur and abs(diff) / e * 100 >= pct:
                 moves.append({"name": n, "from": e, "to": now, "diff": round(diff, 2), "pct": round(diff / e * 100), "qty": own[n]})
+    seen = {m["name"] for m in moves}
+    try:
+        cm_table(con)
+        cmv = {n: (a30, t) for n, a30, t in con.execute("SELECT name, avg30, trend FROM cm_cards")}
+    except sqlite3.Error:
+        cmv = {}
+    for n in names:  # Cardmarket: Trend gegenüber dem 30-Tage-Durchschnitt
+        if n in seen or n not in cmv:
+            continue
+        a30, t = cmv[n]
+        if not a30 or not t:
+            continue
+        diff = t - a30
+        if abs(diff) >= min_eur and abs(diff) / a30 * 100 >= pct:
+            moves.append({"name": n, "from": round(a30, 2), "to": round(t, 2), "diff": round(diff, 2), "pct": round(diff / a30 * 100),
+                          "qty": own[n], "src": "cm"})
     moves.sort(key=lambda x: -abs(x["diff"] * x["qty"]))
-    return {"wish_hits": hits, "moves": moves[:15], "since": cut}
+    return {"wish_hits": hits, "moves": moves[:15], "since": cut, "cm_at": setting("cm_at") or ""}
 
 
 def budget_swaps(p, uid=0):
@@ -2450,6 +2472,173 @@ def fetch_conditional(url, etag=""):
         raise
 
 
+# ---------------------------------------------------------------- Cardmarket-Preisliste (öffentliche Dateien)
+# Cardmarket stellt Price Guide und Produktliste frei zur Verfügung. Bedingungen laut Cardmarket-Support (19.11.2026):
+# Nutzer müssen erkennen, dass es Cardmarket-Preise sind; Markenzeichen nur aus help.cardmarket.com/en/Downloads.
+CM_PRICE_URL = ENV("CDB_CM_PRICE_URL", "") or "https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_1.json"
+CM_PRODUCTS_URL = ENV("CDB_CM_PRODUCTS_URL", "") or "https://downloads.s3.cardmarket.com/productCatalog/productList/products_singles_1.json"
+CM_LINK = "https://www.cardmarket.com/de/Magic/Products?idProduct={}"
+CM_CACHE = {"key": None, "map": {}}
+
+
+def cm_table(con):
+    con.execute("CREATE TABLE IF NOT EXISTS cm_cards(name TEXT PRIMARY KEY, id_cheap INTEGER, trend REAL, low REAL, avg1 REAL, "
+                "avg7 REAL, avg30 REAL, foil REAL, prints INTEGER, eur_scryfall REAL)")
+
+
+def cm_local_files():
+    """Selbst heruntergeladene Dateien (Datenordner oder Downloads), falls der Abruf nicht klappt."""
+    dirs = [DATA_DIR if "DATA_DIR" in globals() else ".", os.path.expanduser("~/Downloads"), "."]
+    for d in dirs:
+        a, b = os.path.join(d, "price_guide_1.json"), os.path.join(d, "products_singles_1.json")
+        if os.path.isfile(a) and os.path.isfile(b):
+            return open(a, "rb").read(), open(b, "rb").read(), d
+    return None, None, None
+
+
+def cm_value(trend, avg7, avg30, avg=None):
+    """Robuster Preis einer Druckversion: Trendpreis, außer er liegt unter der Hälfte des 7- bzw. 30-Tage-Durchschnitts
+    (einzelne Ausreißer-Verkäufe) – dann gilt der Durchschnitt."""
+    ref = avg7 or avg30 or 0
+    t = trend or 0
+    if ref and t < ref * 0.5:
+        return ref
+    return t or ref or (avg or 0)
+
+
+def cm_import(raw_prices, raw_products, con=None):
+    """Ordnet Cardmarket-Produkte den Karten zu (Name, ältere Schreibweise „A / B“, sonst über die Produktnummer aus
+    Scryfall und deren Metakarte) und übernimmt je Karte die günstigste Druckversion als Preis."""
+    con = con or db()
+    pg = json.loads(gzip.decompress(raw_prices) if raw_prices[:2] == b"\x1f\x8b" else raw_prices)
+    pl = json.loads(gzip.decompress(raw_products) if raw_products[:2] == b"\x1f\x8b" else raw_products)
+    guides = {x["idProduct"]: x for x in pg.get("priceGuides") or []}
+    prods = pl.get("products") or []
+    if len(guides) < 1000 or len(prods) < 1000:
+        raise ValueError("Cardmarket-Dateien unvollständig")
+    by_meta, by_name = {}, {}
+    for x in prods:
+        by_meta.setdefault(x.get("idMetacard"), []).append(x["idProduct"])
+        by_name.setdefault(x["name"].lower(), set()).add(x.get("idMetacard"))
+    id_meta = {x["idProduct"]: x.get("idMetacard") for x in prods}
+    cm_table(con)
+    # Sind die Kartendaten seit dem letzten Import schon mit Cardmarket-Preisen überschrieben, bleibt der alte Scryfall-Wert
+    already = bool(setting("cm_applied")) and setting("cm_applied") == (setting("imported_at") or "")
+    old_scry = {n: e for n, e in con.execute("SELECT name, eur_scryfall FROM cm_cards")} if already else {}
+    rows = []
+    for name, eur, uri in con.execute("SELECT name, CAST(eur AS REAL), cardmarket_uri FROM cards"):
+        if already:
+            eur = old_scry.get(name, eur)
+        metas = set()
+        for k in (name, name.replace(" // ", " / "), name.split(" // ")[0]):
+            metas |= by_name.get(k.lower(), set())
+            if metas:
+                break
+        m = re.search(r"idProduct=(\d+)", uri or "")
+        if m and id_meta.get(int(m.group(1))) is not None:
+            metas.add(id_meta[int(m.group(1))])
+        metas.discard(0)
+        ids = [i for mt in metas for i in by_meta.get(mt, [])]
+        best, low, foil = None, None, None
+        for i in ids:
+            gd = guides.get(i)
+            if not gd:
+                continue
+            t = cm_value(gd.get("trend"), gd.get("avg7"), gd.get("avg30"), gd.get("avg"))
+            if t > 0 and (best is None or t < best[1]):
+                best = (i, t, gd)
+            if gd.get("low") and (low is None or gd["low"] < low):
+                low = gd["low"]
+            ft = cm_value(gd.get("trend-foil"), gd.get("avg7-foil"), gd.get("avg30-foil"), gd.get("avg-foil"))
+            if ft > 0 and (foil is None or ft < foil):
+                foil = ft
+        if best:
+            gd = best[2]
+            rows.append((name, best[0], round(best[1], 2), low, gd.get("avg1"), gd.get("avg7"), gd.get("avg30"), foil, len(ids), eur))
+    con.execute("DELETE FROM cm_cards")
+    con.executemany("INSERT OR REPLACE INTO cm_cards VALUES(?,?,?,?,?,?,?,?,?,?)", rows)
+    con.commit()
+    created = (pg.get("createdAt") or "")[:16].replace("T", " ")
+    setting("cm_at", created)
+    total = con.execute("SELECT count(*) FROM cards").fetchone()[0]
+    setting("cm_matched", f"{len(rows)}/{total}")
+    return cm_apply(con), len(rows), total, created
+
+
+def cm_apply(con):
+    """Cardmarket-Preis in die Kartendaten übernehmen (nach jedem Scryfall-Import erneut) und als Stichtag sichern."""
+    cm_table(con)
+    n = con.execute("UPDATE cards SET eur = (SELECT trend FROM cm_cards m WHERE m.name = cards.name) "
+                    "WHERE name IN (SELECT name FROM cm_cards)").rowcount
+    con.commit()
+    setting("cm_applied", setting("imported_at") or "")
+    record_prices(con, (setting("cm_at") or "")[:10])
+    CM_CACHE.update(key=None, checked=0)
+    return n
+
+
+def update_cardmarket(force=False):
+    con = db()
+    cm_table(con)
+    have = con.execute("SELECT count(*) FROM cm_cards").fetchone()[0]
+    src = ""
+    try:
+        raw, etag = fetch_conditional(CM_PRICE_URL, "" if force or not have else setting("cm_etag"))
+        prods = fetch(CM_PRODUCTS_URL) if raw is not None else None
+    except Exception as e:
+        raw, prods, d = cm_local_files()
+        if raw is None:
+            if have:
+                if setting("cm_applied") != (setting("imported_at") or ""):
+                    cm_apply(con)
+                return f"Cardmarket nicht erreichbar ({e}); letzte Preisliste vom {setting('cm_at')} wird weiter genutzt"
+            raise
+        etag, src = "", f" aus {d}"
+    if raw is None:
+        if setting("cm_applied") != (setting("imported_at") or ""):
+            cm_apply(con)  # neue Scryfall-Daten: Cardmarket-Preise wieder übernehmen
+        return f"aktuell (Preisliste vom {setting('cm_at')}, {setting('cm_matched')} Karten zugeordnet)"
+    n, matched, total, created = cm_import(raw, prods, con)
+    setting("cm_etag", etag)
+    return f"neu geladen{src}: Preisliste vom {created}, {matched} von {total} Karten zugeordnet"
+
+
+def cm_info(con, name):
+    """Cardmarket-Werte einer Karte (für Anzeige und Links)."""
+    cm_table(con)
+    r = con.execute("SELECT * FROM cm_cards WHERE name = ?", (name,)).fetchone()
+    if not r:
+        return {"name": name, "found": False}
+    keys = ["name", "id_cheap", "trend", "low", "avg1", "avg7", "avg30", "foil", "prints", "eur_scryfall"]
+    d = dict(zip(keys, tuple(r)))
+    d.update(found=True, url=CM_LINK.format(d["id_cheap"]), at=setting("cm_at"))
+    return d
+
+
+def cm_link(name):
+    """Link zur günstigsten Druckversion; Zwischenspeicher wird höchstens einmal pro Minute geprüft."""
+    now = time.time()
+    if now - CM_CACHE.get("checked", 0) > 60:
+        CM_CACHE["checked"] = now
+        try:
+            cm_links(db())
+        except Exception:
+            pass
+    return CM_CACHE["map"].get(name)
+
+
+def cm_links(con):
+    """Name → Link zur günstigsten Druckversion (zwischengespeichert)."""
+    key = setting("cm_at")
+    if CM_CACHE["key"] != key:
+        try:
+            cm_table(con)
+            CM_CACHE.update(key=key, map={n: CM_LINK.format(i) for n, i in con.execute("SELECT name, id_cheap FROM cm_cards")})
+        except sqlite3.Error:
+            CM_CACHE.update(key=key, map={})
+    return CM_CACHE["map"]
+
+
 def update_rules(force=False):
     url = find_rules_url()
     con = db()
@@ -2490,14 +2679,14 @@ def update_cards(force=False):
     return f"neu geladen: Stand {setting('source_date')}, {setting('count')} Karten"
 
 
-def auto_update(force=False, parts=("rules", "precons", "cards")):
+def auto_update(force=False, parts=("rules", "precons", "cards", "cardmarket")):
     if UPDATE["running"]:
         return
     UPDATE.update(running=True, done=False, items={})
-    labels = {"rules": "Regeln", "precons": "Precons", "cards": "Kartendaten"}
+    labels = {"rules": "Regeln", "precons": "Precons", "cards": "Kartendaten", "cardmarket": "Cardmarket-Preise"}
     for k in parts:
         UPDATE["items"][k] = {"label": labels[k], "status": "wird geprüft ...", "ok": None}
-    for k, fn in (("rules", update_rules), ("precons", update_precons), ("cards", update_cards)):
+    for k, fn in (("rules", update_rules), ("precons", update_precons), ("cards", update_cards), ("cardmarket", update_cardmarket)):
         if k not in parts:
             continue
         try:
@@ -3974,7 +4163,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 46)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 47)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -4385,7 +4574,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>⭐ Wunschliste und Preisalarm:</b> Karten mit Anzahl und optionalem Zielpreis. Liegt der aktuelle Preis darunter, steht die Karte grün markiert in der Liste und als „🔔 Preisalarm“ auf der Startseite. Dort erscheinen auch Karten deiner Sammlung, deren Preis sich in etwa sieben Tagen um mindestens 20 % und 1 € verändert hat. Neue Preise kommen mit jeder Kartenaktualisierung.</li>
 <li><b>📁 Ordner:</b> Teile der Sammlung ordnen (z. B. Tauschordner, Binder). Ein Ordner enthält nur Karten, die du besitzt, und höchstens so viele, wie du hast; die Karten bleiben dabei Teil der Sammlung.</li>
 <li><b>📈 Wertverlauf:</b> der Wert der Sammlung je Stichtag (bei jeder Kartenaktualisierung) und zum Vergleich in Dollar.</li>
-<li><b>Zweite Preisquelle und Budget-Tausch:</b> Euro-Preise stammen von Cardmarket, Dollar-Preise von TCGplayer – beide liefert Scryfall mit den Kartendaten (Dollar ab der ersten Kartenaktualisierung mit Version 41). In der Deckansicht sucht „💸 Budget-Tausch“ für teure Karten (ab einstellbarem Preis, ohne eigene Karten) Ersatz mit gleicher Aufgabe für höchstens 30 % des Preises; ein Klick tauscht die Karte.</li></ul>
+<li><b>Preisquellen und Budget-Tausch:</b> Euro-Preise kommen direkt aus der öffentlichen <b>Cardmarket-Preisliste</b>, die jeden Tag neu geladen wird. Als Preis einer Karte gilt der Trendpreis ihrer <b>günstigsten Druckversion</b> – so viel kostet die Karte etwa, wenn man sie fürs Deck kauft. Ein Klick auf den Preis in der Kartensuche zeigt dazu Tiefstpreis, Durchschnitt über 1, 7 und 30 Tage, Foil-Preis und Zahl der Drucke; 🛒 öffnet die günstigste Druckversion auf Cardmarket. Ist die Preisliste einmal nicht erreichbar, gelten die zuletzt geladenen Cardmarket-Preise, ganz ohne Preisliste die Euro-Preise von Scryfall. Dollar-Preise (TCGplayer) liefert Scryfall. In der Deckansicht sucht „💸 Budget-Tausch“ für teure Karten (ab einstellbarem Preis, ohne eigene Karten) Ersatz mit gleicher Aufgabe für höchstens 30 % des Preises; ein Klick tauscht die Karte.</li></ul>
 
 <h3 id=h-spieltisch>Spieltisch: Lebenszähler und Spielprotokoll</h3>
 <ul><li><b>Partie starten:</b> Spielerzahl (2–6) und Startleben wählen, Namen eintragen und je Spieler ein gespeichertes Deck auswählen oder frei eintippen.</li>
@@ -4757,7 +4946,7 @@ Nicht von Wizards of the Coast genehmigt oder unterstützt. Teile der verwendete
 Comprehensive Rules) sind Eigentum von Wizards of the Coast. ©Wizards of the Coast LLC.</p>
 <p lang=en><i>Manaschmiede is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards.
 Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.</i></p>
-<p>Kartendaten und Bilder: <a href="https://scryfall.com" target=_blank rel=noopener>Scryfall</a> · Precons: MTGJSON / mtg.wtf ·
+<p>Kartendaten und Bilder: <a href="https://scryfall.com" target=_blank rel=noopener>Scryfall</a> · Euro-Preise: <a href="https://www.cardmarket.com" target=_blank rel=noopener>Cardmarket</a> (Preisliste) · Precons: MTGJSON / mtg.wtf ·
 Combos: <a href="https://commanderspellbook.com" target=_blank rel=noopener>Commander Spellbook</a> · Regel-Engine: Forge ·
 <a href="#regeln">Offizielle Regeln</a> · <a href="#willkommen">Startseite</a></p></footer>
 <script>
@@ -4770,7 +4959,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='46';
+const PAGE_VERSION='47';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -5227,12 +5416,13 @@ async function shopCalc(){const o=E('shopres');o.innerHTML='';P(o,'rechne …','
  if(!r.has_collection)P(o,'Noch keine Sammlung importiert – es fehlen deshalb alle Karten.','hint');
  E('shopsum').textContent='('+r.cards+' Karten, ca. '+fe(r.total)+')';
  P(o,r.items.length?r.cards+' fehlende Karten ('+r.items.length+' verschiedene) für '+r.decks+' Decks · zusammen ca. '+fe(r.total)+(r.noprice?' · '+r.noprice+' ohne Preis':''):'Dir fehlt keine Karte – alle Decks sind komplett.','big');
+ if(CMAT&&r.items.length)P(o,'Preise: Cardmarket (Preisliste vom '+CMAT+', günstigste Druckversion). 🛒 öffnet die Karte auf Cardmarket.','hint');
  if(!r.items.length)return;
  const bar=$('p');const cp=$('button','📋 Liste kopieren (für die Cardmarket-Wunschliste)');cp.type='button';cp.id='shopcopy';cp.onclick=async()=>{await copyText(r.text);cp.textContent='✓ kopiert'};
  const wl=$('button','⭐ Alle auf die Wunschliste');wl.type='button';wl.id='shopwish';wl.onclick=async()=>{const x=await J('/api/wish_add',{text:r.text});wl.textContent='✓ '+x.added+' Karten auf der Wunschliste';wishShow(x)};
  bar.append(cp,' ',wl);o.append(bar);
  const t=$('table');t.className='ftable';t.id='shoptable';o.append(t);const hr=t.insertRow();['Karte','fehlt','hast','Preis','zusammen','in Decks'].forEach((x,i)=>{const th=$('th',x);if(i>0&&i<5)th.className='r';hr.append(th)});
- r.items.slice(0,300).forEach(x=>{const tr=t.insertRow();const c0=tr.insertCell();c0.append(cardName(x.name));if(x.wish)c0.append(' ⭐');
+ r.items.slice(0,300).forEach(x=>{const tr=t.insertRow();const c0=tr.insertCell();c0.append(cardName(x.name),' ',cmA(x.cm));if(x.wish)c0.append(' ⭐');
   [x.missing,x.have,fe(x.eur),fe(x.total)].forEach(v=>{const c=tr.insertCell();c.className='r';c.textContent=v});tr.insertCell().textContent=x.decks.join(', ')});
  if(r.items.length>300)P(o,'… und '+(r.items.length-300)+' weitere (vollständig in der kopierten Liste).','hint')}
 function wishShow(r){const o=E('wishres');o.innerHTML='';if(r.error){P(o,r.error,'warn');return}
@@ -5240,7 +5430,7 @@ function wishShow(r){const o=E('wishres');o.innerHTML='';if(r.error){P(o,r.error
  if(r.unknown&&r.unknown.length)P(o,'Nicht gefunden: '+r.unknown.join(', '),'warn');
  if(!r.items.length){P(o,'Die Wunschliste ist leer.','hint');return}
  const t=$('table');t.className='ftable';t.id='wishtable';o.append(t);const hr=t.insertRow();['Karte','Anzahl','Preis','Dollar','Zielpreis','',''].forEach((x,i)=>{const th=$('th',x);if(i>0&&i<5)th.className='r';hr.append(th)});
- r.items.forEach(x=>{const tr=t.insertRow();tr.dataset.name=x.name;const c0=tr.insertCell();c0.append(cardName(x.name));if(x.have)c0.append($('span',' (hast '+x.have+')'));
+ r.items.forEach(x=>{const tr=t.insertRow();tr.dataset.name=x.name;const c0=tr.insertCell();c0.append(cardName(x.name),' ',cmA(x.cm));if(x.have)c0.append($('span',' (hast '+x.have+')'));
   const cq=tr.insertCell();cq.className='r';cq.textContent=x.qty;
   const ce=tr.insertCell();ce.className='r'+(x.hit?' hit':'');ce.textContent=fe(x.eur);
   const cu=tr.insertCell();cu.className='r';cu.textContent=fu(x.usd);
@@ -5281,6 +5471,7 @@ async function priceAlerts(){const o=E('palert');if(!o)return;const r=await J('/
  if(r.wish_hits.length){const d=$('div');d.id='palwish';d.append('Wunschliste unter Zielpreis: ');r.wish_hits.forEach((x,i)=>{if(i)d.append(', ');d.append(cardName(x.name),' '+fe(x.eur)+' (Ziel '+fe(x.target)+')')});o.append(d)}
  if(r.moves.length){const d=$('div');d.id='palmove';d.append('Starke Bewegung in deiner Sammlung seit '+r.since+': ');
   r.moves.slice(0,8).forEach((x,i)=>{if(i)d.append(', ');const sp=$('span',(x.diff>0?'▲ ':'▼ ')+fe(x.from)+' → '+fe(x.to)+' ('+(x.pct>0?'+':'')+x.pct+' %)');sp.className=x.diff>0?'up':'down';d.append(cardName(x.name),' ',sp)});o.append(d)}
+ if(r.cm_at){const s2=$('div','Preise: Cardmarket (Preisliste vom '+r.cm_at+'); ohne eigenen Verlauf zählt der Trend gegenüber dem 30-Tage-Durchschnitt.');s2.className='hint';o.append(s2)}
  const go=$('a','→ zur Wunschliste');go.href='#sammlung';go.onclick=()=>setTimeout(()=>{E('wishbox').open=true;E('wishbox').scrollIntoView()},300);o.append(' ',go)}
 async function budgetBox(o){const h=$('h4','💸 Budget-Tausch');o.append(h);
  const lim=$('input');lim.id='budmin';lim.size=4;lim.value='5';lim.inputMode='decimal';const b=$('button','Günstigere Alternativen suchen');b.type='button';b.id='budgo';
@@ -5458,6 +5649,18 @@ async function pcOpen(id){const d=await J('/api/precon?id='+id);const meta=(PC.d
  const w=$('div');w.className='pclist';w.id='pclist';b.append(w);
  d.groups.forEach(g=>{const s=$('div');s.className='pcg';s.append($('h4',g.name+' ('+g.cards.reduce((a,c)=>a+c.qty,0)+')'));
   g.cards.forEach(c=>{const r=$('div');r.append(c.qty+'× ',cardName(c.name,c.scryfall,c.image));if(c.gc){const x=$('span',' GC');x.className='gcm';x.title='Game Changer';r.append(x)}s.append(r)});w.append(s)})}
+
+// ---- Cardmarket-Preise einer Karte
+async function cmShow(name){const d=await J('/api/cm',{name:name});const b=dlgOpen(name);
+ if(!d.found){P(b,'Für diese Karte gibt es keinen Eintrag in der Cardmarket-Preisliste (z. B. digitale oder sehr neue Karten).','hint');return}
+ const t=$('table');t.className='ftable';t.id='cmtab';b.append(t);
+ [['Trendpreis, günstigste Druckversion',d.trend],['Tiefstpreis über alle Drucke',d.low],['Durchschnitt letzter Tag',d.avg1],['Durchschnitt 7 Tage',d.avg7],['Durchschnitt 30 Tage',d.avg30],['Foil, günstigster Trendpreis',d.foil]]
+  .forEach(([l,v])=>{const tr=t.insertRow();tr.insertCell().textContent=l;const c=tr.insertCell();c.className='r';c.textContent=fe(v)});
+ const tr=t.insertRow();tr.insertCell().textContent='Druckversionen bei Cardmarket';const c=tr.insertCell();c.className='r';c.textContent=d.prints;
+ if(d.avg30&&d.trend){const ch=Math.round((d.trend-d.avg30)/d.avg30*100);P(b,'Trend gegenüber dem 30-Tage-Durchschnitt: '+(ch>0?'+':'')+ch+' %','hint')}
+ const a=$('a','🛒 Günstigste Druckversion auf Cardmarket ansehen',d.url);a.target='_blank';a.rel='noopener';a.id='cmlink';b.append($('p'));b.lastChild.append(a);
+ P(b,'Preise: Cardmarket, Preisliste vom '+d.at+'. Durchschnitte und Trend beziehen sich auf die günstigste Druckversion; Tiefst- und Foil-Preis auf alle Drucke.','hint')}
+function cmA(url){if(!url)return '';const a=$('a','🛒',url);a.target='_blank';a.rel='noopener';a.title='Auf Cardmarket ansehen';a.className='cmlnk';return a}
 
 // Probehand und Starthand-Statistik (London-Mulligan)
 function libraryCards(){return deck.groups.filter(g=>g.name!='Commander').flatMap(g=>g.cards.flatMap(c=>Array(c.qty).fill(c)))}
@@ -6358,8 +6561,9 @@ async function go(e){e&&e.preventDefault();
  for(const c of d){const tr=b.insertRow(),n=tr.insertCell();n.append(cardName(c.name,null,c.image));
   if(c.gc){const g=$('span',' GC');g.className='gc';n.append(g)}
   tr.insertCell().append(manaEl(c.mana));
-  for(const v of [c.type,c.ci,c.rank??'',c.eur!=null?c.eur.toFixed(2):''])tr.insertCell().textContent=v;
-  const l=tr.insertCell();l.append($('a','Scryfall',c.scryfall));}}
+  for(const v of [c.type,c.ci,c.rank??''])tr.insertCell().textContent=v;
+  const pc=tr.insertCell();if(c.eur!=null){const pb=$('a',c.eur.toFixed(2).replace('.',','));pb.href='#';pb.className='cmprice';pb.title='Cardmarket-Preise anzeigen';pb.onclick=e=>{e.preventDefault();cmShow(c.name)};pc.append(pb)}
+  const l=tr.insertCell();l.append($('a','Scryfall',c.scryfall));if(c.cardmarket){l.append(' · ',$('a','Cardmarket',c.cardmarket))}}}
 // ---- Benutzer (Server), App-Installation
 let installEv=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEv=e;userBar()});
@@ -6472,7 +6676,9 @@ E('wquick').onsubmit=e=>{e.preventDefault();const v=E('wcmd').value.trim();goTab
 
 E('b').onsubmit=bd;E('f').onsubmit=go;go();setView(view);
 function infoLine(){J('/api/info').then(d=>{E('info').textContent='Version '+PAGE_VERSION+' · '+d.count+' Karten · Scryfall-Stand: '+d.source_date
- +(d.precons_at?' · Precons: '+d.precons_at:'')+(d.rules_version?' · Regeln gültig ab '+d.rules_version:'')})}
+ +(d.precons_at?' · Precons: '+d.precons_at:'')+(d.rules_version?' · Regeln gültig ab '+d.rules_version:'')
+ +(d.cm_at?' · Preise: Cardmarket (Preisliste vom '+d.cm_at+')':' · Preise: Scryfall');CMAT=d.cm_at||''})}
+let CMAT='';
 infoLine();
 </script>"""
 
@@ -7088,6 +7294,8 @@ class H(BaseHTTPRequestHandler):
                 return precon_list(con, g("q"), g("ci").upper()) if has_precons(con) else []
             if path == "/api/precon":
                 return precon_view(p)
+            if path == "/api/cm":
+                return cm_info(con, g("name"))
             if path == "/api/precon_catalog":
                 return precon_catalog(con, uid)
             if path == "/api/precon_to_collection":
