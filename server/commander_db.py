@@ -27,6 +27,10 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 48: Sammlung je Druck (Set, Sammlernummer, Foil/Etched, Zustand, Sprache) mit Cardmarket-Preis je Druckversion,
+            Druckauswahl, Import der Druckangaben aus ManaBox, Moxfield, Deckbox, Archidekt, Dragon Shield und Textlisten,
+            Export je Druck; manuelles Testduell im Browser (beide Seiten selbst spielen) und lokal „In Forge selbst spielen“;
+            genaue Statistik der Forge-Duelle (Mulligans, Commander-Runde, Länder, Zauber, Schaden, Schlüsselkarten, Verlauf je Partie).
 Version 47: Cardmarket-Preise direkt aus der öffentlichen Cardmarket-Preisliste (täglich): Preis je Karte = günstigste
             Druckversion (Trendpreis), dazu Tiefstpreis, Durchschnitt 1/7/30 Tage, Foil und Zahl der Drucke; Links zur
             günstigsten Druckversion auf Cardmarket; Preisalarm nutzt die Cardmarket-Durchschnitte. Kennzeichnung als Cardmarket-Preise.
@@ -106,7 +110,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "47"
+APP_VERSION = "48"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -1051,14 +1055,22 @@ def scan_match(p):
 # ---------------------------------------------------------------- Kartensammlung
 def collection_table(con):
     con.execute("CREATE TABLE IF NOT EXISTS collection(owner INTEGER, name TEXT, qty INTEGER, updated_at TEXT, PRIMARY KEY(owner, name))")
+    inv_tables(con)
 
 
 NAME_COLS = ("name", "card name", "card", "cardname", "card_name", "kartenname")
 QTY_COLS = ("quantity", "count", "qty", "amount", "anzahl", "menge", "have", "owned")
+SETC_COLS = ("set code", "set_code", "setcode", "edition code", "edition_code", "set")
+SETN_COLS = ("set name", "set_name", "edition name", "expansion", "edition")
+NUM_COLS = ("collector number", "collector_number", "collector #", "card number", "card_number", "number", "cn", "nummer")
+FOIL_COLS = ("foil", "finish", "printing", "is foil", "foil/non-foil")
+COND_COLS = ("condition", "cond", "zustand")
+LANG_COLS = ("language", "lang", "sprache")
+SID_COLS = ("scryfall id", "scryfall_id", "scryfallid")
 
 
 def parse_collection(text):
-    """Text oder CSV (ManaBox, Moxfield, Deckbox, Archidekt, Dragon Shield …) -> [(Name, Anzahl)]."""
+    """Text oder CSV (ManaBox, Moxfield, Deckbox, Archidekt, Dragon Shield …) -> [{name, qty, set, number, foil, cond, lang, sid, set_name}]."""
     import csv, io
     text = (text or "").lstrip("\ufeff")
     lines = [l for l in text.splitlines() if l.strip()]
@@ -1070,22 +1082,43 @@ def parse_collection(text):
         head = lines[0] if lines else ""
     delim = max([",", ";", "\t"], key=head.count)
     cols = [c.strip().strip('"').lower() for c in next(csv.reader([head], delimiter=delim))]
-    ni = next((i for i, c in enumerate(cols) if c in NAME_COLS), None)
+    col = lambda names: next((i for n in names for i, c in enumerate(cols) if c == n), None)
+    ni = col(NAME_COLS)
     if ni is not None and head.count(delim):
-        qi = next((i for i, c in enumerate(cols) if c in QTY_COLS), None)
+        qi, sci, sni, nui, fi, ci, li, si = (col(x) for x in (QTY_COLS, SETC_COLS, SETN_COLS, NUM_COLS, FOIL_COLS, COND_COLS, LANG_COLS, SID_COLS))
+        if sni == sci:
+            sni = None
         out = []
         for row in csv.reader(io.StringIO("\n".join(lines[1:])), delimiter=delim):
             if len(row) <= ni or not row[ni].strip():
                 continue
-            q = row[qi].strip() if qi is not None and len(row) > qi else "1"
-            out.append((row[ni].strip(), int(q) if q.isdigit() else 1))
+            v = lambda i: row[i].strip() if i is not None and len(row) > i else ""
+            q = v(qi) or "1"
+            sc, sn = v(sci), v(sni)
+            if sc and not re.fullmatch(r"[A-Za-z0-9]{2,6}", sc):  # „Edition“ enthält bei manchen Programmen den Set-Namen
+                sn, sc = sn or sc, ""
+            elif not sc and re.fullmatch(r"[A-Za-z0-9]{2,6}", sn):  # Moxfield: „Edition“ = Set-Code
+                sc = sn
+            out.append({"name": row[ni].strip(), "qty": int(q) if q.isdigit() else 1, "set": sc.upper(), "set_name": sn,
+                        "number": v(nui).lstrip("#"), "foil": norm_foil(v(fi)), "cond": norm_cond(v(ci)), "lang": norm_lang(v(li)), "sid": v(si)})
         return out
     out = []
     for l in lines:
-        l = re.sub(r"\s*[\(\[][A-Za-z0-9]{2,6}[\)\]].*$", "", l.strip())  # Set-Angaben „(MH2) 123“ abschneiden
+        l = l.strip()
+        if not l or l.startswith(("//", "#")):
+            continue
+        foil = 2 if re.search(r"\*E\*", l) else 1 if re.search(r"\*F\*|\(foil\)|\bfoil\s*$", l, re.I) else 0
+        l = re.sub(r"\s*\*[FE]\*|\s*\(foil\)", "", l, flags=re.I)
         m = re.match(r"^(\d+)\s*x?\s+(.+)$", l)
-        out.append((m.group(2).strip(), int(m.group(1))) if m else (l, 1))
-    return [(n, q) for n, q in out if n and not n.startswith(("//", "#"))]
+        q, rest = (int(m.group(1)), m.group(2)) if m else (1, l)
+        sm = re.search(r"\s*[\(\[]([A-Za-z0-9]{2,6})[\)\]]\s*([0-9A-Za-z★†\-]+)?.*$", rest)
+        sc = num = ""
+        if sm:
+            sc, num = sm.group(1).upper(), sm.group(2) or ""
+            rest = rest[:sm.start()]
+        if rest.strip():
+            out.append({"name": rest.strip(), "qty": q, "set": sc, "set_name": "", "number": num, "foil": foil, "cond": "", "lang": "", "sid": ""})
+    return out
 
 
 def collection_import(p, uid=0):
@@ -1103,40 +1136,68 @@ def collection_import(p, uid=0):
         names[n.lower()] = n
         if " // " in n:
             names.setdefault(n.split(" // ")[0].lower(), n)
-    total, fixed, unknown, fuzzy = {}, [], [], 0
+    fixed, unknown, fuzzy = [], [], 0
     try:
-        translate_names(con, [n for n, _ in rows if n.lower() not in names], limit=150)
+        translate_names(con, [r["name"] for r in rows if r["name"].lower() not in names], limit=150)
     except Exception:
         pass
-    for n, q in rows:
-        real = names.get(n.lower())
+    good = []
+    for r in rows:
+        real = names.get(r["name"].lower())
         if not real and fuzzy < 300:
             fuzzy += 1
-            r, hint = lookup(con, n)
-            if r:
-                real = r["name"]
-                fixed.append(f"{n} → {real}")
+            hit, hint = lookup(con, r["name"])
+            if hit:
+                real = hit["name"]
+                fixed.append(f"{r['name']} → {real}")
         if not real:
-            unknown.append(n)
+            unknown.append(r["name"])
             continue
-        total[real] = total.get(real, 0) + max(0, q)
+        r["name"] = real
+        good.append(r)
+    # Druckangaben: Scryfall-ID oder Set-Name in Set-Code und Nummer übersetzen, fehlende Druckdaten nachladen
+    err = None
+    if any(r["set_name"] for r in good) and sets_load(con):
+        sets = {n.lower(): c for c, n in con.execute("SELECT code, name FROM mtg_sets")}
+        codes = set(sets.values())
+        for r in good:
+            if r["set_name"] and (not r["set"] or (codes and r["set"] not in codes)):
+                r["set"] = sets.get(r["set_name"].lower(), "" if r["set"] not in codes else r["set"])
+    sids = [r["sid"] for r in good if r["sid"] and not r["set"]]
+    if sids:
+        have = {sid for (sid,) in con.execute(f"SELECT sid FROM prints WHERE sid IN ({','.join('?' * len(sids[:900]))})", sids[:900])}
+        _, err = prints_fetch(con, [{"id": x} for x in dict.fromkeys(sids) if x not in have][:3000])
+        for r in good:
+            if r["sid"] and not r["set"]:
+                pr = con.execute("SELECT set_code, number FROM prints WHERE sid = ?", (r["sid"],)).fetchone()
+                if pr:
+                    r["set"], r["number"] = pr[0], pr[1]
     now = datetime.datetime.now().isoformat(sep=" ", timespec="minutes")
     if g("mode") == "replace":
-        con.execute("DELETE FROM collection WHERE owner = ?", (uid,))
-    for n, q in total.items():
-        con.execute("INSERT INTO collection VALUES(?,?,?,?) ON CONFLICT(owner, name) DO UPDATE SET qty = qty + excluded.qty, "
-                    "updated_at = excluded.updated_at", (uid, n, q, now))
-    con.commit()
+        con.execute("DELETE FROM coll_items WHERE owner = ?", (uid,))
+    total = {}
+    for r in good:
+        q = max(0, r["qty"])
+        con.execute("INSERT INTO coll_items VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(owner, name, set_code, number, foil, cond, lang) "
+                    "DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at",
+                    (uid, r["name"], r["set"], r["number"], r["foil"], r["cond"], r["lang"], q, now))
+        total[r["name"]] = total.get(r["name"], 0) + q
+    coll_rebuild(con, uid)
+    res = inv_resolve(con, uid) if any(r["set"] for r in good) and not err else {"resolved": 0, "left": 0}
     out = collection_summary(con, uid)
-    out.update(imported=sum(total.values()), imp_unique=len(total), fixed=fixed[:30], unknown=unknown[:50], unknown_count=len(unknown))
+    with_print = sum(r["qty"] for r in good if r["set"])
+    out.update(imported=sum(total.values()), imp_unique=len(total), fixed=fixed[:30], unknown=unknown[:50], unknown_count=len(unknown),
+               with_print=with_print, without_print=sum(total.values()) - with_print, prints_left=res.get("left", 0),
+               prints_error=err or res.get("error"))
     return out
 
 
 def collection_summary(con, uid=0):
     collection_table(con)
-    r = con.execute("SELECT count(*), coalesce(sum(c.qty),0), coalesce(sum(c.qty * CAST(nullif(k.eur,'') AS REAL)),0), max(c.updated_at) "
-                    "FROM collection c LEFT JOIN cards k ON k.name = c.name WHERE c.owner = ?", (uid,)).fetchone()
-    return {"unique": r[0], "total": r[1], "value": round(r[2] or 0, 2), "updated": r[3]}
+    r = con.execute("SELECT count(*), coalesce(sum(c.qty),0), max(c.updated_at) FROM collection c WHERE c.owner = ?", (uid,)).fetchone()
+    t = inv_totals(con, uid)
+    return {"unique": r[0], "total": r[1], "value": t["value_print"], "value_cheap": t["value_cheap"], "known": t["known"],
+            "unknown_print": t["unknown"], "foil": t["foil"], "pending": t["pending"], "updated": r[2]}
 
 
 def owned_map(con, uid=0):
@@ -1173,10 +1234,300 @@ def ownership(p, uid=0):
             "missing_eur": round(missing_eur, 2), "shared": shared}
 
 
-def collection_export(con, uid=0):
+def collection_export(con, uid=0, fmt="prints"):
+    """CSV der Sammlung: je Druck (Count, Name, Edition, Collector Number, Foil, Condition, Language – lesbar für Moxfield,
+    ManaBox, Archidekt und die Manaschmiede) oder nur Name und Anzahl."""
     collection_table(con)
-    rows = con.execute("SELECT name, qty FROM collection WHERE owner = ? ORDER BY name", (uid,)).fetchall()
-    return "Count,Name\n" + "\n".join(f'{q},"{n.replace(chr(34), chr(39))}"' for n, q in rows) + "\n"
+    qn = lambda n: '"' + n.replace(chr(34), chr(39)) + '"'
+    if fmt == "names":
+        rows = con.execute("SELECT name, qty FROM collection WHERE owner = ? ORDER BY name", (uid,)).fetchall()
+        return "Count,Name\n" + "\n".join(f"{q},{qn(n)}" for n, q in rows) + "\n"
+    rows = con.execute("SELECT name, set_code, number, foil, cond, lang, qty FROM coll_items WHERE owner = ? AND qty > 0 "
+                       "ORDER BY name, set_code, number", (uid,)).fetchall()
+    out = ["Count,Name,Edition,Collector Number,Foil,Condition,Language"]
+    for n, sc, num, foil, cond, lang, q in rows:
+        out.append(f"{q},{qn(n)},{sc.lower()},{num},{['', 'foil', 'etched'][foil if foil in (0, 1, 2) else 1]},{COND_NAMES.get(cond, '')},{lang.lower()}")
+    return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------- Sammlung je Druck (Set, Nummer, Foil, Zustand, Sprache)
+SCRYFALL_API = (ENV("CDB_SCRYFALL_API") or "https://api.scryfall.com").rstrip("/")
+CONDS = ["MT", "NM", "EX", "GD", "LP", "PL", "PO"]
+COND_NAMES = {"MT": "Mint", "NM": "Near Mint", "EX": "Excellent", "GD": "Good", "LP": "Light Played", "PL": "Played", "PO": "Poor"}
+COND_DE = {"MT": "Mint", "NM": "Near Mint", "EX": "Excellent", "GD": "Good", "LP": "Light Played", "PL": "Played", "PO": "Poor"}
+LANGS = {"EN": "Englisch", "DE": "Deutsch", "FR": "Französisch", "IT": "Italienisch", "ES": "Spanisch", "PT": "Portugiesisch",
+         "JA": "Japanisch", "KO": "Koreanisch", "RU": "Russisch", "ZHS": "Chinesisch (vereinfacht)", "ZHT": "Chinesisch (traditionell)"}
+_COND_ALIAS = {"mint": "MT", "mt": "MT", "m": "MT", "near mint": "NM", "nm": "NM", "nm mt": "NM", "nearmint": "NM",
+               "excellent": "EX", "ex": "EX", "slightly played": "EX", "sp": "EX", "good": "GD", "gd": "GD", "moderately played": "GD",
+               "mp": "GD", "light played": "LP", "lightly played": "LP", "lp": "LP", "played": "PL", "pl": "PL", "heavily played": "PL",
+               "hp": "PL", "poor": "PO", "po": "PO", "damaged": "PO", "dmg": "PO"}
+_LANG_ALIAS = {"en": "EN", "english": "EN", "englisch": "EN", "de": "DE", "german": "DE", "deutsch": "DE", "ger": "DE",
+               "fr": "FR", "french": "FR", "französisch": "FR", "it": "IT", "italian": "IT", "italienisch": "IT",
+               "es": "ES", "spanish": "ES", "spanisch": "ES", "sp": "ES", "pt": "PT", "portuguese": "PT", "portugiesisch": "PT",
+               "ja": "JA", "jp": "JA", "japanese": "JA", "japanisch": "JA", "ko": "KO", "kr": "KO", "korean": "KO", "koreanisch": "KO",
+               "ru": "RU", "russian": "RU", "russisch": "RU", "zhs": "ZHS", "cs": "ZHS", "zh cn": "ZHS", "chinese simplified": "ZHS",
+               "simplified chinese": "ZHS", "zht": "ZHT", "ct": "ZHT", "zh tw": "ZHT", "chinese traditional": "ZHT", "traditional chinese": "ZHT"}
+_INV_READY = set()
+
+
+def norm_cond(v):
+    v = re.sub(r"[_\-/]+", " ", (v or "").strip().lower())
+    return _COND_ALIAS.get(v, "")
+
+
+def norm_lang(v):
+    v = re.sub(r"[_\-]+", " ", (v or "").strip().lower())
+    return _LANG_ALIAS.get(v, "")
+
+
+def norm_foil(v):
+    v = (v or "").strip().lower()
+    if v in ("etched", "foil etched", "etched foil"):
+        return 2
+    return 1 if v in ("foil", "true", "yes", "ja", "1", "y", "x", "f", "*f*", "premium foil", "galaxy foil", "surge foil") or "foil" in v and "non" not in v else 0
+
+
+def inv_tables(con):
+    con.execute("CREATE TABLE IF NOT EXISTS coll_items(owner INTEGER, name TEXT, set_code TEXT DEFAULT '', number TEXT DEFAULT '', "
+                "foil INTEGER DEFAULT 0, cond TEXT DEFAULT '', lang TEXT DEFAULT '', qty INTEGER, updated_at TEXT, "
+                "PRIMARY KEY(owner, name, set_code, number, foil, cond, lang))")
+    con.execute("CREATE TABLE IF NOT EXISTS prints(set_code TEXT, number TEXT, name TEXT, set_name TEXT, released TEXT, cm_id INTEGER, "
+                "eur REAL, eur_foil REAL, image TEXT, finishes TEXT, sid TEXT, rarity TEXT, at TEXT, PRIMARY KEY(set_code, number))")
+    con.execute("CREATE INDEX IF NOT EXISTS prints_name ON prints(name)")
+    con.execute("CREATE INDEX IF NOT EXISTS prints_sid ON prints(sid)")
+    con.execute("CREATE TABLE IF NOT EXISTS mtg_sets(code TEXT PRIMARY KEY, name TEXT, released TEXT)")
+    con.execute("CREATE TABLE IF NOT EXISTS prints_done(name TEXT PRIMARY KEY, at TEXT)")
+    con.execute("CREATE TABLE IF NOT EXISTS cm_prices(id INTEGER PRIMARY KEY, trend REAL, low REAL, avg7 REAL, avg30 REAL, "
+                "ftrend REAL, flow REAL)")
+    key = DB
+    if key not in _INV_READY:
+        # Umzug: bisherige Sammlung (nur Name + Anzahl) wird zu Einträgen ohne bekannten Druck
+        con.execute("INSERT OR IGNORE INTO coll_items SELECT c.owner, c.name, '', '', 0, '', '', c.qty, c.updated_at FROM collection c "
+                    "WHERE c.qty > 0 AND NOT EXISTS (SELECT 1 FROM coll_items i WHERE i.owner = c.owner AND i.name = c.name)")
+        con.commit()
+        _INV_READY.add(key)
+
+
+def coll_rebuild(con, uid):
+    """Die Sammlung je Kartenname (für Deckbau, Einkaufsliste, Ordner …) aus den Einträgen je Druck zusammenzählen."""
+    con.execute("DELETE FROM collection WHERE owner = ?", (uid,))
+    con.execute("INSERT INTO collection SELECT owner, name, sum(qty), max(updated_at) FROM coll_items WHERE owner = ? AND qty > 0 "
+                "GROUP BY owner, name", (uid,))
+    con.commit()
+
+
+def scry_get(path):
+    time.sleep(0.08)  # Scryfall bittet um 50–100 ms Abstand
+    return json.loads(fetch(SCRYFALL_API + path))
+
+
+def scry_post(path, body):
+    time.sleep(0.08)
+    req = urllib.request.Request(SCRYFALL_API + path, data=json.dumps(body).encode(), method="POST",
+                                 headers=dict(HEADERS, **{"Content-Type": "application/json"}))
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.loads(r.read())
+
+
+def print_row(c):
+    f0 = (c.get("card_faces") or [{}])[0]
+    img = (c.get("image_uris") or f0.get("image_uris") or {}).get("normal")
+    pr = c.get("prices") or {}
+    num = lambda v: float(v) if v not in (None, "") else None
+    return (c.get("set", "").upper(), str(c.get("collector_number", "")), c.get("name"), c.get("set_name"), c.get("released_at"),
+            c.get("cardmarket_id"), num(pr.get("eur")), num(pr.get("eur_foil")) or num(pr.get("eur_etched")), img,
+            ",".join(c.get("finishes") or []), c.get("id"), c.get("rarity"),
+            datetime.datetime.now().isoformat(sep=" ", timespec="minutes"))
+
+
+def prints_store(con, cards):
+    rows = [print_row(c) for c in cards if c.get("set") and c.get("collector_number") and c.get("layout") not in SKIP_LAYOUTS]
+    con.executemany("INSERT OR REPLACE INTO prints VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    con.commit()
+    return rows
+
+
+def sets_load(con):
+    inv_tables(con)
+    if con.execute("SELECT count(*) FROM mtg_sets").fetchone()[0] and (setting("sets_at") or "") >= str(datetime.date.today() - datetime.timedelta(days=14)):
+        return True
+    try:
+        data = scry_get("/sets").get("data") or []
+    except Exception:
+        return False
+    con.executemany("INSERT OR REPLACE INTO mtg_sets VALUES(?,?,?)", [(s["code"].upper(), s.get("name"), s.get("released_at")) for s in data if s.get("code")])
+    con.commit()
+    setting("sets_at", str(datetime.date.today()))
+    return True
+
+
+def prints_fetch(con, idents):
+    """Druckdaten über Scryfall /cards/collection (75 je Abfrage). Gibt (gefundene Karten, Fehlertext) zurück."""
+    found, err = [], None
+    for i in range(0, len(idents), 75):
+        try:
+            r = scry_post("/cards/collection", {"identifiers": idents[i:i + 75]})
+        except Exception as e:
+            err = f"Scryfall nicht erreichbar ({e.__class__.__name__}) – Druckdaten werden später nachgeladen."
+            break
+        found += prints_store(con, r.get("data") or []) and (r.get("data") or [])
+    return found, err
+
+
+def prints_of(con, name, force=False):
+    """Alle Drucke einer Karte (zwischengespeichert, höchstens wöchentlich neu von Scryfall)."""
+    inv_tables(con)
+    done = con.execute("SELECT at FROM prints_done WHERE name = ?", (name,)).fetchone()
+    err = None
+    if force or not done or done[0] < str(datetime.date.today() - datetime.timedelta(days=7)):
+        url = "/cards/search?" + urllib.parse.urlencode({"q": f'!"{name}" game:paper', "unique": "prints", "order": "released", "dir": "desc"})
+        try:
+            for _ in range(4):
+                r = scry_get(url)
+                prints_store(con, r.get("data") or [])
+                if not r.get("has_more") or not r.get("next_page"):
+                    break
+                url = r["next_page"].replace(SCRYFALL_API, "").replace("https://api.scryfall.com", "")
+            con.execute("INSERT OR REPLACE INTO prints_done VALUES(?,?)", (name, str(datetime.date.today())))
+            con.commit()
+        except Exception as e:
+            err = f"Scryfall nicht erreichbar ({e.__class__.__name__})."
+    rows = con.execute("SELECT * FROM prints WHERE name = ? ORDER BY released DESC, set_code, number", (name,)).fetchall()
+    out = []
+    for r in rows:
+        pn, srcn = print_price(con, r, 0)
+        pf, srcf = print_price(con, r, 1)
+        fin = (r["finishes"] or "nonfoil").split(",")
+        out.append({"set_code": r["set_code"], "set_name": r["set_name"], "number": r["number"], "released": r["released"],
+                    "image": r["image"], "finishes": fin, "rarity": r["rarity"], "eur": pn if "nonfoil" in fin else None,
+                    "eur_foil": pf if ("foil" in fin or "etched" in fin) else None, "src": srcn or srcf,
+                    "cm": CM_LINK.format(r["cm_id"]) if r["cm_id"] else None})
+    return {"name": name, "prints": out, "error": err if not out else None, "warn": err if out else None}
+
+
+def print_price(con, pr, foil):
+    """Preis eines Drucks: Cardmarket-Preisliste über die Produktnummer, sonst Scryfall-Preis des Drucks."""
+    if pr is None:
+        return None, None
+    if pr["cm_id"]:
+        cp = con.execute("SELECT trend, ftrend FROM cm_prices WHERE id = ?", (pr["cm_id"],)).fetchone()
+        if cp and (cp[1] if foil else cp[0]):
+            return round(cp[1] if foil else cp[0], 2), "cm"
+    v = pr["eur_foil"] if foil else pr["eur"]
+    return (round(v, 2), "scryfall") if v else (None, None)
+
+
+def inv_item(con, it, cheap):
+    pr = con.execute("SELECT * FROM prints WHERE set_code = ? AND number = ?", (it["set_code"], it["number"])).fetchone() if it["set_code"] else None
+    price, src = print_price(con, pr, it["foil"])
+    if price is None:
+        price, src = cheap.get(it["name"]), "cheapest" if cheap.get(it["name"]) is not None else None
+    img = pr["image"] if pr is not None and pr["image"] else None
+    return dict(it, set_name=pr["set_name"] if pr is not None else None, known=pr is not None, price=price, src=src,
+                value=round(price * it["qty"], 2) if price is not None else None, image=img,
+                finishes=(pr["finishes"] or "nonfoil").split(",") if pr is not None else None,
+                cm=CM_LINK.format(pr["cm_id"]) if pr is not None and pr["cm_id"] else cm_link(it["name"]))
+
+
+def inv_list(con, uid, q="", sort="name", page=0, only="", per=100):
+    inv_tables(con)
+    where, args = ["owner = ?", "qty > 0"], [uid]
+    for w in (q or "").split():
+        where.append("(name LIKE ? OR set_code LIKE ?)")
+        args += [f"%{w}%", w.upper()]
+    rows = [dict(zip(("name", "set_code", "number", "foil", "cond", "lang", "qty", "updated_at"), r)) for r in
+            con.execute(f"SELECT name, set_code, number, foil, cond, lang, qty, updated_at FROM coll_items WHERE {' AND '.join(where)}", args)]
+    cheap = eur_map(con, {r["name"] for r in rows})
+    items = [inv_item(con, r, cheap) for r in rows]
+    if only == "unknown":
+        items = [x for x in items if not x["known"]]
+    elif only == "foil":
+        items = [x for x in items if x["foil"]]
+    keyf = {"value": lambda x: (-(x["value"] or 0), x["name"]), "price": lambda x: (-(x["price"] or 0), x["name"]),
+            "set": lambda x: (x["set_code"] or "~", x["number"].zfill(5), x["name"]), "new": lambda x: (x["updated_at"] or "", x["name"])}
+    items.sort(key=keyf.get(sort, lambda x: (x["name"], x["set_code"], x["number"], x["foil"])))
+    if sort == "new":
+        items.reverse()
+    tot = inv_totals(con, uid)
+    return dict(tot, items=items[page * per:(page + 1) * per], count=len(items), page=page, per=per,
+                conds=[[c, COND_NAMES[c]] for c in CONDS], langs=list(LANGS.items()), cm_at=setting("cm_at"))
+
+
+def inv_totals(con, uid):
+    inv_tables(con)
+    rows = [dict(zip(("name", "set_code", "number", "foil", "cond", "lang", "qty", "updated_at"), r)) for r in
+            con.execute("SELECT name, set_code, number, foil, cond, lang, qty, updated_at FROM coll_items WHERE owner = ? AND qty > 0", (uid,))]
+    cheap = eur_map(con, {r["name"] for r in rows})
+    vp = vc = 0.0
+    known = unknown = foil = 0
+    for r in rows:
+        x = inv_item(con, r, cheap)
+        vp += x["value"] or 0
+        vc += (cheap.get(r["name"]) or 0) * r["qty"]
+        if x["known"]:
+            known += r["qty"]
+        else:
+            unknown += r["qty"]
+        foil += r["qty"] if r["foil"] else 0
+    pending = con.execute("SELECT count(*) FROM coll_items i WHERE owner = ? AND qty > 0 AND set_code <> '' AND NOT EXISTS "
+                          "(SELECT 1 FROM prints p WHERE p.set_code = i.set_code AND p.number = i.number)", (uid,)).fetchone()[0]
+    return {"value_print": round(vp, 2), "value_cheap": round(vc, 2), "known": known, "unknown": unknown, "foil": foil, "pending": pending,
+            "entries": len(rows)}
+
+
+def inv_resolve(con, uid, limit=1500):
+    """Einträge mit Set (und Nummer), deren Druckdaten noch fehlen, bei Scryfall nachschlagen."""
+    inv_tables(con)
+    todo = con.execute("SELECT DISTINCT name, set_code, number FROM coll_items i WHERE owner = ? AND qty > 0 AND set_code <> '' AND NOT EXISTS "
+                       "(SELECT 1 FROM prints p WHERE p.set_code = i.set_code AND p.number = i.number) LIMIT ?", (uid, limit)).fetchall()
+    if not todo:
+        return {"resolved": 0, "left": 0}
+    idents = [{"set": s.lower(), "collector_number": n} if n else {"name": nm.split(" // ")[0], "set": s.lower()} for nm, s, n in todo]
+    found, err = prints_fetch(con, idents)
+    # nur Set bekannt: Nummer aus dem gefundenen Druck übernehmen
+    now = datetime.datetime.now().isoformat(sep=" ", timespec="minutes")
+    for nm, s, n in todo:
+        if n:
+            continue
+        pr = con.execute("SELECT number FROM prints WHERE name = ? AND set_code = ? ORDER BY number LIMIT 1", (nm, s)).fetchone()
+        if pr:
+            inv_move(con, uid, {"name": nm, "set_code": s, "number": ""}, {"number": pr[0]}, now, all_variants=True)
+    coll_rebuild(con, uid)
+    left = inv_totals(con, uid)["pending"]
+    return {"resolved": len(found), "left": left, "error": err}
+
+
+def inv_move(con, uid, old, new, now=None, qty=None, all_variants=False):
+    """Eintrag ändern (Druck, Foil, Zustand, Sprache, Anzahl); gleiche Einträge werden zusammengelegt."""
+    now = now or datetime.datetime.now().isoformat(sep=" ", timespec="minutes")
+    keys = ("name", "set_code", "number", "foil", "cond", "lang")
+    if all_variants:
+        rows = con.execute("SELECT name, set_code, number, foil, cond, lang, qty FROM coll_items WHERE owner = ? AND name = ? AND set_code = ? AND number = ?",
+                           (uid, old["name"], old["set_code"], old["number"])).fetchall()
+    else:
+        rows = con.execute("SELECT name, set_code, number, foil, cond, lang, qty FROM coll_items WHERE owner = ? AND name = ? AND set_code = ? AND number = ? "
+                           "AND foil = ? AND cond = ? AND lang = ?", (uid, *[old.get(k) for k in keys])).fetchall()
+    for r in rows:
+        cur = dict(zip(keys + ("qty",), r))
+        tgt = {k: new.get(k, cur[k]) for k in keys}
+        q = cur["qty"] if qty is None else max(0, int(qty))
+        con.execute("DELETE FROM coll_items WHERE owner = ? AND name = ? AND set_code = ? AND number = ? AND foil = ? AND cond = ? AND lang = ?",
+                    (uid, *[cur[k] for k in keys]))
+        if q > 0:
+            con.execute("INSERT INTO coll_items VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(owner, name, set_code, number, foil, cond, lang) "
+                        "DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at", (uid, *[tgt[k] for k in keys], q, now))
+    return len(rows)
+
+
+def inv_add(con, uid, it):
+    inv_tables(con)
+    now = datetime.datetime.now().isoformat(sep=" ", timespec="minutes")
+    q = max(0, int(it.get("qty") or 1))
+    con.execute("INSERT INTO coll_items VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(owner, name, set_code, number, foil, cond, lang) "
+                "DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at",
+                (uid, it["name"], (it.get("set_code") or "").upper(), it.get("number") or "", int(it.get("foil") or 0),
+                 it.get("cond") or "", it.get("lang") or "", q, now))
+    coll_rebuild(con, uid)
 
 
 # ---------------------------------------------------------------- Einkaufsliste, Wunschliste, Ordner, Preisalarm, Budget-Tausch
@@ -2557,6 +2908,12 @@ def cm_import(raw_prices, raw_products, con=None):
             rows.append((name, best[0], round(best[1], 2), low, gd.get("avg1"), gd.get("avg7"), gd.get("avg30"), foil, len(ids), eur))
     con.execute("DELETE FROM cm_cards")
     con.executemany("INSERT OR REPLACE INTO cm_cards VALUES(?,?,?,?,?,?,?,?,?,?)", rows)
+    inv_tables(con)  # Preise je Druckversion für die Sammlung
+    con.execute("DELETE FROM cm_prices")
+    con.executemany("INSERT INTO cm_prices VALUES(?,?,?,?,?,?,?)",
+                    [(i, round(cm_value(x.get("trend"), x.get("avg7"), x.get("avg30"), x.get("avg")), 2) or None, x.get("low"), x.get("avg7"), x.get("avg30"),
+                      round(cm_value(x.get("trend-foil"), x.get("avg7-foil"), x.get("avg30-foil"), x.get("avg-foil")), 2) or None, x.get("low-foil"))
+                     for i, x in guides.items()])
     con.commit()
     created = (pg.get("createdAt") or "")[:16].replace("T", " ")
     setting("cm_at", created)
@@ -4019,6 +4376,102 @@ def parse_game(buf, winner_line, a_tag):
     return g
 
 
+def parse_detail(buf, tags, cmds):
+    """Genauer Verlauf einer Forge-Partie aus dem Spielprotokoll.
+    tags: {"a": "Ai(1)-Mein Deck", …}; cmds: {"a": {Commander-Namen}, …}."""
+    keys = list(tags)
+    n = max(1, len(keys))
+    order = sorted(tags.items(), key=lambda kv: -len(kv[1]))
+    P = {k: {"mull": 7, "lands": 0, "casts": 0, "cmd_round": None, "cmd_casts": 0, "dmg_dealt": 0, "dmg_taken": 0,
+             "combat": 0, "life": 40, "attacks": 0, "cast_names": {}, "dmg_src": {}} for k in keys}
+    life = {k: [[0, 40]] for k in keys}
+    log, owner, cur, turn, first = [], {}, None, 0, None
+    rnd = lambda: (turn + n - 1) // n if turn else 0
+
+    def sub(line):
+        for k, t in order:
+            line = line.replace(t, "@" + k)
+        return line
+
+    def ev(text, who=None):
+        if cur is not None and len(cur["ev"]) < 40:
+            cur["ev"].append([who, text])
+
+    pend_attack = None
+    for raw in buf:
+        line = sub(raw)
+        m = re.match(r"Turn: Turn (\d+) \(@(\w)\)", line)
+        if m:
+            turn = int(m.group(1))
+            first = first or m.group(2)
+            cur = {"turn": turn, "round": rnd(), "p": m.group(2), "ev": []}
+            log.append(cur)
+            continue
+        m = re.match(r"Mulligan: @(\w) has kept a hand of (\d+)", line)
+        if m and m.group(1) in P:
+            P[m.group(1)]["mull"] = int(m.group(2))
+            continue
+        m = re.match(r"Land: @(\w) played (.+?)(?: \((\d+)\))?\s*$", line)
+        if m and m.group(1) in P:
+            k = m.group(1)
+            P[k]["lands"] += 1
+            if m.group(3):
+                owner[m.group(3)] = k
+            ev("Land: " + m.group(2), k)
+            continue
+        m = re.match(r"Add To Stack: @(\w) cast (.+?)\s*$", line)
+        if m and m.group(1) in P:
+            k, c = m.group(1), re.sub(r" \(\d+\)$", "", m.group(2))
+            P[k]["casts"] += 1
+            P[k]["cast_names"][c] = P[k]["cast_names"].get(c, 0) + 1
+            if c in cmds.get(k, ()) or c.split(" // ")[0] in cmds.get(k, ()):
+                P[k]["cmd_casts"] += 1
+                if P[k]["cmd_round"] is None:
+                    P[k]["cmd_round"] = rnd()
+                ev("Commander: " + c, k)
+            else:
+                ev("Zauber: " + c, k)
+            continue
+        m = re.match(r"Combat: @(\w) assigned (.+) to attack @(\w)", line)
+        if m and m.group(1) in P:
+            k = m.group(1)
+            ids = re.findall(r"\((\d+)\)", m.group(2))
+            for i in ids:
+                owner[i] = k
+            P[k]["attacks"] += 1
+            pend_attack = [k, m.group(3), len(ids) or 1, 0]
+            ev(f"Angriff mit {len(ids) or 1} Kreatur{'en' if len(ids) != 1 else ''} auf @{m.group(3)}", k)
+            continue
+        m = re.match(r"Damage: (.+?) \((\d+)\) deals (\d+) (combat )?damage to @(\w)\.?\s*$", line)
+        if m and m.group(5) in P:
+            src, sid, d, tgt = m.group(1), m.group(2), int(m.group(3)), m.group(5)
+            k = owner.get(sid)
+            P[tgt]["dmg_taken"] += d
+            if k and k != tgt:
+                P[k]["dmg_dealt"] += d
+                P[k]["dmg_src"][src] = P[k]["dmg_src"].get(src, 0) + d
+                if m.group(4):
+                    P[k]["combat"] += d
+            if not m.group(4):
+                ev(f"{src}: {d} Schaden an @{tgt}", k)
+            continue
+        m = re.match(r"Life: Life: @(\w) (-?\d+) > (-?\d+)", line)
+        if m and m.group(1) in P:
+            k, a, b = m.group(1), int(m.group(2)), int(m.group(3))
+            P[k]["life"] = b
+            if len(life[k]) < 200:
+                life[k].append([rnd(), b])
+            ev(f"Leben @{k}: {a} → {b}", k)
+            continue
+    if len(log) > 120:
+        log = log[:60] + [{"turn": None, "round": None, "p": None, "ev": [[None, f"… {len(log) - 120} Züge ausgelassen …"]]}] + log[-60:]
+    for k in keys:
+        x = P[k]
+        x["top_dmg"] = sorted(x.pop("dmg_src").items(), key=lambda kv: -kv[1])[:5]
+        x["cast_names"] = sorted(x["cast_names"].items(), key=lambda kv: -kv[1])
+    return {"first": first, "turns": turn, "rounds": rnd(), "p": P, "life": life, "log": log}
+
+
 def decode_line(b):
     """Forge-Ausgabe: UTF-8; falls ein Java das ignoriert (ältere Windows-Versionen), Windows-1252."""
     try:
@@ -4043,6 +4496,10 @@ def run_duel(job, cmd, cwd, a_tag):
             job["tail"] = (job.get("tail", []) + [line])[-15:]
             if line.startswith("Game Result:"):
                 job["games"].append(parse_game(buf, line, a_tag))
+                try:
+                    job.setdefault("details", []).append(parse_detail(buf, job.get("tags") or {}, job.get("cmds") or {}))
+                except Exception as e:
+                    job.setdefault("details", []).append({"error": str(e)})
                 buf = []
             elif "An unsupported card was requested" in line:
                 um = re.search(r'requested: "(.+?)"', line)
@@ -4088,7 +4545,115 @@ def summarize(job):
     for k in keys:
         t = res["turns"][k]
         res["turns"][k] = round(sum(t) / len(t), 1) if t else None
+    res["stats"] = duel_stats(gs, job.get("details") or [], keys)
     job["summary"] = res
+
+
+def duel_stats(games, details, keys):
+    """Kennzahlen über alle Partien: Mulligans, Commander-Zug, Länder, Zauber, Schaden, wichtigste Karten."""
+    out = {}
+    pairs = [(g, d) for g, d in zip(games, details) if d and not d.get("error")]
+    if not pairs:
+        return None
+    avg = lambda v: round(sum(v) / len(v), 1) if v else None
+    for k in keys:
+        ps = [(g, d["p"][k]) for g, d in pairs if k in d.get("p", {})]
+        if not ps:
+            continue
+        won = [x for g, x in ps if g["winner"] == k]
+        cards, dmg = {}, {}
+        for g, x in ps:
+            for c, q in x["cast_names"]:
+                e = cards.setdefault(c, [0, 0, 0])  # Partien mit der Karte, davon gewonnen, Würfe gesamt
+                e[0] += 1
+                e[1] += g["winner"] == k
+                e[2] += q
+            for c, d in x["top_dmg"]:
+                dmg[c] = dmg.get(c, 0) + d
+        rate = len(won) / len(ps)
+        key = [{"name": c, "games": v[0], "won": v[1], "casts": v[2], "rate": round(100 * v[1] / v[0])}
+               for c, v in cards.items() if v[0] >= max(2, len(ps) // 4)]
+        key.sort(key=lambda e: (-(e["won"] / e["games"] - rate) * e["games"] ** .5, -e["games"]))
+        out[k] = {"games": len(ps), "mull": avg([7 - x["mull"] for _, x in ps]), "cmd_round": avg([x["cmd_round"] for _, x in ps if x["cmd_round"]]),
+                  "cmd_never": sum(1 for _, x in ps if not x["cmd_casts"]), "cmd_casts": avg([x["cmd_casts"] for _, x in ps]),
+                  "lands": avg([x["lands"] for _, x in ps]), "casts": avg([x["casts"] for _, x in ps]),
+                  "dmg": avg([x["dmg_dealt"] for _, x in ps]), "combat": avg([x["combat"] for _, x in ps]),
+                  "first": sum(1 for g, d in pairs if d.get("first") == k), "first_won": sum(1 for g, d in pairs if d.get("first") == k and g["winner"] == k),
+                  "top_cast": sorted(({"name": c, "games": v[0], "casts": v[2]} for c, v in cards.items()), key=lambda e: (-e["games"], -e["casts"]))[:8],
+                  "top_dmg": sorted(dmg.items(), key=lambda kv: -kv[1])[:6], "key": key[:5] if len(ps) >= 3 else [],
+                  "rate": round(100 * rate)}
+    return out
+
+
+def playtest_decks(p, uid=0):
+    """Karten beider Decks für den manuellen Spieltisch (Bild, Typ, Manakosten)."""
+    g = lambda k: (p.get(k) or [""])[0]
+    con = db()
+    con.row_factory = sqlite3.Row
+    def pack(name, cmds, entries):
+        cn = {r["name"] for r in cmds}
+        card = lambda r: {"name": r["name"], "image": r["image"], "type": r["type_line"], "mana": r["mana_cost"], "cmc": r["cmc"]}
+        lib = []
+        for r, q in entries:
+            if r["name"] not in cn:
+                lib += [card(r)] * max(0, min(int(q), 99))
+        return {"name": name, "cmds": [card(r) for r in cmds], "cards": lib}
+    mine, missing = entries_from_list(con, g("list"), g("commander"))
+    if not mine:
+        return {"error": "Bitte zuerst ein Deck laden."}
+    out = {"mine": pack(g("deck_name") or "Mein Deck", resolve_cmds(con, g("commander")), mine), "missing": missing[:20]}
+    o = opponent(con, p)
+    if o:
+        out["opp"] = pack(o["name"], o["cmds"], o["entries"])
+    return out
+
+
+def forge_play(p, uid=0):
+    """Lokal: beide Decks in Forge ablegen und die Forge-Oberfläche öffnen – dort spielt man selbst gegen die KI."""
+    g = lambda k: (p.get(k) or [""])[0]
+    if SERVER:
+        return {"error": "Selbst in Forge spielen geht nur im lokalen Betrieb auf dem eigenen PC."}
+    st = forge_status()
+    if not st["ready"]:
+        return {"error": st["message"]}
+    con = db()
+    con.row_factory = sqlite3.Row
+    mine, _ = entries_from_list(con, g("list"), g("commander"))
+    cmd = resolve_cmds(con, g("commander"))
+    if not mine or not cmd:
+        return {"error": "Bitte zuerst ein Deck mit Commander laden."}
+    ddir = os.path.join(ENV("CDB_FORGE_USER_DIR"), "decks", "commander") if ENV("CDB_FORGE_USER_DIR") else forge_deck_dir()
+    os.makedirs(ddir, exist_ok=True)
+    clean = lambda x: re.sub(r"[^\w !.,+-]", "", x)[:50].strip() or "Deck"
+    files = []
+    n1 = "Manaschmiede - " + clean(g("deck_name") or "Mein Deck")
+    write_dck(os.path.join(ddir, n1 + ".dck"), n1, cmd, mine)
+    files.append(n1)
+    o = opponent(con, p)
+    if o and o["cmds"]:
+        n2 = "Manaschmiede - Gegner " + clean(o["name"])
+        write_dck(os.path.join(ddir, n2 + ".dck"), n2, o["cmds"], o["entries"])
+        files.append(n2)
+    started = False
+    if g("start") != "0":
+        try:
+            subprocess.Popen(FORGE_WRAPPER + [st["java"]] + FORGE_JVM + ["-jar", st["jar"]], cwd=st["dir"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            started = True
+        except Exception as e:
+            return {"error": f"Forge ließ sich nicht starten: {e}", "decks": files, "dir": ddir}
+    return {"ok": True, "started": started, "decks": files, "dir": ddir}
+
+
+def duel_detail(p, uid=0):
+    job = JOBS.get((p.get("job") or [""])[0])
+    if not job or job.get("owner", 0) != uid:
+        return {"error": "Unbekannter Duell-Auftrag."}
+    i = int((p.get("game") or ["0"])[0] or 0)
+    det = job.get("details") or []
+    if not 0 <= i < len(det):
+        return {"error": "Für diese Partie liegt kein Verlauf vor."}
+    return {"game": i, "result": job["games"][i] if i < len(job["games"]) else None, "detail": det[i], "players": job.get("players")}
 
 
 def duel_start(p, uid=0):
@@ -4143,8 +4708,13 @@ def duel_start(p, uid=0):
     jid = hashlib.sha1(f"{tmp}{datetime.datetime.now()}".encode()).hexdigest()[:10]
     players = [{"k": "a", "name": "Dein Deck"}, {"k": "b", "name": label(opp)}] + \
               [{"k": "cd"[i], "name": label(o)} for i, o in enumerate(extra)]
+    dnames = ["Mein Deck", label(opp)] + [label(o) + f" ({i + 3})" for i, o in enumerate(extra)]
+    allcmds = [mine_cmd, opp["cmds"]] + [o["cmds"] for o in extra]
+    tags = {pl["k"]: f"Ai({i + 1})-{dnames[i]}" for i, pl in enumerate(players)}
+    cmds = {pl["k"]: sorted({r["name"] for r in allcmds[i]} | {r["name"].split(" // ")[0] for r in allcmds[i]}) for i, pl in enumerate(players)}
     job = JOBS[jid] = {"id": jid, "total": n, "games": [], "done": False, "precon": opp["name"], "opp": opp["name"],
-                       "opp_kind": opp["kind"], "dir": tmp, "owner": uid, "queued": True, "players": players}
+                       "opp_kind": opp["kind"], "dir": tmp, "owner": uid, "queued": True, "players": players, "tags": tags,
+                       "cmds": cmds, "details": []}
     threading.Thread(target=run_duel, args=(job, cmd, st["dir"], "Ai(1)-"), daemon=True).start()
     return {"job": jid, "total": n, "max_games": MAX_GAMES}
 
@@ -4155,7 +4725,8 @@ def duel_status(p, uid=0):
         return {"error": "Unbekannter Duell-Auftrag."}
     if not job["done"]:
         summarize(job)
-    out = {k: v for k, v in job.items() if k not in ("dir", "pid", "owner")}
+    out = {k: v for k, v in job.items() if k not in ("dir", "pid", "owner", "details", "tags", "cmds")}
+    out["has_detail"] = bool(job.get("details"))
     if job.get("queued"):
         out["waiting"] = sum(1 for j in JOBS.values() if j.get("queued") and not j["done"])
     if SERVER:
@@ -4163,7 +4734,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 47)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 48)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -4183,6 +4754,21 @@ td,th{border-bottom:1px solid #ccc;padding:5px;text-align:left}.gc{color:#c0362c
 .grid .g{position:absolute;bottom:6px;left:4px;background:#c0362c;color:#fff;border-radius:4px;padding:0 5px;font-size:12px}
 .chips button{border:1px solid #bbb;background:#f6f6f6;border-radius:14px;cursor:pointer;margin:3px}
 .duel td.w{background:#e3f1e3;font-weight:bold}.duel td.l{color:#888}.big{font-size:18px;font-weight:bold}
+#pv{position:fixed;inset:0;z-index:80;background:#f4f1ea;overflow:auto;padding:8px 12px}body.pvopen{overflow:hidden}
+#pv .pvbar{position:sticky;top:-8px;background:inherit;padding:6px 0;z-index:3;border-bottom:1px solid #9995}
+.pvp{border:1px solid #9996;border-radius:8px;margin:8px 0;padding:6px}.pvp.act{border:2px solid #c0362c}
+.pvhead,.pvtools{display:flex;flex-wrap:wrap;gap:4px;align-items:center}.pvlife{font-size:20px;font-weight:bold}
+.pvrow{display:flex;flex-wrap:wrap;gap:5px;min-height:40px;align-items:flex-start;margin:4px 0;padding:3px;border-radius:6px;background:#0000000d}
+.pvlab{width:100%;font-size:12px;opacity:.75}.pvc{position:relative;width:84px;cursor:pointer;transition:transform .15s}
+.pvc img{width:84px;height:117px;border-radius:5px;display:block;object-fit:cover}
+.pvc>span{display:block;width:84px;height:117px;border:1px solid #999;border-radius:5px;font-size:11px;padding:3px;box-sizing:border-box;background:#fff8;overflow:hidden}
+.pvc.tap{transform:rotate(90deg) translateX(-14px);margin:0 18px}.pvc.cmd img{outline:2px solid #b8891f}.pvc.sel{z-index:5}
+.pvcnt,.pvtax{position:absolute;top:4px;right:4px;background:#000c;color:#fff;border-radius:9px;padding:0 6px;font-size:12px}.pvtax{background:#b8891f}
+.pvmenu{position:absolute;top:100%;left:0;z-index:6;background:#fff;border:1px solid #888;border-radius:6px;padding:4px;width:150px;box-shadow:0 3px 8px #0005}
+.pvmenu button{display:block;width:100%;margin:2px 0;text-align:left}.pvmull{margin:6px 0}#pvpile{border:2px solid #b8891f;border-radius:8px;padding:6px;margin:8px 0}
+body.mtg #pv{background:#140f0b}body.mtg .pvmenu{background:#221811;border-color:#a8843a}body.mtg .pvrow{background:#ffffff0d}body.mtg .pvc>span{background:#2a2018;color:#eadfc8}
+@media(max-width:700px){.pvc,.pvc img,.pvc>span{width:62px}.pvc img,.pvc>span{height:86px}}
+.invimg{width:34px;height:47px;object-fit:cover;border-radius:3px}#invtab select{max-width:150px}.printrow img{width:73px;height:102px}
 #cmpbox{display:none}section.page>details.tabbox>summary{display:none}
 .sw{border:1px solid #888;background:#fff;border-radius:4px;cursor:pointer;padding:0 6px;margin-left:6px;font-size:13px}
 .grid .sw{position:absolute;bottom:6px;right:4px;margin:0;background:#fffe}
@@ -4573,6 +5159,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>📷 Karten scannen:</b> im Tab „Sammlung“ (oder in der Deckansicht neben „Hinzufügen“). Drei Wege: <b>Foto aufnehmen</b> (geht überall; am Handy öffnet sich die Kamera), <b>Live-Kamera</b> (im Browser nur über HTTPS bzw. am PC) und in der Android-App <b>„Mit der Handykamera scannen“</b> (Erkennung direkt auf dem Gerät, besonders schnell). Kartensprache einstellen, Karte formatfüllend und gerade aufnehmen. Erkannt wird der Name; bei Unsicherheit werden Alternativen angeboten. <b>Dauerscan:</b> in der Live-Kamera „🔁 Dauerscan starten“ (bzw. in der Android-App „Dauerscan mit der Handykamera“) – dann Karten nacheinander in den Rahmen legen; jede sicher erkannte Karte wird mit Ton automatisch in die Scanliste übernommen. Dieselbe Karte zählt erst wieder, wenn sie kurz aus dem Bild war; für mehrere gleiche Exemplare „+1“ tippen. Beim Einzelscan jede Karte mit „✓ Übernehmen“ in die Scanliste, Mengen mit + / − anpassen, am Ende „Zur Sammlung hinzufügen“ oder „Ins aktuelle Deck“. Beim allerersten Scan wird die Texterkennung einmalig geladen (rund 30 MB, Internet nötig), danach geht es ohne. Für sehr große Sammlungen sind spezialisierte Scanner-Apps (ManaBox, Delver Lens) schneller – deren CSV lässt sich weiterhin importieren.</li><li><b>🛒 Einkaufsliste:</b> zählt alle Karten, die dir für deine gespeicherten Decks fehlen, mit Preis und Deckzuordnung. „Karten wandern zwischen Decks“ (Standard) rechnet mit der größten Menge in einem Deck, sonst bekommt jedes Deck eigene Exemplare. Die Liste lässt sich kopieren – das Format „1 Kartenname“ je Zeile versteht auch die Wunschliste auf Cardmarket – oder komplett auf die eigene Wunschliste setzen.</li>
 <li><b>⭐ Wunschliste und Preisalarm:</b> Karten mit Anzahl und optionalem Zielpreis. Liegt der aktuelle Preis darunter, steht die Karte grün markiert in der Liste und als „🔔 Preisalarm“ auf der Startseite. Dort erscheinen auch Karten deiner Sammlung, deren Preis sich in etwa sieben Tagen um mindestens 20 % und 1 € verändert hat. Neue Preise kommen mit jeder Kartenaktualisierung.</li>
 <li><b>📁 Ordner:</b> Teile der Sammlung ordnen (z. B. Tauschordner, Binder). Ein Ordner enthält nur Karten, die du besitzt, und höchstens so viele, wie du hast; die Karten bleiben dabei Teil der Sammlung.</li>
+<li><b>📚 Bestand nach Druck:</b> jede Zeile ist ein Druck deiner Karte mit Set, Sammlernummer, Foil (normal, Foil, Etched), Zustand (Cardmarket-Stufen MT, NM, EX, GD, LP, PL, PO), Sprache und Anzahl. Alles lässt sich direkt in der Tabelle ändern; ✎ öffnet die Liste aller Drucke der Karte mit Bild und Preis (normal und Foil). Einträge mit gleichen Angaben werden zusammengelegt, Anzahl 0 entfernt den Eintrag. Oben über der Tabelle: „Druck wählen …“ fügt eine Karte in einem bestimmten Druck hinzu. Beim <b>Import</b> werden Set, Nummer, Foil, Zustand und Sprache aus ManaBox, Moxfield, Deckbox, Archidekt und Dragon Shield übernommen, aus Textlisten „2 Counterspell (MH2) 267 *F*“. Die Druckdaten (Set-Name, Bild, Cardmarket-Nummer) holt das Programm von Scryfall; ist Scryfall gerade nicht erreichbar, bleiben die Angaben erhalten und lassen sich später mit „Druckdaten nachladen“ ergänzen. <b>Wert:</b> der Cardmarket-Preis genau dieses Drucks (Foil mit Foil-Preis), sonst der Scryfall-Preis des Drucks; ohne bekannten Druck gilt der günstigste Druck der Karte. Zustand und Sprache ändern den Wert nicht, weil die Cardmarket-Preisliste sie nicht unterscheidet. Für Deckbau, Besitzanteil, Einkaufsliste und Ordner zählt die Summe je Karte. Der Export „Als CSV herunterladen“ enthält alle Druckangaben und lässt sich wieder einlesen (auch von Moxfield, ManaBox, Archidekt).</li>
 <li><b>📈 Wertverlauf:</b> der Wert der Sammlung je Stichtag (bei jeder Kartenaktualisierung) und zum Vergleich in Dollar.</li>
 <li><b>Preisquellen und Budget-Tausch:</b> Euro-Preise kommen direkt aus der öffentlichen <b>Cardmarket-Preisliste</b>, die jeden Tag neu geladen wird. Als Preis einer Karte gilt der Trendpreis ihrer <b>günstigsten Druckversion</b> – so viel kostet die Karte etwa, wenn man sie fürs Deck kauft. Ein Klick auf den Preis in der Kartensuche zeigt dazu Tiefstpreis, Durchschnitt über 1, 7 und 30 Tage, Foil-Preis und Zahl der Drucke; 🛒 öffnet die günstigste Druckversion auf Cardmarket. Ist die Preisliste einmal nicht erreichbar, gelten die zuletzt geladenen Cardmarket-Preise, ganz ohne Preisliste die Euro-Preise von Scryfall. Dollar-Preise (TCGplayer) liefert Scryfall. In der Deckansicht sucht „💸 Budget-Tausch“ für teure Karten (ab einstellbarem Preis, ohne eigene Karten) Ersatz mit gleicher Aufgabe für höchstens 30 % des Preises; ein Klick tauscht die Karte.</li></ul>
 
@@ -4606,6 +5193,8 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>Spielform:</b> „1 gegen 1“, „Commander-Runde zu dritt“ (ein weiterer Gegner) oder „Commander-Runde zu viert“ (zwei weitere Gegner) – jeweils passende Precons oder eigene Decks wählen. Mehrspieler-Partien dauern deutlich länger (1–10 Minuten je Partie); bei gleich starken Decks gewinnt jedes zu dritt etwa 33 %, zu viert etwa 25 %.</li>
 <li><b>Precon wählen:</b> In der Liste „Precon auswählen“ stehen alle offiziellen Precons mit Namen, Commander und Farben, nach Set und Jahr geordnet; ganz oben die zu deinen Farben passenden. Wer den Namen kennt, kann auch im Suchfeld nach Precon, Commander oder Set suchen.</li>
 <li>Anzahl Partien wählen (10 ist ein guter Anfang) und <b>Duell starten</b>. Die erste Partie dauert etwas länger, weil Forge startet. Eine Partie dauert meist 0,5–3 Minuten.</li></ol>
+<p><b>📊 Genaue Statistik:</b> unter dem Ergebnis eingeklappt. Je Deck: wie oft es begonnen (und dann gewonnen) hat, Ø Mulligans, in welcher Runde der Commander zuerst kam und wie oft er gewirkt wurde, Ø Länder und Zauber, Ø Schaden an Gegnern (davon im Kampf), die am häufigsten gewirkten Karten, die Karten mit dem meisten Schaden und „Schlüsselkarten“, mit denen das Deck deutlich öfter gewinnt als im Schnitt. Bei „Einzelne Partien“ zeigt <b>🔎 Verlauf</b> eine Partie Zug für Zug: Länder, Zauber, Commander, Angriffe, Schaden und Lebenspunkte, dazu ein Diagramm der Lebenspunkte. „Runde“ zählt die eigenen Züge eines Spielers.</p>
+<p><b>🃏 Selbst spielen:</b> „Im Browser“ öffnet einen Spieltisch mit deinem Deck und dem Gegner; du spielst beide Seiten wie am echten Tisch: Starthand behalten oder Mulligan (der erste ist frei, danach Karten unter die Bibliothek), Länder und Zauber spielen, Commander aus der Kommandozone wirken (Commander-Steuer wird angezeigt), tappen (Doppelklick), Marken, Tokens, Friedhof, Exil, Bibliothek durchsuchen oder die obersten Karten ansehen, Leben, Gift und Commander-Schaden. „Nächster Zug“ enttappt und zieht für den nächsten Spieler, „Rückgängig“ nimmt Schritte zurück. Protokoll und Statistik zeigen den Verlauf; „Partie beenden“ trägt das Ergebnis ins Spielprotokoll ein. Regeln prüft der Spieltisch nicht. Für eine Testpartie allein gibt es weiterhin das „🎮 Testspielfeld“ bei der Probehand. Im lokalen Betrieb legt „🖥 In Forge selbst spielen“ beide Decks in Forge ab und öffnet Forge: dort links „Commander“ wählen, Spieler 1 ist dein Deck, Spieler 2 die KI mit dem Gegnerdeck – Forge prüft dann alle Regeln.</p>
 <p><b>Ergebnis lesen:</b> Siege in Prozent, durchschnittlicher Siegzug, Siegart (z. B. Commander-Schaden, Combo) und welche Karte gewonnen hat. Die KI spielt solide, aber nicht perfekt – aussagekräftig sind Tendenzen über viele Partien. Läuft eine Partie zu lange, wird sie als Unentschieden gewertet.</p>
 
 <h3 id=h-regeln>Offizielle Regeln</h3>
@@ -4876,8 +5465,15 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <label><input type=radio name=collmode value=add checked> zur Sammlung hinzufügen</label>
 <label><input type=radio name=collmode value=replace> Sammlung ersetzen</label>
 <button type=button id=collgo class=primary>Sammlung importieren</button>
-<button type=button id=collexp>Als CSV herunterladen</button> <button type=button id=collclr>Sammlung leeren</button>
+<button type=button id=collexp title="mit Set, Nummer, Foil, Zustand, Sprache – lesbar für Moxfield, ManaBox, Archidekt">Als CSV herunterladen</button> <button type=button id=collexpn>CSV nur mit Namen</button> <button type=button id=collclr>Sammlung leeren</button>
 <div id=collres></div></details>
+<details class=subbox id=invbox><summary><b>📚 Bestand nach Druck, Foil, Zustand</b> <span class=hint id=invsum></span></summary>
+<p class=hint>Jede Zeile ist ein Druck deiner Karten. Druck, Foil, Zustand, Sprache und Anzahl lassen sich direkt ändern; Einträge mit gleichen Angaben werden zusammengelegt. Für Deckbau und Einkaufsliste zählt die Summe je Karte.</p>
+<div class=invadd><span class=ac><input id=invname placeholder="Karte hinzufügen, z. B. Sol Ring" size=28></span> <button type=button id=invpick class=primary>Druck wählen …</button></div>
+<div class=invfilter><input id=invq placeholder="Filter: Name oder Set-Code" size=22>
+<select id=invsort><option value=name>nach Name</option><option value=value>nach Wert</option><option value=price>nach Preis je Stück</option><option value=set>nach Set</option><option value=new>zuletzt geändert</option></select>
+<select id=invonly><option value="">alle</option><option value=unknown>ohne bekannten Druck</option><option value=foil>nur Foils</option></select></div>
+<div id=invres></div></details>
 <details class=subbox id=shopbox><summary><b>🛒 Einkaufsliste über alle Decks</b> <span class=hint id=shopsum></span></summary>
 <p class=hint>Welche Karten fehlen dir für alle gespeicherten Decks zusammen? Standardländer zählen nicht.</p>
 <label><input type=checkbox id=shopshare checked> Karten wandern zwischen Decks (sonst braucht jedes Deck eigene Exemplare)</label>
@@ -4959,7 +5555,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='47';
+const PAGE_VERSION='48';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -5956,7 +6552,69 @@ async function versionsDialog(id){const b=dlgOpen('Versionen');const r=await J('
   rs.onclick=async()=>{const x=await J('/api/deck_restore',{id:id,vid:v.vid});if(x.error){P(d,x.error,'warn');return}
    myDecks(x.decks);versionsDialog(id)};d.append(rs)}}
 function deck_count_js(t){return (t||'').split('\\n').filter(l=>l.trim()).reduce((s,l)=>s+(parseInt(l)||1),0)}
-function collSum(c){E('collsum2').textContent=E('collsum').textContent=c.unique?'('+c.unique+' verschiedene, '+c.total+' Karten, ca. '+c.value.toFixed(2).replace('.',',')+' €)':'(noch leer)'}
+function collSum(c){E('collsum2').textContent=E('collsum').textContent=c.unique?'('+c.unique+' verschiedene, '+c.total+' Karten, ca. '+c.value.toFixed(2).replace('.',',')+' €)':'(noch leer)';
+ const is=E('invsum');if(is)is.textContent=c.unique?'('+(c.known||0)+' mit Druck, '+(c.unknown_print||0)+' ohne'+(c.foil?', '+c.foil+' Foil':'')+')':''}
+// ---- Bestand nach Druck
+const INV={page:0};const eur2=v=>v==null?'–':v.toFixed(2).replace('.',',')+' €';
+const invKey=it=>({name:it.name,set_code:it.set_code,number:it.number,foil:it.foil,cond:it.cond,lang:it.lang});
+async function invLoad(){const o=E('invres');if(!o)return;
+ const r=await J('/api/inv?'+new URLSearchParams({q:E('invq').value,sort:E('invsort').value,only:E('invonly').value,page:INV.page}));INV.r=r;invRender(r)}
+async function invSet(it,ch,qty){const r=await J('/api/inv_set',Object.assign({old:JSON.stringify(invKey(it)),new:JSON.stringify(ch||{})},qty!=null?{qty:qty}:{}));
+ if(r.error){alertBox(r.error);return}J('/api/collection').then(collSum);invLoad()}
+function invSel(opts,val,on){const s=$('select');opts.forEach(([v,t])=>{const o=$('option',t);o.value=v;if(String(v)==String(val))o.selected=true;s.append(o)});s.onchange=()=>on(s.value);return s}
+function invRender(r){const o=E('invres');o.innerHTML='';
+ if(!r.entries){P(o,'Noch keine Karten in der Sammlung. Importiere oben eine Liste oder füge hier einzelne Drucke hinzu.','hint');return}
+ const sm=$('p');sm.id='invtotal';o.append(sm);sm.append($('b','Wert nach Druck: '+eur2(r.value_print)),' · würde man jede Karte im günstigsten Druck rechnen: '+eur2(r.value_cheap)+
+  ' · '+r.known+' Karten mit bekanntem Druck, '+r.unknown+' ohne'+(r.foil?' · '+r.foil+' Foils':''));
+ if(r.pending){const b=$('button','Druckdaten für '+r.pending+' Einträge nachladen');b.type='button';b.id='invresolve';
+  b.onclick=async()=>{b.disabled=true;b.textContent='lade …';const x=await J('/api/inv_resolve',{});if(x.error)alertBox(x.error);invLoad();J('/api/collection').then(collSum)};sm.append(' ',b)}
+ P(o,'Preise: Cardmarket'+(r.cm_at?' (Preisliste vom '+r.cm_at+')':'')+' je Druck und Foil, sonst Scryfall; ohne bekannten Druck gilt der günstigste Druck der Karte. Zustand und Sprache ändern den Wert nicht – die Cardmarket-Preisliste unterscheidet sie nicht.','hint');
+ const t=$('table');t.id='invtab';o.append(t);const hr=t.insertRow();['','Karte','Druck','Foil','Zustand','Sprache','Anzahl','Preis','Wert',''].forEach(x=>hr.append($('th',x)));
+ const conds=[['','–'],...r.conds.map(([c,n])=>[c,c+' – '+n])],langs=[['','–'],...r.langs.map(([c,n])=>[c,n])];
+ r.items.forEach(it=>{const tr=t.insertRow();tr.dataset.name=it.name;
+  const c0=tr.insertCell();if(it.image){const im=$('img');im.src=it.image;im.loading='lazy';im.className='invimg';im.alt='';c0.append(im)}
+  tr.insertCell().append(cardName(it.name));
+  const c2=tr.insertCell();c2.className='invprint';c2.append(it.set_code?(it.set_code+(it.number?' #'+it.number:'')+(it.set_name?' – '+it.set_name:'')+(it.known?'':' (Daten fehlen)')):'unbekannt',' ');
+  const pb=$('button','✎');pb.type='button';pb.className='sw invchg';pb.title='Druck wählen';pb.onclick=()=>invPrints(it.name,it);c2.append(pb);
+  const fin=it.finishes||['nonfoil','foil','etched'];const fo=[[0,'normal'],[1,'Foil'],[2,'Etched']].filter(([v])=>v==it.foil||fin.includes(['nonfoil','foil','etched'][v]));
+  tr.insertCell().append(invSel(fo,it.foil,v=>invSet(it,{foil:+v})));
+  tr.insertCell().append(invSel(conds,it.cond,v=>invSet(it,{cond:v})));
+  tr.insertCell().append(invSel(langs,it.lang,v=>invSet(it,{lang:v})));
+  const q=$('input');q.type='number';q.min=0;q.value=it.qty;q.className='invqty';q.style.width='4em';q.onchange=()=>invSet(it,{},Math.max(0,parseInt(q.value)||0));tr.insertCell().append(q);
+  const pc=tr.insertCell();pc.textContent=eur2(it.price);pc.title={cm:'Cardmarket-Preis dieses Drucks',scryfall:'Scryfall-Preis dieses Drucks',cheapest:'günstigster Druck der Karte (Druck unbekannt oder ohne Preis)'}[it.src]||'';
+  if(it.src=='cheapest')pc.className='hint';
+  tr.insertCell().textContent=eur2(it.value);
+  const ac_=tr.insertCell();if(it.cm)ac_.append(cmA(it.cm),' ');const del=$('button','✕');del.type='button';del.className='sw';del.title='Eintrag entfernen';
+  del.onclick=()=>{if(del.textContent!='sicher?'){del.textContent='sicher?';return}invSet(it,{},0)};ac_.append(del)});
+ if(r.count>r.per){const pg=$('p');o.append(pg);pg.append('Einträge '+(r.page*r.per+1)+'–'+Math.min(r.count,(r.page+1)*r.per)+' von '+r.count+' ');
+  if(r.page>0)pg.append(Object.assign($('button','◀'),{type:'button',onclick:()=>{INV.page--;invLoad()}}));
+  if((r.page+1)*r.per<r.count)pg.append(Object.assign($('button','▶'),{type:'button',onclick:()=>{INV.page++;invLoad()}}))}}
+async function invPrints(name,it){const o=dlgOpen((it?'Druck ändern: ':'Druck wählen: ')+name);const w=P(o,'Lade die Drucke …','hint');
+ const r=await J('/api/prints?name='+encodeURIComponent(name));w.remove();if(r.error){P(o,r.error,'warn');return}
+ if(r.warn)P(o,r.warn+' Angezeigt werden die zuletzt geladenen Drucke.','hint');
+ const top=$('div');o.append(top);let q=null,cond=null,lang=null;
+ if(!it){q=$('input');q.type='number';q.min=1;q.value=1;q.style.width='4em';cond=invSel([['','Zustand –'],...CONDS_JS],'NM',()=>{});lang=invSel([['','Sprache –'],...LANGS_JS],'',()=>{});
+  top.append('Anzahl ',q,' ',cond,' ',lang)}
+ P(o,r.prints.length+' Drucke, neueste zuerst. Preise: Cardmarket je Druck (sonst Scryfall).','hint');
+ const flt=$('input');flt.placeholder='Set oder Jahr filtern';flt.size=20;o.append(flt);const lst=$('div');lst.id='printlist';o.append(lst);
+ const draw=()=>{lst.innerHTML='';const f=flt.value.toLowerCase();r.prints.filter(x=>!f||(x.set_name+' '+x.set_code+' '+(x.released||'')).toLowerCase().includes(f)).slice(0,150).forEach(x=>{
+  const d=$('div');d.className='alt printrow';d.dataset.set=x.set_code;d.dataset.num=x.number;lst.append(d);
+  if(x.image){const im=$('img');im.src=x.image;im.loading='lazy';im.alt='';d.append(im)}
+  const n=$('div');n.className='n';d.append(n);n.append($('b',x.set_name+' ('+x.set_code+' #'+x.number+')'),$('div',(x.released||'')+(x.rarity?' · '+x.rarity:'')));
+  n.append($('div','normal: '+eur2(x.eur)+' · Foil: '+eur2(x.eur_foil)));if(x.cm)n.append(cmA(x.cm));
+  const pick=(foil)=>{const b=$('button',(it?'Diesen Druck':'Hinzufügen')+(foil?' (Foil)':''));b.type='button';b.className=foil?'':'primary';
+   b.onclick=async()=>{if(it){await invSet(it,{set_code:x.set_code,number:x.number,foil:foil})}
+    else{const a=await J('/api/inv_add',{item:JSON.stringify({name:name,set_code:x.set_code,number:x.number,foil:foil,qty:parseInt(q.value)||1,cond:cond.value,lang:lang.value})});
+     if(a.error){alertBox(a.error);return}J('/api/collection').then(collSum);invLoad()}closeSwap()};return b};
+  const bs=$('div');d.append(bs);if(x.finishes.includes('nonfoil'))bs.append(pick(0));if(x.finishes.includes('foil')||x.finishes.includes('etched'))bs.append(' ',pick(x.finishes.includes('foil')?1:2))})};
+ flt.oninput=draw;draw()}
+let CONDS_JS=[['MT','MT – Mint'],['NM','NM – Near Mint'],['EX','EX – Excellent'],['GD','GD – Good'],['LP','LP – Light Played'],['PL','PL – Played'],['PO','PO – Poor']];
+let LANGS_JS=[['EN','Englisch'],['DE','Deutsch'],['FR','Französisch'],['IT','Italienisch'],['ES','Spanisch'],['PT','Portugiesisch'],['JA','Japanisch'],['KO','Koreanisch'],['RU','Russisch'],['ZHS','Chinesisch (vereinfacht)'],['ZHT','Chinesisch (traditionell)']];
+E('invbox').addEventListener('toggle',()=>{if(E('invbox').open)invLoad()});
+['invq'].forEach(id=>{let tm;E(id).oninput=()=>{clearTimeout(tm);tm=setTimeout(()=>{INV.page=0;invLoad()},300)}});
+['invsort','invonly'].forEach(id=>E(id).onchange=()=>{INV.page=0;invLoad()});
+ac(E('invname'),{get:names(false),pick:n=>{E('invname').value=n;invPrints(n)},enter:()=>{if(E('invname').value.trim())invPrints(E('invname').value.trim())}});
+E('invpick').onclick=()=>{const n=E('invname').value.trim();if(n)invPrints(n);else E('invname').focus()};
 J('/api/collection').then(collSum);
 E('collfile').onchange=async()=>{const f=E('collfile').files[0];if(f)E('colltext').value=decodeFile(await f.arrayBuffer())};
 E('collgo').onclick=async()=>{const o=E('collres');o.innerHTML='';P(o,'importiere ...','hint');
@@ -5965,8 +6623,12 @@ E('collgo').onclick=async()=>{const o=E('collres');o.innerHTML='';P(o,'importier
  P(o,'✓ '+r.imported+' Karten ('+r.imp_unique+' verschiedene) übernommen.','tag');
  if(r.fixed.length)P(o,'Korrigiert: '+r.fixed.join(', '),'hint');
  if(r.unknown_count)P(o,r.unknown_count+' nicht erkannt: '+r.unknown.join(', ')+(r.unknown_count>r.unknown.length?' …':''),'warn');
+ if(r.with_print)P(o,r.with_print+' Karten mit Druckangabe (Set/Nummer), '+r.without_print+' ohne'+(r.prints_left?' · für '+r.prints_left+' Einträge fehlen noch Druckdaten (unten unter „📚 Bestand“ nachladen)':'')+'.','hint');
+ if(r.prints_error)P(o,r.prints_error,'warn');
+ if(E('invbox').open)invLoad();
  if(deck&&!deck.error)showDeck()};
 E('collexp').onclick=async()=>{const r=await J('/api/collection_export');download('sammlung.csv',r.csv)};
+E('collexpn').onclick=async()=>{const r=await J('/api/collection_export?fmt=names');download('sammlung-namen.csv',r.csv)};
 E('collclr').onclick=async()=>{const b=E('collclr');if(b.textContent!='Wirklich leeren?'){b.textContent='Wirklich leeren?';return}
  b.textContent='Sammlung leeren';collSum(await J('/api/collection_clear',{}))};
 async function ownBox(o){const r=await J('/api/ownership',{list:deck.export,commander:deck.commander||'',deck_name:deck.name||''});
@@ -6231,7 +6893,15 @@ async function loadCombos(){const o=E('combos');o.innerHTML='';o.append(h3q('Com
 let duelTimer=null;
 async function duelBox(){const o=E('duel');o.innerHTML='';o.append(h3q('Direktes Duell (Regel-Engine Forge)','duell'));
  P(o,'Dein Deck gegen „'+opp.name+'“: Beide Decks spielen mehrere komplette Partien Commander 1-gegen-1 (40 Leben, Commander-Schaden, Commander-Steuer) – KI gegen KI. Jede Karte wird mit ihren echten Fähigkeiten ausgeführt, auch Combos.','hint');
+ const man=$('div');man.className='savebox';man.id='manualbox';o.append(man);
+ man.append($('b','🃏 Selbst gegeneinander spielen'),' ',pvBtn('Im Browser: Dein Deck gegen „'+opp.name+'“',()=>pvStart(true),'primary'));
+ P(man,'Du spielst beide Seiten am Spieltisch im Browser: Starthand und Mulligan, Ziehen, Ausspielen, Angriffe, Leben und Commander-Schaden, mit Protokoll und Statistik. Regeln prüft der Spieltisch nicht.','hint');
  const st=await J('/api/forge');await MEP;
+ if(!ME.server&&st.ready){const fb=pvBtn('🖥 In Forge selbst gegen die KI spielen',async()=>{fb.disabled=true;const r=await J('/api/forge_play',Object.assign(mineP(),oppP(),{deck_name:deck&&deck.name||''}));fb.disabled=false;
+   const msg=E('forgeplaymsg')||man.appendChild(Object.assign($('p'),{id:'forgeplaymsg'}));
+   msg.className=r.error?'warn':'hint';msg.textContent=r.error||('Forge '+(r.started?'startet gleich (beim ersten Mal etwa eine Minute)':'ist vorbereitet')+'. Die Decks liegen dort unter Commander: '+r.decks.join(' und ')+
+    '. In Forge links „Commander“ wählen, bei Spieler 1 dein Deck, bei Spieler 2 „KI“ und den Gegner, dann „Spiel starten“ – Forge prüft alle Regeln.')});
+  man.append(' ',fb)}
  const cfg=$('div');o.append(cfg);
  if(ME.server){P(cfg,st.ready?'Forge ist auf dem Server bereit.':'Forge ist auf dem Server nicht eingerichtet – bitte den Administrator fragen.',st.ready?'hint':'warn');if(!st.ready)return}
  else{
@@ -6269,6 +6939,60 @@ async function duelBox(){const o=E('duel');o.innerHTML='';o.append(h3q('Direktes
   const poll=async()=>{const s=await J('/api/duel_status?job='+j.job);showDuel(res,s);
    if(s.done){clearInterval(duelTimer);go.disabled=false;stop.remove()}};
   duelTimer=setInterval(poll,2500);poll()}}
+const DOPEN={};
+function keepOpen(d){if(DOPEN[d.id])d.open=true;d.addEventListener('toggle',()=>{DOPEN[d.id]=d.open})}
+function duelStats(o,st,PL,s){const d=$('details');d.id='duelstats';d.className='subbox';o.append(d);keepOpen(d);
+ d.append($('summary','📊 Genaue Statistik der Partien'));
+ P(d,'Ausgewertet aus dem Spielprotokoll von Forge. „Runde“ zählt die eigenen Züge eines Spielers (Runde 3 = sein dritter Zug).','hint');
+ const t=$('table');t.className='duel';t.id='duelstattab';d.append(t);
+ const hr=t.insertRow();['',...PL.map(x=>x.name)].forEach(x=>hr.append($('th',x)));
+ const v=(k,f)=>{const x=st[k];return x?f(x):'–'},n1=x=>x==null?'–':String(x).replace('.',',');
+ const row=(lab,f,hint)=>{const tr=t.insertRow();const c=tr.insertCell();c.textContent=lab;if(hint)c.title=hint;PL.forEach(p=>tr.insertCell().textContent=v(p.k,f))};
+ row('Partien begonnen (davon gewonnen)',x=>x.first+' ('+x.first_won+')');
+ row('Ø Mulligans',x=>n1(x.mull));
+ row('Commander zuerst gewirkt, Ø Runde',x=>n1(x.cmd_round)+(x.cmd_never?' · '+x.cmd_never+'× nie':''));
+ row('Ø Commander-Würfe je Partie',x=>n1(x.cmd_casts),'Mehr als 1 heißt: der Commander wurde entfernt und neu gewirkt (Commander-Steuer).');
+ row('Ø gespielte Länder',x=>n1(x.lands));
+ row('Ø gewirkte Zauber',x=>n1(x.casts));
+ row('Ø Schaden an Gegnern (davon Kampf)',x=>n1(x.dmg)+' ('+n1(x.combat)+')');
+ const lst=(k,f)=>{const tr=t.insertRow();tr.insertCell().textContent=k;return tr};
+ const tr1=lst('Am häufigsten gewirkt');PL.forEach(p=>{const c=tr1.insertCell();const x=st[p.k];if(!x){c.textContent='–';return}
+  x.top_cast.forEach(e=>c.append($('div',e.name+' – in '+e.games+' von '+x.games+' Partien')))});
+ const tr2=lst('Meister Schaden');PL.forEach(p=>{const c=tr2.insertCell();const x=st[p.k];if(!x||!x.top_dmg.length){c.textContent='–';return}
+  x.top_dmg.forEach(e=>c.append($('div',e[0]+': '+e[1])))});
+ const tr3=lst('Schlüsselkarten');tr3.cells[0].title='Karten, mit denen das Deck deutlich öfter gewinnt als im Schnitt (ab 3 Partien).';
+ PL.forEach(p=>{const c=tr3.insertCell();const x=st[p.k];if(!x||!x.key.length){c.textContent='–';return}
+  x.key.forEach(e=>c.append($('div',e.name+': '+e.won+' von '+e.games+' gewonnen ('+e.rate+' % statt '+x.rate+' %)')))});
+ P(d,'Schlüsselkarten sind ein Hinweis, kein Beweis: bei wenigen Partien spielt der Zufall mit. „🔎 Verlauf“ bei einer Partie zeigt jeden Zug.','hint')}
+async function duelGame(job,i,PL){const r=await J('/api/duel_detail?job='+job+'&game='+i);const o=dlgOpen('Partie '+(i+1)+' – Verlauf');
+ if(r.error){P(o,r.error,'warn');return}const d=r.detail,nm=k=>{const x=PL.find(p=>p.k==k);return x?x.name:k};
+ const fix=t=>t.replace(/@([a-f])/g,(_,k)=>nm(k));
+ const g=r.result||{};P(o,'Sieger: '+(g.winner&&g.winner!='draw'?nm(g.winner):'Unentschieden')+(g.turn?' in Runde '+g.turn:'')+(g.reason?' – '+g.reason:'')+
+  ' · begonnen hat '+nm(d.first)+' · '+d.turns+' Züge insgesamt','big');
+ const t=$('table');t.className='duel';o.append(t);const hr=t.insertRow();['',...PL.map(x=>x.name)].forEach(x=>hr.append($('th',x)));
+ const row=(l,f)=>{const tr=t.insertRow();tr.insertCell().textContent=l;PL.forEach(p=>{const x=d.p[p.k];tr.insertCell().textContent=x?f(x):'–'})};
+ row('Starthand',x=>x.mull+' Karten'+(x.mull<7?' ('+(7-x.mull)+' Mulligan)':''));
+ row('Commander gewirkt',x=>x.cmd_round?'Runde '+x.cmd_round+(x.cmd_casts>1?', insgesamt '+x.cmd_casts+'×':''):'nie');
+ row('Länder / Zauber',x=>x.lands+' / '+x.casts);row('Angriffe',x=>String(x.attacks));
+ row('Schaden ausgeteilt / erlitten',x=>x.dmg_dealt+' / '+x.dmg_taken);row('Leben am Ende',x=>String(x.life));
+ row('Meister Schaden',x=>x.top_dmg.map(e=>e[0]+' '+e[1]).join(', ')||'–');
+ o.append(lifeChart(d.life,PL,d.rounds));
+ const tl=$('details');tl.open=true;tl.append($('summary','Zug für Zug'));o.append(tl);
+ const lt=$('table');lt.id='duellog';tl.append(lt);
+ d.log.forEach(z=>{const tr=lt.insertRow();const c0=tr.insertCell();c0.textContent=z.turn?'Zug '+z.turn+' (Runde '+z.round+')':'';
+  const c1=tr.insertCell();c1.textContent=z.p?nm(z.p):'';const c2=tr.insertCell();
+  if(!z.ev.length)c2.append($('span','– nichts Besonderes –'));z.ev.forEach(e=>{const sp=$('div',fix(e[1]));if(e[1].startsWith('Commander'))sp.style.fontWeight='bold';c2.append(sp)})});
+ P(o,'Ausgelassen sind Phasenwechsel, Manaproduktion und ausgelöste Fähigkeiten; Schaden zwischen Kreaturen steht nicht einzeln da.','hint')}
+function lifeChart(life,PL,rounds){const W=560,H=170,mx=Math.max(1,rounds||1);let lo=0,hi=40;
+ Object.values(life).forEach(a=>a.forEach(p=>{lo=Math.min(lo,p[1]);hi=Math.max(hi,p[1])}));
+ const X=r=>30+r/mx*(W-40),Y=v=>10+(hi-v)/(hi-lo||1)*(H-30),cols=['#c0362c','#2e7bc4','#2e8b57','#b8891f'];
+ let svg='<svg id=lifechart viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:'+W+'px"><line x1=30 x2='+(W-10)+' y1='+Y(0)+' y2='+Y(0)+' stroke="#888" stroke-dasharray="3 3"/>'+
+  '<text x=2 y='+(Y(hi)+4)+' font-size=10 fill="currentColor">'+hi+'</text><text x=2 y='+(Y(0)+4)+' font-size=10 fill="currentColor">0</text>'+
+  '<text x='+(W-60)+' y='+(H-4)+' font-size=10 fill="currentColor">Runde '+mx+'</text>';
+ PL.forEach((p,i)=>{const a=life[p.k];if(!a)return;let pts=[],last=40;a.forEach(q=>{pts.push(X(q[0])+','+Y(last));pts.push(X(q[0])+','+Y(q[1]));last=q[1]});pts.push(X(mx)+','+Y(last));
+  svg+='<polyline fill=none stroke-width=2 stroke="'+cols[i%4]+'" points="'+pts.join(' ')+'"/>'});
+ svg+='</svg>';const w=$('div');w.innerHTML='<b>Lebenspunkte</b> '+PL.map((p,i)=>'<span style="color:'+cols[i%4]+'">■ '+H_(p.name)+'</span>').join(' ')+'<br>'+svg;return w}
+const H_=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function showDuel(o,s){o.innerHTML='';
  if(s.queued&&!s.done){P(o,'Wartet auf einen freien Platz – andere Duelle laufen gerade ('+(s.waiting||1)+' in der Warteschlange).','big');return}
  P(o,(s.done?'Fertig: ':'Läuft: ')+s.games.length+' von '+s.total+' Partien'+(s.done?'':' (der erste Start von Forge dauert etwa eine Minute)'),'big');
@@ -6289,15 +7013,137 @@ function showDuel(o,s){o.innerHTML='';
  row('Siege durch Karte',...PL.map(x=>fmtR(m.effects[x.k])));
  if(PL.length>2)P(o,'Zum Vergleich: Bei '+(PL.length==3?'drei':'vier')+' gleich starken Decks gewinnt jedes etwa '+Math.round(100/PL.length)+' % der Partien.','hint');
  const nm=k=>{const x=PL.find(p=>p.k==k);return x?x.name:'Unentschieden'};
- const gl=$('details');o.append(gl);gl.append($('summary','Einzelne Partien'));
- s.games.forEach((g,i)=>gl.append($('div','Partie '+(i+1)+': '+nm(g.winner)+
-  (g.turn?' in Zug '+g.turn:'')+(g.reason?' – '+g.reason:'')+(g.effect?' ('+g.effect+')':''))));
+ if(m.stats)duelStats(o,m.stats,PL,s);
+ const gl=$('details');gl.id='duelgames';o.append(gl);gl.append($('summary','Einzelne Partien'));keepOpen(gl);
+ s.games.forEach((g,i)=>{const d=$('div','Partie '+(i+1)+': '+nm(g.winner)+
+  (g.turn?' in Zug '+g.turn:'')+(g.reason?' – '+g.reason:'')+(g.effect?' ('+g.effect+')':'')+' ');gl.append(d);
+  if(s.has_detail){const b=$('button','🔎 Verlauf');b.type='button';b.className='sw dueldet';b.onclick=()=>duelGame(s.id,i,PL);d.append(b)}});
  P(o,'Hinweis: Die KI spielt solide, aber nicht perfekt – aussagekräftig sind Tendenzen über viele Partien.','hint');
  if(s.done&&!s.logged){const lb=$('button','Ins Spielprotokoll übernehmen');lb.type='button';lb.id='duellog';
   lb.onclick=async()=>{const me=deck&&deck.name?deck.name:'Mein Deck',op=(s.opp_kind=='precon'?'Precon ':'')+s.opp;
    const ps=PL.map((x,i)=>({name:'Forge-KI '+'ABCD'[i],deck:i==0?me:x.name.replace(/^(Precon|Gegner) /,'')}));
    const r=await J('/api/game_save',{games:JSON.stringify(s.games.map(g=>({players:ps,winner:PL.findIndex(x=>x.k==g.winner),turns:g.turn||0,source:'forge'})))});
    if(r.error){P(o,r.error,'warn');return}s.logged=true;lb.replaceWith($('span','✓ '+r.saved+' Partien übernommen'));tableStats(r)};o.append(lb)}}
+
+// ---- Manuelles Testduell: Spieltisch im Browser (du ziehst, spielst und greifst selbst an)
+let PV=null,PVH=[];let pvUid=0;
+const pvShuf=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+const pvCard=c=>Object.assign({},c,{id:++pvUid,tap:false,cnt:0});
+const pvLand=c=>/Land/.test((c.type||'').split(' // ')[0]);
+function pvPlayer(d){const p={name:d.name,lib:pvShuf(d.cards.map(pvCard)),hand:[],bf:[],gy:[],ex:[],cz:d.cmds.map(c=>Object.assign(pvCard(c),{cmd:true,casts:0})),
+ life:40,poison:0,cdmg:{},mull:0,kept:false,landsTurn:0,st:{lands:0,casts:0,cmdRound:null,cmdCasts:0,draws:0}};
+ for(let i=0;i<7&&p.lib.length;i++)p.hand.push(p.lib.pop());return p}
+function pvSave(){try{localStorage.setItem('pvgame',JSON.stringify(PV))}catch(e){}}
+function pvSnap(){PVH.push(JSON.stringify(PV));if(PVH.length>40)PVH.shift()}
+function pvLog(t){PV.log.push([PV.turn,t]);if(PV.log.length>600)PV.log.shift()}
+const pvRound=()=>PV.turn?Math.ceil(PV.turn/PV.pl.length):0;
+async function pvStart(withOpp){const r=await J('/api/playtest',Object.assign(mineP(),withOpp?oppP():{},{deck_name:deck&&deck.name||''}));
+ if(r.error){alertBox(r.error);return}
+ PV={pl:[pvPlayer(r.mine)].concat(withOpp&&r.opp?[pvPlayer(r.opp)]:[]),act:Math.random()<.5||!withOpp?0:1,turn:0,log:[],view:0,menu:null,pile:null,bottom:null,done:null,
+  missing:r.missing||[]};PVH=[];
+ pvLog('Neue Testpartie: '+PV.pl.map(p=>p.name).join(' gegen ')+'. Jeder hat 7 Karten gezogen – behalten oder Mulligan (der erste ist frei).');pvOpen()}
+function alertBox(t){const o=dlgOpen('Hinweis');P(o,t,'warn')}
+function pvOpen(){let o=E('pv');if(!o){o=document.createElement('div');o.id='pv';document.body.append(o)}o.hidden=false;document.body.classList.add('pvopen');pvRender()}
+function pvClose(){const o=E('pv');if(o)o.hidden=true;document.body.classList.remove('pvopen');pvSave()}
+function pvDo(f){pvSnap();PV.menu=null;f();pvSave();pvRender()}
+function pvMove(p,c,from,to,where){const i=p[from].findIndex(x=>x.id==c.id);if(i<0)return;p[from].splice(i,1);
+ if(to!='bf'){c.tap=false;c.cnt=0}
+ if(c.tok&&to!='bf'){pvLog(p.name+': Token '+c.name+' verschwindet');return}
+ if(to=='lib'){where=='bottom'?p.lib.unshift(c):p.lib.push(c)}else p[to].push(c)}
+const ZN={hand:'Hand',bf:'Spielfeld',gy:'Friedhof',ex:'Exil',lib:'Bibliothek',cz:'Kommandozone'};
+function pvPlay(p,c,from){pvMove(p,c,from,'bf');
+ if(pvLand(c)){p.landsTurn++;p.st.lands++;pvLog(p.name+' spielt Land '+c.name+(p.landsTurn>1?' (schon das '+p.landsTurn+'. Land in diesem Zug)':''))}
+ else{p.st.casts++;pvLog(p.name+' spielt '+c.name+(from!='hand'?' (aus '+ZN[from]+')':''))}}
+function pvCastCmd(p,c){const tax=2*(c.casts||0);c.casts=(c.casts||0)+1;p.st.cmdCasts++;if(p.st.cmdRound==null)p.st.cmdRound=pvRound()||1;
+ pvMove(p,c,'cz','bf');p.st.casts++;pvLog(p.name+' wirkt Commander '+c.name+(tax?' (Commander-Steuer +'+tax+')':''))}
+function pvDraw(p,n){for(let i=0;i<n;i++){if(!p.lib.length){pvLog(p.name+' kann nicht ziehen – Bibliothek leer!');return}p.hand.push(p.lib.pop());p.st.draws++}}
+function pvMull(i){const p=PV.pl[i];pvDo(()=>{p.lib.push(...p.hand);p.hand=[];pvShuf(p.lib);pvDraw(p,7);p.st.draws-=7;p.mull++;
+ pvLog(p.name+' nimmt einen Mulligan ('+p.mull+'.'+(p.mull==1?', frei':'')+')')})}
+function pvKeep(i){const p=PV.pl[i];pvDo(()=>{const n=Math.max(0,p.mull-1);if(n){PV.bottom={p:i,n};pvLog(p.name+' behält und legt '+n+' Karte(n) unter die Bibliothek')}
+ else{p.kept=true;pvLog(p.name+' behält '+p.hand.length+' Karten')}pvBegin()})}
+function pvBegin(){if(PV.turn||!PV.pl.every(p=>p.kept))return;PV.turn=1;const p=PV.pl[PV.act];PV.view=PV.act;
+ pvLog('Zug 1 – '+p.name+' beginnt'+(PV.pl.length>1?' (zieht im ersten Zug keine Karte)':''))}
+function pvNext(){pvDo(()=>{const n=PV.pl.length;PV.act=(PV.act+1)%n;PV.turn++;const p=PV.pl[PV.act];p.landsTurn=0;
+ p.bf.forEach(c=>c.tap=false);pvDraw(p,1);PV.view=PV.act;pvLog('Zug '+PV.turn+' (Runde '+pvRound()+') – '+p.name+': enttappt und zieht')})}
+function pvBtn(t,f,cls){const b=$('button',t);b.type='button';if(cls)b.className=cls;b.onclick=e=>{e.stopPropagation();f()};return b}
+function pvCardEl(p,c,zone,pi){const d=$('div');d.className='pvc'+(c.tap?' tap':'')+(c.cmd?' cmd':'');d.title=c.name+(c.type?' – '+c.type:'');d.dataset.n=c.name;
+ if(c.image){const im=$('img');im.src=c.image;im.loading='lazy';im.alt=c.name;im.onerror=()=>{im.remove();d.append($('span',c.name))};d.append(im)}else d.append($('span',c.name));
+ if(c.cnt)d.append(Object.assign($('b',(c.cnt>0?'+':'')+c.cnt),{className:'pvcnt'}));
+ if(zone=='cz'&&c.casts)d.append(Object.assign($('b','+'+2*c.casts),{className:'pvtax',title:'Commander-Steuer'}));
+ d.onclick=e=>{e.stopPropagation();if(PV.bottom&&zone=='hand'&&PV.bottom.p==pi){pvDo(()=>{pvMove(p,c,'hand','lib','bottom');PV.bottom.n--;
+   if(!PV.bottom.n){p.kept=true;PV.bottom=null;pvBegin()}});return}
+  PV.menu={pi,id:c.id,zone};pvRender()};
+ d.ondblclick=e=>{if(zone=='bf'){e.stopPropagation();pvDo(()=>c.tap=!c.tap)}};
+ if(PV.menu&&PV.menu.id==c.id){d.classList.add('sel');d.append(pvMenu(p,c,zone))}return d}
+function pvMenu(p,c,zone){const m=$('div');m.className='pvmenu';const a=(t,f)=>m.append(pvBtn(t,()=>pvDo(f)));
+ if(zone=='hand'){a(pvLand(c)?'Land spielen':'Ausspielen',()=>pvPlay(p,c,'hand'));a('Abwerfen',()=>{pvMove(p,c,'hand','gy');pvLog(p.name+' wirft '+c.name+' ab')})}
+ if(zone=='cz')a('Commander wirken',()=>pvCastCmd(p,c));
+ if(zone=='bf'){a(c.tap?'Enttappen':'Tappen',()=>c.tap=!c.tap);a('+1 Marke',()=>c.cnt++);a('−1 Marke',()=>c.cnt--)}
+ if(zone=='lib'||zone=='gy'||zone=='ex')a('Aufs Spielfeld',()=>pvPlay(p,c,zone));
+ ['hand','gy','ex'].filter(z=>z!=zone).forEach(z=>a(ZN[z],()=>{pvMove(p,c,zone,z);pvLog(p.name+': '+c.name+' von '+ZN[zone]+' → '+ZN[z])}));
+ if(zone!='lib'){a('Bibliothek oben',()=>{pvMove(p,c,zone,'lib');pvLog(p.name+': '+c.name+' oben auf die Bibliothek')});
+  a('Bibliothek unten',()=>{pvMove(p,c,zone,'lib','bottom');pvLog(p.name+': '+c.name+' unter die Bibliothek')})}
+ if(c.cmd&&zone!='cz')a('Kommandozone',()=>{pvMove(p,c,zone,'cz');pvLog(p.name+': Commander '+c.name+' zurück in die Kommandozone')});
+ m.append(pvBtn('✕',()=>{PV.menu=null;pvRender()}));return m}
+function pvRow(p,pi,list,zone,label){const r=$('div');r.className='pvrow';r.dataset.z=zone;r.append(Object.assign($('div',label+' ('+list.length+')'),{className:'pvlab'}));
+ list.forEach(c=>r.append(pvCardEl(p,c,zone,pi)));return r}
+function pvArea(p,pi){const w=$('div');w.className='pvp'+(PV.act==pi&&PV.turn?' act':'');w.id='pvp'+pi;
+ const h=$('div');h.className='pvhead';w.append(h);h.append($('b',p.name+(PV.act==pi&&PV.turn?' ▶ am Zug':'')));
+ const lf=$('span',' ❤ '+p.life+' ');lf.className='pvlife';h.append(lf);
+ [-5,-1,1,5].forEach(d=>h.append(pvBtn((d>0?'+':'')+d,()=>pvDo(()=>{p.life+=d;pvLog(p.name+': Leben '+(p.life-d)+' → '+p.life)}),'sw')));
+ h.append(' ☠ '+p.poison+' ',pvBtn('+☠',()=>pvDo(()=>{p.poison++;pvLog(p.name+': '+p.poison+' Giftmarken')}),'sw'));
+ PV.pl.forEach((q,qi)=>{if(qi==pi)return;const v=p.cdmg[qi]||0;h.append(' · Commander-Schaden von '+q.name+': '+v+' ',
+  pvBtn('+1',()=>pvDo(()=>{p.cdmg[qi]=v+1;p.life--;pvLog(p.name+': 1 Commander-Schaden von '+q.name+' (gesamt '+(v+1)+')'+(v+1>=21?' – 21 erreicht, verloren!':''))}),'sw'))});
+ const tb=$('div');tb.className='pvtools';w.append(tb);
+ tb.append('📚 '+p.lib.length+' ',pvBtn('Ziehen',()=>pvDo(()=>{pvDraw(p,1);pvLog(p.name+' zieht eine Karte')})),
+  pvBtn('Mischen',()=>pvDo(()=>{pvShuf(p.lib);pvLog(p.name+' mischt die Bibliothek')})),
+  pvBtn('Oberste 3 ansehen',()=>{PV.pile={pi,zone:'lib',top:3};pvRender()}),pvBtn('Bibliothek durchsuchen',()=>{PV.pile={pi,zone:'lib'};pvLog(p.name+' durchsucht die Bibliothek');pvRender()}),
+  pvBtn('Alle enttappen',()=>pvDo(()=>p.bf.forEach(c=>c.tap=false))),
+  pvBtn('🪦 Friedhof '+p.gy.length,()=>{PV.pile={pi,zone:'gy'};pvRender()}),pvBtn('🌀 Exil '+p.ex.length,()=>{PV.pile={pi,zone:'ex'};pvRender()}));
+ const tk=$('input');tk.placeholder='Token, z. B. 1/1 Soldat';tk.size=16;tb.append(tk,pvBtn('Token erstellen',()=>{const n=tk.value.trim()||'Token';
+  pvDo(()=>{p.bf.push(Object.assign(pvCard({name:n,type:'Token'}),{tok:true}));pvLog(p.name+' erstellt Token '+n)})}));
+ if(!p.kept){const mb=$('div');mb.className='pvmull';w.append(mb);
+  if(PV.bottom&&PV.bottom.p==pi)mb.append($('b','Tippe '+PV.bottom.n+' Karte(n) in der Hand an, die unter die Bibliothek kommen.'));
+  else mb.append('Starthand: '+p.hand.length+' Karten'+(p.mull?' nach '+p.mull+' Mulligan':'')+' ',pvBtn('Behalten',()=>pvKeep(pi),'primary'),' ',pvBtn('Mulligan',()=>pvMull(pi)))}
+ w.append(pvRow(p,pi,p.cz,'cz','Kommandozone'));
+ w.append(pvRow(p,pi,p.bf.filter(c=>!pvLand(c)),'bf','Spielfeld'),pvRow(p,pi,p.bf.filter(pvLand),'bf','Länder'));
+ if(PV.view==pi||!p.kept||PV.pl.length==1)w.append(pvRow(p,pi,p.hand,'hand','Hand'));
+ else{const hh=$('div');hh.className='pvrow';hh.append('Hand: '+p.hand.length+' Karten (verdeckt) ',pvBtn('Hand zeigen',()=>{PV.view=pi;pvRender()}));w.append(hh)}
+ return w}
+function pvPile(){const pp=PV.pile,p=PV.pl[pp.pi];let list=p[pp.zone];if(pp.top)list=list.slice(-pp.top).reverse();else if(pp.zone=='lib')list=list.slice().reverse();
+ const o=$('div');o.id='pvpile';const h=$('div');h.className='pvhead';o.append(h);
+ h.append($('b',p.name+' – '+(pp.top?'oberste '+pp.top+' Karten der Bibliothek':ZN[pp.zone])+' ('+list.length+')'),' ',
+  pvBtn('Schließen'+(pp.zone=='lib'&&!pp.top?' und mischen':''),()=>{if(pp.zone=='lib'&&!pp.top){pvDo(()=>{pvShuf(p.lib);pvLog(p.name+' mischt die Bibliothek')})}PV.pile=null;pvRender()}));
+ if(pp.top)P(o,'Links liegt die oberste Karte. Antippen zum Verschieben (z. B. unter die Bibliothek für Scry).','hint');
+ const r=$('div');r.className='pvrow';list.forEach(c=>r.append(pvCardEl(p,c,pp.zone,pp.pi)));o.append(r);return o}
+function pvStats(){const t=$('table');t.className='duel';t.id='pvstats';const hr=t.insertRow();['',...PV.pl.map(p=>p.name)].forEach(x=>hr.append($('th',x)));
+ const row=(l,f)=>{const tr=t.insertRow();tr.insertCell().textContent=l;PV.pl.forEach(p=>tr.insertCell().textContent=f(p))};
+ row('Mulligans',p=>String(p.mull));row('Commander zuerst gewirkt',p=>p.st.cmdRound?'Runde '+p.st.cmdRound+(p.st.cmdCasts>1?', '+p.st.cmdCasts+'× insgesamt':''):'noch nicht');
+ row('Länder gespielt',p=>String(p.st.lands));row('Zauber gespielt',p=>String(p.st.casts));row('Karten gezogen (ohne Starthand)',p=>String(p.st.draws));
+ row('Leben',p=>String(p.life));row('Karten in Bibliothek',p=>String(p.lib.length));return t}
+function pvEnd(){const o=$('div');o.id='pvend';P(o,'Partie beenden – wer hat gewonnen?','big');
+ PV.pl.forEach((p,i)=>o.append(pvBtn(p.name,()=>pvFinish(i),'primary'),' '));o.append(pvBtn('ohne Wertung',()=>pvFinish(-1)),' ',pvBtn('Zurück',()=>{PV.done=null;pvRender()}));return o}
+async function pvFinish(w){PV.done={winner:w};pvLog('Partie beendet nach '+pvRound()+' Runden'+(w>=0?' – gewonnen hat '+PV.pl[w].name:''));pvSave();
+ if(w>=0&&PV.pl.length>1){const r=await J('/api/game_save',{games:JSON.stringify([{players:PV.pl.map((p,i)=>({name:i?'Gegner (manuell)':'Ich',deck:p.name})),winner:w,turns:pvRound(),source:'manuell'}])});
+  PV.done.saved=!r.error;PV.done.msg=r.error||'✓ Ins Spielprotokoll übernommen'}pvRender()}
+function pvRender(){const o=E('pv');if(!o||!PV)return;o.innerHTML='';o.onclick=()=>{if(PV.menu){PV.menu=null;pvRender()}};
+ const top=$('div');top.className='pvbar';o.append(top);
+ top.append($('b','🃏 Testpartie'),' · '+(PV.turn?'Zug '+PV.turn+' (Runde '+pvRound()+')':'Starthände')+' ');
+ if(PV.turn&&!PV.done)top.append(pvBtn('Nächster Zug ▶',pvNext,'primary'),' ');
+ if(!PV.turn&&PV.pl.length>1)top.append(pvBtn('Startspieler: '+PV.pl[PV.act].name+' ⇄',()=>pvDo(()=>PV.act=1-PV.act)),' ');
+ top.append(pvBtn('↶ Rückgängig',()=>{if(!PVH.length)return;PV=JSON.parse(PVH.pop());pvSave();pvRender()}),' ',pvBtn('📊 Statistik',()=>{PV.showst=!PV.showst;pvRender()}),' ',
+  pvBtn('Partie beenden',()=>{PV.done={ask:true};pvRender()}),' ',pvBtn('Neu mischen',()=>pvStart(PV.pl.length>1)),' ',pvBtn('Schließen ✕',pvClose));
+ if(PV.missing.length)P(o,'Nicht gefunden und weggelassen: '+PV.missing.join(', '),'hint');
+ if(PV.done&&PV.done.ask&&PV.done.winner==null)o.append(pvEnd());
+ if(PV.done&&PV.done.winner!=null){P(o,'Partie beendet'+(PV.done.winner>=0?' – Sieger: '+PV.pl[PV.done.winner].name:'')+'. '+(PV.done.msg||''),'big');o.append(pvStats())}
+ else if(PV.showst)o.append(pvStats());
+ if(PV.pile)o.append(pvPile());
+ const order=PV.pl.map((p,i)=>i);if(PV.pl.length>1&&PV.view==0)order.reverse();
+ order.forEach(i=>o.append(pvArea(PV.pl[i],i)));
+ const lg=$('details');lg.className='subbox';lg.id='pvlog';if(PV.logOpen)lg.open=true;lg.ontoggle=()=>PV.logOpen=lg.open;lg.append($('summary','Protokoll der Partie ('+PV.log.length+')'));
+ PV.log.slice().reverse().slice(0,200).forEach(e=>lg.append($('div',(e[0]?'Zug '+e[0]+': ':'')+e[1])));o.append(lg);
+ P(o,'Bedienung: Karte antippen öffnet die Aktionen, Doppelklick auf eine Karte im Spielfeld tappt sie. Regeln prüft der Spieltisch nicht – du entscheidest wie am echten Tisch. Die Partie bleibt gespeichert, bis du eine neue startest.','hint')}
+function pvResume(){try{const s=JSON.parse(localStorage.getItem('pvgame')||'null');if(s&&s.pl){PV=s;PVH=[];pvUid=Math.max(pvUid,...PV.pl.flatMap(p=>[...p.lib,...p.hand,...p.bf,...p.gy,...p.ex,...p.cz].map(c=>c.id)),0);pvOpen();return true}}catch(e){}return false}
 
 // ---- Spieltisch
 let tg=null;try{tg=JSON.parse(localStorage.getItem('tablegame')||'null')}catch(e){}
@@ -7195,6 +8041,8 @@ class H(BaseHTTPRequestHandler):
                 con.execute("DELETE FROM decks WHERE owner = ?", (int(g("id") or 0),))
                 collection_table(con)
                 con.execute("DELETE FROM collection WHERE owner = ?", (int(g("id") or 0),))
+                inv_tables(con)
+                con.execute("DELETE FROM coll_items WHERE owner = ?", (int(g("id") or 0),))
                 wish_table(con); folder_table(con); gallery_tables(con)
                 con.execute("DELETE FROM wishlist WHERE owner = ?", (int(g("id") or 0),))
                 con.execute("DELETE FROM coll_folders WHERE owner = ?", (int(g("id") or 0),))
@@ -7241,6 +8089,7 @@ class H(BaseHTTPRequestHandler):
             if path == "/api/collection_clear":
                 collection_table(con)
                 con.execute("DELETE FROM collection WHERE owner = ?", (uid,))
+                con.execute("DELETE FROM coll_items WHERE owner = ?", (uid,))
                 folder_table(con)
                 con.execute("DELETE FROM coll_folders WHERE owner = ?", (uid,))
                 con.commit()
@@ -7252,7 +8101,39 @@ class H(BaseHTTPRequestHandler):
             if path == "/api/ocr_prepare":
                 return ocr_prepare()
             if path == "/api/collection_export":
-                return {"csv": collection_export(con, uid)}
+                return {"csv": collection_export(con, uid, g("fmt") or "prints")}
+            if path == "/api/inv":
+                return inv_list(con, uid, g("q"), g("sort") or "name", int(g("page") or 0), g("only"))
+            if path == "/api/inv_set":
+                inv_tables(con)
+                old, new = json.loads(g("old") or "{}"), json.loads(g("new") or "{}")
+                if not old.get("name"):
+                    return {"error": "Eintrag fehlt."}
+                for k in ("set_code", "number", "cond", "lang"):
+                    old.setdefault(k, "")
+                old["foil"] = int(old.get("foil") or 0)
+                if "foil" in new:
+                    new["foil"] = int(new["foil"] or 0)
+                if "set_code" in new:
+                    new["set_code"] = (new["set_code"] or "").upper()
+                n = inv_move(con, uid, old, new, qty=g("qty") if g("qty") != "" else None)
+                coll_rebuild(con, uid)
+                return {"changed": n, **inv_totals(con, uid)}
+            if path == "/api/inv_add":
+                it = json.loads(g("item") or "{}")
+                hit = lookup(con, it.get("name") or "")[0] if it.get("name") else None
+                if not hit:
+                    return {"error": "Karte nicht gefunden."}
+                it["name"] = hit["name"]
+                inv_add(con, uid, it)
+                return {"ok": True, "name": hit["name"], **inv_totals(con, uid)}
+            if path == "/api/prints":
+                hit = lookup(con, g("name"))[0]
+                if not hit:
+                    return {"error": "Karte nicht gefunden."}
+                return prints_of(con, hit["name"], g("force") == "1")
+            if path == "/api/inv_resolve":
+                return inv_resolve(con, uid)
             if path == "/api/recommend":
                 return recommend(p, uid)
             if path == "/api/deck_share":
@@ -7313,6 +8194,12 @@ class H(BaseHTTPRequestHandler):
                 return forge_status()
             if path == "/api/duel_start":
                 return duel_start(p, uid)
+            if path == "/api/playtest":
+                return playtest_decks(p, uid)
+            if path == "/api/forge_play":
+                return forge_play(p, uid)
+            if path == "/api/duel_detail":
+                return duel_detail(p, uid)
             if path == "/api/duel_status":
                 return duel_status(p, uid)
             if path == "/api/duel_cancel":
