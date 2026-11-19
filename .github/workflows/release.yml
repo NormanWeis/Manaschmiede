@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Versionsnummer (z. B. 48)"
+        description: "Versionsnummer (z. B. 49)"
         required: true
-        default: "48"
+        default: "49"
       forge:
         description: "Forge-Version im Image"
         default: "2.0.16"

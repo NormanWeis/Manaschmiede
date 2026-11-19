@@ -27,6 +27,8 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 49: Spieltische am Handy: „📱 Quer“ (Vollbild + Querformat), Hinweis im Hochformat, eigenes Querformat-Layout,
+            Kartengröße A−/A+ und „🔍 Groß ansehen“ (lange drücken bzw. Kartenmenü).
 Version 48: Sammlung je Druck (Set, Sammlernummer, Foil/Etched, Zustand, Sprache) mit Cardmarket-Preis je Druckversion,
             Druckauswahl, Import der Druckangaben aus ManaBox, Moxfield, Deckbox, Archidekt, Dragon Shield und Textlisten,
             Export je Druck; manuelles Testduell im Browser (beide Seiten selbst spielen) und lokal „In Forge selbst spielen“;
@@ -110,7 +112,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "48"
+APP_VERSION = "49"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -4734,7 +4736,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 48)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 49)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -4769,6 +4771,7 @@ td,th{border-bottom:1px solid #ccc;padding:5px;text-align:left}.gc{color:#c0362c
 body.mtg #pv{background:#140f0b}body.mtg .pvmenu{background:#221811;border-color:#a8843a}body.mtg .pvrow{background:#ffffff0d}body.mtg .pvc>span{background:#2a2018;color:#eadfc8}
 @media(max-width:700px){.pvc,.pvc img,.pvc>span{width:62px}.pvc img,.pvc>span{height:86px}}
 .invimg{width:34px;height:47px;object-fit:cover;border-radius:3px}#invtab select{max-width:150px}.printrow img{width:73px;height:102px}
+
 #cmpbox{display:none}section.page>details.tabbox>summary{display:none}
 .sw{border:1px solid #888;background:#fff;border-radius:4px;cursor:pointer;padding:0 6px;margin-left:6px;font-size:13px}
 .grid .sw{position:absolute;bottom:6px;right:4px;margin:0;background:#fffe}
@@ -5003,6 +5006,25 @@ body.mtg .tagchip{background:#3a2c1c;color:#e2bd5b;border-color:#a8843a}.maybe{o
 @media (max-width:760px){#pt{font-size:14px}#pt .ptmain{flex-direction:column}#pt .ptside{width:auto;flex-direction:row;flex-wrap:wrap;align-items:flex-start}
  #pt .ptcz{flex-direction:row}#pt .ptlog{display:none}#pt .ptc{width:64px;height:90px}#pt .ptc.tap{margin:0 13px}#pt .ptrow{min-height:96px}
  #pt .ptbar button{padding:3px 7px;font-size:.88em}#pt .ptbar .ptsec{display:none}#pt .ptbar .ptmore{display:inline-block}#pt .ptinfo{width:100%}#pt .pthand .ptrow{min-height:96px}#ptlist{left:2%;right:2%;top:4%;bottom:4%}}
+/* Handy: Kartengröße (A−/A+), Querformat, große Kartenansicht */
+#pt{--cw:88px}#pv{--cw:84px}
+@media(max-width:760px){#pt,#pv{--cw:64px}}
+#pt .ptc{width:calc(var(--cw)*var(--tk,1));height:calc(var(--cw)*var(--tk,1)*1.4)}#pt .ptc.tap{margin:0 calc(var(--cw)*var(--tk,1)*.2)}
+#pv .pvc,#pv .pvc img,#pv .pvc>span{width:calc(var(--cw)*var(--tk,1))}#pv .pvc img,#pv .pvc>span{height:calc(var(--cw)*var(--tk,1)*1.4)}
+#pt .pthand .ptrow,#pt .ptrow{min-height:calc(var(--cw)*var(--tk,1)*1.4 + 10px)}
+.rothint,#tquer{display:none}
+@media(orientation:portrait) and (max-width:600px){.rothint{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:#a8843a;color:#1b140e;padding:6px 10px;font-weight:bold;font-size:13px}#tquer{display:inline-block}}
+@media(orientation:landscape) and (max-height:520px){
+ #pt,#pv{--cw:calc(28vh / 1.4 * 1)}#tquer{display:inline-block}
+ #pt .ptbar,#pv .pvbar{flex-wrap:nowrap;overflow-x:auto;padding:3px 6px;gap:3px;white-space:nowrap}#pt .ptbar button,#pv .pvbar button{min-height:28px;padding:2px 7px;font-size:13px}
+ #pt .ptbar .ptsec{display:inline-block}#pt .ptbar .ptmore{display:none}#pt .ptinfo{width:auto}
+ #pt .ptmain{flex-direction:row}#pt .ptside{width:118px;flex-direction:column;flex-wrap:nowrap}#pt .ptcz{flex-direction:column}#pt .ptlog{display:none}
+ #pt .ptfield{padding:4px;gap:4px}#pt .ptrow{gap:5px;padding:3px}#pt .pthand{max-height:44vh;padding:2px 6px}#pt .ptnote{padding:3px 8px}
+ #pv{padding:4px 8px}#pv .pvp{margin:4px 0;padding:4px}#pv .pvhead,#pv .pvtools{font-size:13px;flex-wrap:nowrap;overflow-x:auto;white-space:nowrap}#pv>p.hint{display:none}}
+#czoom{position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#eee;font-size:13px}
+#czoom img{max-width:94vw;max-height:86vh;border-radius:14px;box-shadow:0 0 30px #000}
+#czoom .cztext{background:#2a2018;color:#f1e3c6;padding:20px;border-radius:12px;font-size:18px;max-width:80vw;text-align:center}
+.tnote{position:fixed;left:8px;right:8px;bottom:12px;z-index:450;background:#1b140e;color:#f1e3c6;border:1px solid #a8843a;border-radius:10px;padding:10px;font-size:14px}
 </style>
 <style id=mobcss>
 /* ---------- Handyansicht (body.mob): wird per Geräteerkennung oder von Hand gesetzt ---------- */
@@ -5195,6 +5217,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li>Anzahl Partien wählen (10 ist ein guter Anfang) und <b>Duell starten</b>. Die erste Partie dauert etwas länger, weil Forge startet. Eine Partie dauert meist 0,5–3 Minuten.</li></ol>
 <p><b>📊 Genaue Statistik:</b> unter dem Ergebnis eingeklappt. Je Deck: wie oft es begonnen (und dann gewonnen) hat, Ø Mulligans, in welcher Runde der Commander zuerst kam und wie oft er gewirkt wurde, Ø Länder und Zauber, Ø Schaden an Gegnern (davon im Kampf), die am häufigsten gewirkten Karten, die Karten mit dem meisten Schaden und „Schlüsselkarten“, mit denen das Deck deutlich öfter gewinnt als im Schnitt. Bei „Einzelne Partien“ zeigt <b>🔎 Verlauf</b> eine Partie Zug für Zug: Länder, Zauber, Commander, Angriffe, Schaden und Lebenspunkte, dazu ein Diagramm der Lebenspunkte. „Runde“ zählt die eigenen Züge eines Spielers.</p>
 <p><b>🃏 Selbst spielen:</b> „Im Browser“ öffnet einen Spieltisch mit deinem Deck und dem Gegner; du spielst beide Seiten wie am echten Tisch: Starthand behalten oder Mulligan (der erste ist frei, danach Karten unter die Bibliothek), Länder und Zauber spielen, Commander aus der Kommandozone wirken (Commander-Steuer wird angezeigt), tappen (Doppelklick), Marken, Tokens, Friedhof, Exil, Bibliothek durchsuchen oder die obersten Karten ansehen, Leben, Gift und Commander-Schaden. „Nächster Zug“ enttappt und zieht für den nächsten Spieler, „Rückgängig“ nimmt Schritte zurück. Protokoll und Statistik zeigen den Verlauf; „Partie beenden“ trägt das Ergebnis ins Spielprotokoll ein. Regeln prüft der Spieltisch nicht. Für eine Testpartie allein gibt es weiterhin das „🎮 Testspielfeld“ bei der Probehand. Im lokalen Betrieb legt „🖥 In Forge selbst spielen“ beide Decks in Forge ab und öffnet Forge: dort links „Commander“ wählen, Spieler 1 ist dein Deck, Spieler 2 die KI mit dem Gegnerdeck – Forge prüft dann alle Regeln.</p>
+<p><b>📱 Spieltische am Handy:</b> Quer gehalten sind Hand und Spielfeld deutlich besser lesbar; im Hochformat erinnert ein Hinweis daran. „📱 Quer“ schaltet auf Vollbild und dreht ins Querformat (Android/Chrome; auf dem iPhone das Handy einfach drehen, die Drehsperre muss aus sein). Im Querformat passt sich die Kartengröße der Bildschirmhöhe an, die Knopfleiste wird einzeilig und lässt sich seitlich wischen. „A−“/„A+“ verkleinert bzw. vergrößert die Karten (bleibt gespeichert). „🔍 Groß ansehen“ im Kartenmenü – am Duell-Tisch auch durch langes Drücken auf eine Karte – zeigt die Karte bildschirmfüllend zum Lesen. Am Duell-Tisch klappt ▾ den Bereich eines Spielers auf eine Zeile zusammen.</p>
 <p><b>Ergebnis lesen:</b> Siege in Prozent, durchschnittlicher Siegzug, Siegart (z. B. Commander-Schaden, Combo) und welche Karte gewonnen hat. Die KI spielt solide, aber nicht perfekt – aussagekräftig sind Tendenzen über viele Partien. Läuft eine Partie zu lange, wird sie als Unentschieden gewertet.</p>
 
 <h3 id=h-regeln>Offizielle Regeln</h3>
@@ -5555,7 +5578,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='48';
+const PAGE_VERSION='49';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -5871,19 +5894,42 @@ function ptToken(name,img){ptSnap();PT.bf.push({id:ptId(),name:name,image:img||'
 function ptCtr(id,d){const [z,i]=ptFind(id);if(z!='bf')return;ptSnap();PT.bf[i].ctr=Math.max(0,(PT.bf[i].ctr||0)+d);ptRender()}
 function ptCopy(id){const [z,i]=ptFind(id);if(z!='bf')return;const c=PT.bf[i];ptToken(c.name+' (Kopie)',c.image)}
 // ---------- Darstellung ----------
+// ---- Handy: Querformat, Kartengröße und große Kartenansicht für beide Spieltische
+let TSIZE=1;try{TSIZE=parseFloat(localStorage.getItem('tsize'))||1}catch(e){}
+const TSIZES=[.75,1,1.3,1.6];
+function tableSize(d){const i=Math.max(0,Math.min(TSIZES.length-1,TSIZES.indexOf(TSIZE)+d));TSIZE=TSIZES[i<0?1:i];
+ try{localStorage.setItem('tsize',TSIZE)}catch(e){}document.documentElement.style.setProperty('--tk',TSIZE)}
+document.documentElement.style.setProperty('--tk',TSIZE);
+async function tableLandscape(){let full=false,lock=false;
+ try{if(!document.fullscreenElement&&document.documentElement.requestFullscreen){await document.documentElement.requestFullscreen({navigationUI:'hide'})}full=!!document.fullscreenElement}catch(e){}
+ try{if(screen.orientation&&screen.orientation.lock){await screen.orientation.lock('landscape');lock=true}}catch(e){}
+ if(!lock)tableNote('Dieses Gerät lässt die Drehung nicht automatisch zu (z. B. iPhone) – bitte das Handy einfach quer halten'+(full?'.':' und die Bildschirmsperre für die Drehung ausschalten.'));
+ return lock}
+function tableExit(){try{if(screen.orientation&&screen.orientation.unlock)screen.orientation.unlock()}catch(e){}
+ try{if(document.fullscreenElement)document.exitFullscreen()}catch(e){}}
+function tableNote(t){const n=$('div',t);n.className='tnote';n.onclick=()=>n.remove();document.body.append(n);setTimeout(()=>n.remove(),6000)}
+function rotHint(){const h=$('div');h.className='rothint';let off=false;try{off=localStorage.getItem('rothint')=='0'}catch(e){}if(off)return h;
+ h.append('📱 Tipp: Handy quer halten – dann sind Hand und Spielfeld besser lesbar. ');
+ const b=$('button','Quer + Vollbild');b.type='button';b.onclick=e=>{e.stopPropagation();tableLandscape()};
+ const x=$('button','✕');x.type='button';x.title='Hinweis nicht mehr zeigen';x.onclick=e=>{e.stopPropagation();h.remove();try{localStorage.setItem('rothint','0')}catch(e){}};h.append(b,' ',x);return h}
+function tableTools(B){return [B('📱 Quer','Vollbild und Querformat (Handy)',()=>tableLandscape(),'tquer'),B('A−','Karten kleiner',()=>{tableSize(-1)},'tsmall'),B('A+','Karten größer',()=>{tableSize(1)},'tbig')]}
+function cardZoom(c){const old=E('czoom');if(old)old.remove();const z=$('div');z.id='czoom';z.onclick=()=>z.remove();
+ if(c.image){const im=$('img');im.src=c.image;im.alt=c.name;im.onerror=()=>{im.remove();z.prepend(txt())};z.append(im)}
+ const txt=()=>{const t=$('div');t.className='cztext';t.append($('b',c.name),$('div',(c.mana||c.mana_cost||'')),$('div',c.type||c.type_line||''));return t};
+ if(!c.image)z.append(txt());z.append($('div','Antippen zum Schließen'));document.body.append(z)}
 function ptOpen(){let o=E('pt');if(!o){o=$('div');o.id='pt';document.body.append(o);
   document.addEventListener('keydown',e=>{if(!PT||!E('pt')||E('pt').hidden||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;
    const k=e.key.toLowerCase();if((e.ctrlKey||e.metaKey)&&k=='z'){e.preventDefault();ptUndo()}else if(k=='d')ptDrawBtn();else if(k=='n')ptNext();else if(k=='u'){ptSnap();PT.bf.forEach(c=>c.tapped=false);ptRender()}
    else if(k=='m')ptShuffle();else if(k=='z')ptUndo();else if(k=='escape')ptClose()})}
  o.hidden=false;document.body.classList.add('ptopen');ptRender()}
-function ptClose(){const o=E('pt');if(o)o.hidden=true;document.body.classList.remove('ptopen')}
+function ptClose(){const o=E('pt');if(o)o.hidden=true;document.body.classList.remove('ptopen');tableExit()}
 function ptDrawBtn(){ptSnap();ptDraw(1);ptRender()}
 function ptMenu(ev,items){ev.preventDefault();ev.stopPropagation();const old=E('ptmenu');if(old)old.remove();
  const m=$('div');m.id='ptmenu';items.forEach(([t,fn])=>{const b=$('button',t);b.type='button';b.onclick=e=>{e.stopPropagation();m.remove();fn()};m.append(b)});
  const x=$('button','✕ schließen');x.type='button';x.onclick=()=>m.remove();m.append(x);E('pt').append(m);
  const r=E('pt').getBoundingClientRect(),px=(ev.clientX||(ev.touches&&ev.touches[0].clientX)||r.width/2),py=(ev.clientY||(ev.touches&&ev.touches[0].clientY)||r.height/2);
  m.style.left=Math.max(4,Math.min(px,r.width-210))+'px';m.style.top=Math.max(4,Math.min(py,r.height-m.offsetHeight-8))+'px'}
-function ptMenuFor(c,z){const it=[];const id=c.id;
+function ptMenuFor(c,z){const it=[['🔍 Groß ansehen',()=>cardZoom(c)]];const id=c.id;
  if(z=='hand')it.push(['▶ Ausspielen',()=>ptPlay(id)]);
  if(z=='bf')it.push([c.tapped?'↺ Enttappen':'↻ Tappen',()=>ptTap(id)],['+1 Marke',()=>ptCtr(id,1)],['−1 Marke',()=>ptCtr(id,-1)],['⧉ Kopie als Token',()=>ptCopy(id)]);
  if(z!='hand')it.push(['✋ Auf die Hand',()=>ptMove(id,'hand')]);
@@ -5932,10 +5978,10 @@ function ptRender(){const o=E('pt');if(!o||!PT)return;const keepList=E('ptlist')
  bar.append(info,life,B('🃏 Ziehen','Karte ziehen (D)',ptDrawBtn,'ptdraw'),B('⏭ Nächster Zug','Enttappen und ziehen (N)',ptNext,'ptnext'),B('↺ Alle enttappen','U',()=>{ptSnap();PT.bf.forEach(c=>c.tapped=false);ptRender()}),
   B('🔀 Mischen','M',ptShuffle),B('Mulligan','London-Mulligan',ptMull,'ptmull'),B('👁 Oberste X','Oberste Karten ansehen (Scry, Surveil, Mahlen)',ptTopX,'pttop'),B('🔎 Suchen','Bibliothek durchsuchen',()=>ptZoneList('lib','Bibliothek'),'ptsearch'),
   B('✨ Token','Token erzeugen',ptTokens,'pttok'),B('🎲','Würfeln (W6/W20) und Münze',()=>{const r6=1+Math.floor(Math.random()*6),r20=1+Math.floor(Math.random()*20);ptLog('Würfel: W6 = '+r6+', W20 = '+r20+', Münze: '+(Math.random()<.5?'Kopf':'Zahl'));ptRender()}),
-  B('↶','Rückgängig (Z)',ptUndo,'ptundo'),B('⟲ Neu','Neue Partie',ptNew,'ptnew'),B('✕','Schließen (Esc)',ptClose,'ptclose'));
- [...bar.querySelectorAll('button')].forEach(b=>{if(!['ptdraw','ptnext','ptundo','ptclose','ptlm','ptlp'].includes(b.id))b.classList.add('ptsec')});
+  B('↶','Rückgängig (Z)',ptUndo,'ptundo'),B('⟲ Neu','Neue Partie',ptNew,'ptnew'),...tableTools(B),B('✕','Schließen (Esc)',ptClose,'ptclose'));
+ [...bar.querySelectorAll('button')].forEach(b=>{if(!['ptdraw','ptnext','ptundo','ptclose','ptlm','ptlp','tquer','tsmall','tbig'].includes(b.id))b.classList.add('ptsec')});
  const more=B('⋯','Weitere Aktionen',e=>ptMenu(e,[...bar.querySelectorAll('button.ptsec')].map(b=>[b.textContent+(b.title&&b.textContent.length<3?' '+b.title:''),()=>b.click()])),'ptmore');more.className='ptmore';bar.insertBefore(more,bar.querySelector('#ptclose'));
- o.append(bar);
+ o.append(bar);o.append(rotHint());
  if(PT.mullBottom>0){const n=$('div','Mulligan: Tippe '+PT.mullBottom+' Handkarte'+(PT.mullBottom>1?'n':'')+' an, die unter die Bibliothek sollen.');n.className='ptnote';o.append(n)}
  const main=$('div');main.className='ptmain';
  const side=$('div');side.className='ptside';
@@ -7044,7 +7090,7 @@ async function pvStart(withOpp){const r=await J('/api/playtest',Object.assign(mi
  pvLog('Neue Testpartie: '+PV.pl.map(p=>p.name).join(' gegen ')+'. Jeder hat 7 Karten gezogen – behalten oder Mulligan (der erste ist frei).');pvOpen()}
 function alertBox(t){const o=dlgOpen('Hinweis');P(o,t,'warn')}
 function pvOpen(){let o=E('pv');if(!o){o=document.createElement('div');o.id='pv';document.body.append(o)}o.hidden=false;document.body.classList.add('pvopen');pvRender()}
-function pvClose(){const o=E('pv');if(o)o.hidden=true;document.body.classList.remove('pvopen');pvSave()}
+function pvClose(){const o=E('pv');if(o)o.hidden=true;document.body.classList.remove('pvopen');pvSave();tableExit()}
 function pvDo(f){pvSnap();PV.menu=null;f();pvSave();pvRender()}
 function pvMove(p,c,from,to,where){const i=p[from].findIndex(x=>x.id==c.id);if(i<0)return;p[from].splice(i,1);
  if(to!='bf'){c.tap=false;c.cnt=0}
@@ -7070,12 +7116,15 @@ function pvCardEl(p,c,zone,pi){const d=$('div');d.className='pvc'+(c.tap?' tap':
  if(c.image){const im=$('img');im.src=c.image;im.loading='lazy';im.alt=c.name;im.onerror=()=>{im.remove();d.append($('span',c.name))};d.append(im)}else d.append($('span',c.name));
  if(c.cnt)d.append(Object.assign($('b',(c.cnt>0?'+':'')+c.cnt),{className:'pvcnt'}));
  if(zone=='cz'&&c.casts)d.append(Object.assign($('b','+'+2*c.casts),{className:'pvtax',title:'Commander-Steuer'}));
- d.onclick=e=>{e.stopPropagation();if(PV.bottom&&zone=='hand'&&PV.bottom.p==pi){pvDo(()=>{pvMove(p,c,'hand','lib','bottom');PV.bottom.n--;
+ let lt=null,longp=false;d.addEventListener('pointerdown',()=>{longp=false;clearTimeout(lt);lt=setTimeout(()=>{longp=true;cardZoom(c)},550)});
+ ['pointerup','pointerleave','pointercancel'].forEach(ev=>d.addEventListener(ev,()=>clearTimeout(lt)));d.addEventListener('contextmenu',e=>e.preventDefault());
+ d.onclick=e=>{e.stopPropagation();if(longp){longp=false;return}if(PV.bottom&&zone=='hand'&&PV.bottom.p==pi){pvDo(()=>{pvMove(p,c,'hand','lib','bottom');PV.bottom.n--;
    if(!PV.bottom.n){p.kept=true;PV.bottom=null;pvBegin()}});return}
   PV.menu={pi,id:c.id,zone};pvRender()};
  d.ondblclick=e=>{if(zone=='bf'){e.stopPropagation();pvDo(()=>c.tap=!c.tap)}};
  if(PV.menu&&PV.menu.id==c.id){d.classList.add('sel');d.append(pvMenu(p,c,zone))}return d}
 function pvMenu(p,c,zone){const m=$('div');m.className='pvmenu';const a=(t,f)=>m.append(pvBtn(t,()=>pvDo(f)));
+ m.append(pvBtn('🔍 Groß ansehen',()=>cardZoom(c)));
  if(zone=='hand'){a(pvLand(c)?'Land spielen':'Ausspielen',()=>pvPlay(p,c,'hand'));a('Abwerfen',()=>{pvMove(p,c,'hand','gy');pvLog(p.name+' wirft '+c.name+' ab')})}
  if(zone=='cz')a('Commander wirken',()=>pvCastCmd(p,c));
  if(zone=='bf'){a(c.tap?'Enttappen':'Tappen',()=>c.tap=!c.tap);a('+1 Marke',()=>c.cnt++);a('−1 Marke',()=>c.cnt--)}
@@ -7088,12 +7137,14 @@ function pvMenu(p,c,zone){const m=$('div');m.className='pvmenu';const a=(t,f)=>m
 function pvRow(p,pi,list,zone,label){const r=$('div');r.className='pvrow';r.dataset.z=zone;r.append(Object.assign($('div',label+' ('+list.length+')'),{className:'pvlab'}));
  list.forEach(c=>r.append(pvCardEl(p,c,zone,pi)));return r}
 function pvArea(p,pi){const w=$('div');w.className='pvp'+(PV.act==pi&&PV.turn?' act':'');w.id='pvp'+pi;
- const h=$('div');h.className='pvhead';w.append(h);h.append($('b',p.name+(PV.act==pi&&PV.turn?' ▶ am Zug':'')));
+ const h=$('div');h.className='pvhead';w.append(h);PV.fold=PV.fold||{};
+ h.append(pvBtn(PV.fold[pi]?'▸':'▾',()=>{PV.fold[pi]=!PV.fold[pi];pvSave();pvRender()},'sw pvfold'));h.append($('b',p.name+(PV.act==pi&&PV.turn?' ▶ am Zug':'')));
  const lf=$('span',' ❤ '+p.life+' ');lf.className='pvlife';h.append(lf);
  [-5,-1,1,5].forEach(d=>h.append(pvBtn((d>0?'+':'')+d,()=>pvDo(()=>{p.life+=d;pvLog(p.name+': Leben '+(p.life-d)+' → '+p.life)}),'sw')));
  h.append(' ☠ '+p.poison+' ',pvBtn('+☠',()=>pvDo(()=>{p.poison++;pvLog(p.name+': '+p.poison+' Giftmarken')}),'sw'));
  PV.pl.forEach((q,qi)=>{if(qi==pi)return;const v=p.cdmg[qi]||0;h.append(' · Commander-Schaden von '+q.name+': '+v+' ',
   pvBtn('+1',()=>pvDo(()=>{p.cdmg[qi]=v+1;p.life--;pvLog(p.name+': 1 Commander-Schaden von '+q.name+' (gesamt '+(v+1)+')'+(v+1>=21?' – 21 erreicht, verloren!':''))}),'sw'))});
+ if(PV.fold[pi]&&p.kept){w.classList.add('folded');h.append(' · Spielfeld '+p.bf.length+' · Hand '+p.hand.length+' · Friedhof '+p.gy.length);return w}
  const tb=$('div');tb.className='pvtools';w.append(tb);
  tb.append('📚 '+p.lib.length+' ',pvBtn('Ziehen',()=>pvDo(()=>{pvDraw(p,1);pvLog(p.name+' zieht eine Karte')})),
   pvBtn('Mischen',()=>pvDo(()=>{pvShuf(p.lib);pvLog(p.name+' mischt die Bibliothek')})),
@@ -7131,8 +7182,10 @@ function pvRender(){const o=E('pv');if(!o||!PV)return;o.innerHTML='';o.onclick=(
  top.append($('b','🃏 Testpartie'),' · '+(PV.turn?'Zug '+PV.turn+' (Runde '+pvRound()+')':'Starthände')+' ');
  if(PV.turn&&!PV.done)top.append(pvBtn('Nächster Zug ▶',pvNext,'primary'),' ');
  if(!PV.turn&&PV.pl.length>1)top.append(pvBtn('Startspieler: '+PV.pl[PV.act].name+' ⇄',()=>pvDo(()=>PV.act=1-PV.act)),' ');
+ top.append(...tableTools((t,ti,fn,id)=>{const b=pvBtn(t,fn);b.title=ti;b.id=id;return b}),' ');
  top.append(pvBtn('↶ Rückgängig',()=>{if(!PVH.length)return;PV=JSON.parse(PVH.pop());pvSave();pvRender()}),' ',pvBtn('📊 Statistik',()=>{PV.showst=!PV.showst;pvRender()}),' ',
   pvBtn('Partie beenden',()=>{PV.done={ask:true};pvRender()}),' ',pvBtn('Neu mischen',()=>pvStart(PV.pl.length>1)),' ',pvBtn('Schließen ✕',pvClose));
+ o.append(rotHint());
  if(PV.missing.length)P(o,'Nicht gefunden und weggelassen: '+PV.missing.join(', '),'hint');
  if(PV.done&&PV.done.ask&&PV.done.winner==null)o.append(pvEnd());
  if(PV.done&&PV.done.winner!=null){P(o,'Partie beendet'+(PV.done.winner>=0?' – Sieger: '+PV.pl[PV.done.winner].name:'')+'. '+(PV.done.msg||''),'big');o.append(pvStats())}
@@ -7142,7 +7195,7 @@ function pvRender(){const o=E('pv');if(!o||!PV)return;o.innerHTML='';o.onclick=(
  order.forEach(i=>o.append(pvArea(PV.pl[i],i)));
  const lg=$('details');lg.className='subbox';lg.id='pvlog';if(PV.logOpen)lg.open=true;lg.ontoggle=()=>PV.logOpen=lg.open;lg.append($('summary','Protokoll der Partie ('+PV.log.length+')'));
  PV.log.slice().reverse().slice(0,200).forEach(e=>lg.append($('div',(e[0]?'Zug '+e[0]+': ':'')+e[1])));o.append(lg);
- P(o,'Bedienung: Karte antippen öffnet die Aktionen, Doppelklick auf eine Karte im Spielfeld tappt sie. Regeln prüft der Spieltisch nicht – du entscheidest wie am echten Tisch. Die Partie bleibt gespeichert, bis du eine neue startest.','hint')}
+ P(o,'Bedienung: Karte antippen öffnet die Aktionen, lange drücken zeigt sie groß, Doppelklick auf eine Karte im Spielfeld tappt sie. Regeln prüft der Spieltisch nicht – du entscheidest wie am echten Tisch. Die Partie bleibt gespeichert, bis du eine neue startest.','hint')}
 function pvResume(){try{const s=JSON.parse(localStorage.getItem('pvgame')||'null');if(s&&s.pl){PV=s;PVH=[];pvUid=Math.max(pvUid,...PV.pl.flatMap(p=>[...p.lib,...p.hand,...p.bf,...p.gy,...p.ex,...p.cz].map(c=>c.id)),0);pvOpen();return true}}catch(e){}return false}
 
 // ---- Spieltisch

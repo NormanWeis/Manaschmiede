@@ -9,7 +9,7 @@
 
 | Datei | Zweck |
 |---|---|
-| `commander_db_v48.py` | das Programm (identisch mit `server/commander_db.py`) |
+| `commander_db_v49.py` | das Programm (identisch mit `server/commander_db.py`) |
 | `Commander-DB starten.bat` | Start nur auf diesem PC |
 | `Commander-DB im Netzwerk starten.bat` | Start mit Zugriff aus dem Heimnetz |
 | `Alte Versionen archivieren.bat` | verschiebt ältere `commander_db_vNN.py` in den Unterordner „Alte Versionen“ |
