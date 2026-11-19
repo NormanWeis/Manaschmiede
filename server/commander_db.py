@@ -27,6 +27,9 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 46: Neuer Bereich „📦 Precons“: alle offiziellen Commander-Precons nach Set mit Suche, Farbfilter, Wert,
+            Bracket-Schätzung und Sammlungsanteil; Deckliste ansehen, im Editor öffnen, in Meine Decks speichern, als Gegner
+            setzen, kopieren oder als gekauftes Precon in die Sammlung übernehmen.
 Version 45: Fehler behoben: „Combos mitprüfen“ brach ab, sobald Commander Spellbook Combos lieferte. Die Bracket-Einstufung
             prüft Combos jetzt automatisch mit (Internet), sobald ein Deck geladen ist; ohne Verbindung bleibt die Einstufung ohne Combos.
 Version 44: Bracket-Einstufung je Deck nach den offiziellen Regeln (Game Changer, Massen-Landzerstörung, Extra-Züge,
@@ -100,7 +103,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "45"
+APP_VERSION = "46"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -2088,6 +2091,68 @@ def precon_list(con, q="", ci=""):
              "commander": r["commander"], "ci": r["color_identity"]} for r in rows[:15]]
 
 
+PRECON_CAT = {"key": None, "data": None}
+
+
+def precon_catalog(con, uid=0):
+    """Alle Precons mit Wert, Kartenzahl und Bracket-Schätzung. Zwischengespeichert (Speicher und Datenbank) bis zur
+    nächsten Precon- oder Kartenaktualisierung."""
+    if not has_precons(con):
+        return {"precons": [], "loaded": False}
+    key = f"{setting('precons_at')}|{setting('imported_at')}|1"
+    if PRECON_CAT["key"] != key:
+        con.execute("CREATE TABLE IF NOT EXISTS precon_catalog(key TEXT PRIMARY KEY, data TEXT)")
+        hit = con.execute("SELECT data FROM precon_catalog WHERE key = ?", (key,)).fetchone()
+        if hit:
+            PRECON_CAT.update(key=key, data=json.loads(hit[0]))
+        else:
+            con.row_factory = sqlite3.Row
+            best = {}
+            for r in con.execute("SELECT * FROM cards WHERE name IN (SELECT DISTINCT name FROM precon_cards) ORDER BY commander_legal"):
+                best[r["name"]] = r  # zuletzt = Commander-legale Fassung, wie in precon_entries
+            pcards = {}
+            for pid, n, q, ic in con.execute("SELECT precon_id, name, qty, is_commander FROM precon_cards"):
+                pcards.setdefault(pid, []).append((n, q, ic))
+            out = []
+            for pr in con.execute("SELECT * FROM precons ORDER BY release_date DESC, set_name, name").fetchall():
+                rows = pcards.get(pr["id"], [])
+                plain = [(best[n], q) for n, q, ic in rows if n in best]
+                cmds = {n for n, q, ic in rows if ic}
+                eur = sum(float(r["eur"]) * q for r, q in plain if r["eur"] not in (None, "") and not front_type(r).startswith("Basic"))
+                br = bracket_check(con, plain, cmds)
+                out.append({"id": pr["id"], "name": pr["name"], "set": pr["set_name"], "date": pr["release_date"] or "",
+                            "commander": pr["commander"], "ci": pr["color_identity"] or "C", "cards": sum(q for _, q in plain),
+                            "eur": round(eur, 2), "bracket_est": br["bracket"], "gc": br["rules"][0]["count"],
+                            "missing": sum(1 for n, q, ic in rows if n not in best)})
+            con.row_factory = None
+            con.execute("DELETE FROM precon_catalog")
+            con.execute("INSERT INTO precon_catalog VALUES(?,?)", (key, json.dumps(out)))
+            con.commit()
+            PRECON_CAT.update(key=key, data=out)
+    own = owned_map(con, uid)
+    data = [dict(x) for x in PRECON_CAT["data"]]
+    if own:  # Anteil der Karten (ohne Standardländer), die der Benutzer besitzt
+        need, have = {}, {}
+        for pid, n, q in con.execute("SELECT precon_id, name, qty FROM precon_cards WHERE name NOT IN "
+                                     "('Plains','Island','Swamp','Mountain','Forest','Wastes')"):
+            need[pid] = need.get(pid, 0) + q
+            have[pid] = have.get(pid, 0) + min(q, own.get(n, 0))
+        for x in data:
+            x["owned"] = round(100 * have.get(x["id"], 0) / need[x["id"]]) if need.get(x["id"]) else 0
+    return {"precons": data, "loaded": True, "at": setting("precons_at"), "has_collection": bool(own)}
+
+
+def precon_to_collection(con, pid, uid=0):
+    """Ein gekauftes Precon komplett in die Sammlung übernehmen (Karten werden addiert)."""
+    rows = con.execute("SELECT name, qty FROM precon_cards WHERE precon_id = ?", (pid,)).fetchall()
+    pr = con.execute("SELECT name FROM precons WHERE id = ?", (pid,)).fetchone()
+    if not rows or not pr:
+        return {"error": "Precon nicht gefunden."}
+    out = collection_import({"text": ["\n".join(f"{q} {n}" for n, q in rows)], "mode": ["add"]}, uid)
+    out["precon"] = pr[0]
+    return out
+
+
 def front_type(r):
     return r["type_line"].split(" // ")[0]
 
@@ -3251,7 +3316,8 @@ def precon_view(p):
         return {"error": "Precon nicht gefunden."}
     ent, missing = precon_entries(con, pid)
     groups = [{"name": "Commander", "cards": [card_dict(r, q) for r, q, ic in ent if ic]}] + by_type([(r, q) for r, q, ic in ent if not ic])
-    return {"name": pr["name"], "set": pr["set_name"], "date": pr["release_date"], "groups": groups,
+    return {"name": pr["name"], "set": pr["set_name"], "date": pr["release_date"], "groups": groups, "commander": pr["commander"],
+            "ci": pr["color_identity"],
             "missing": missing, "export": "\n".join(f"{c['qty']} {c['name']}" for g in groups for c in g["cards"])}
 
 
@@ -3908,7 +3974,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 45)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 46)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -4060,6 +4126,9 @@ details.subbox{border:1px solid rgba(168,132,58,.55);border-radius:10px;padding:
 body.mob .stackcol{min-width:96px;width:96px}body.mob .stc img{width:96px}body.mob .stc{height:26px}
 .brb{display:inline-block;border:1px solid #a8843a;border-radius:8px;padding:0 6px;font-size:.85em;white-space:nowrap}.brb.brt{background:rgba(168,132,58,.25);font-weight:bold}.brb.brwarn{border-color:#c0362c}
 .brbig{font-size:1.25em;margin:4px 0}.brtab td{vertical-align:top}.brtab td.no{color:#c0362c;font-weight:bold}.brtab td.ok{color:#3a9a4a}.brtarget{margin:8px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pctab .pcrow{cursor:pointer}.pctab .pcrow:hover{background:rgba(168,132,58,.15)}.pctab .pcset td{padding-top:10px;border-bottom:1px solid #a8843a}.pcbar{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.pclist{columns:2;column-gap:24px;font-size:.92em}.pcg{break-inside:avoid;margin-bottom:8px}.gcm{color:#c0362c;font-size:.8em;font-weight:bold}@media(max-width:700px){.pclist{columns:1}.pctab td:nth-child(4),.pctab th:nth-child(4){display:none}}
+#mobmore a[hidden],#mainnav a[hidden]{display:none!important}
 .palert{max-width:720px;margin:12px auto;text-align:left;border:1px solid #a8843a;border-radius:10px;padding:8px 12px;background:rgba(168,132,58,.12)}
 .palert .up{color:#3a9a4a}.palert .down{color:#c0362c}.hit{color:#3a9a4a;font-weight:bold}.wishadd,.folderedit{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
 .ftable td,.ftable th{padding:2px 8px;text-align:left}.ftable td.r,.ftable th.r{text-align:right}.chips2 button{margin:2px}
@@ -4218,7 +4287,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <div id=help><div><button type=button class=x id=helpx>✕ Schließen</button><h2 id=h-top>Hilfe zur Manaschmiede</h2>
 <nav class=htoc><a data-h=start>Erste Schritte</a> · <a data-h=commander>Was ist Commander?</a> · <a data-h=bauen>Deck bauen</a> ·
 <a data-h=anpassen>Deck anpassen</a> · <a data-h=import>Importieren &amp; Speichern</a> · <a data-h=export>Exportieren</a> ·
-<a data-h=gegner>Gegner &amp; Vergleich</a> · <a data-h=combos>Combos</a> · <a data-h=brackets>Brackets</a> · <a data-h=duell>Duell mit Forge</a> ·
+<a data-h=gegner>Gegner &amp; Vergleich</a> · <a data-h=combos>Combos</a> · <a data-h=brackets>Brackets</a> · <a data-h=precons>Precons</a> · <a data-h=duell>Duell mit Forge</a> ·
 <a data-h=regeln>Regeln</a> · <a data-h=suche>Kartensuche</a> · <a data-h=update>Aktualisierung</a> · <a data-h=geraete>Handy &amp; andere Geräte</a> ·
 <a data-h=begriffe>Begriffe</a> · <a data-h=probleme>Probleme lösen</a></nav>
 
@@ -4284,6 +4353,11 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>Importieren:</b> eine Liste einfügen (z. B. aus Moxfield „Export“), eine Datei wählen (.txt, .dck, .dec, .csv, .json) oder einen Link angeben (Archidekt, MTGGoldfish, TappedOut, Deckstats; Moxfield blockiert Links oft – dann die Liste kopieren). Dateien werden in jeder üblichen Zeichenkodierung erkannt, auch MTGO (.dek) und Cockatrice (.cod). Danach <b>Importieren</b>.</li>
 <li>Die Vorschau zeigt, ob der Commander erkannt wurde, welche Karten nicht gefunden oder korrigiert wurden und ob etwas nicht zur Farbidentität passt. Den Commander kannst du dort ändern; Partner mit „ + “ trennen.</li></ul>
 
+<h3 id=h-precons>Precons – fertige Commander-Decks</h3>
+<ul><li>Der Bereich „🎁 Precons“ zeigt alle offiziellen Commander-Precons (vorkonstruierte Decks von Wizards of the Coast) mit vollständiger Deckliste, sortiert nach Set und Erscheinungsdatum. Die Listen kommen aus der frei verfügbaren Sammlung github.com/taw/magic-preconstructed-decks-data (auch Grundlage von mtg.wtf und MTGJSON) und werden mit den übrigen Daten automatisch aktualisiert.</li>
+<li>Suche nach Deckname, Commander oder Set; die Farbknöpfe zeigen nur Decks, die höchstens diese Farben haben. Je Deck stehen Wert (Summe der Einzelkarten, ohne Standardländer), Bracket-Schätzung und – wenn du eine Sammlung angelegt hast – wie viel davon du schon besitzt.</li>
+<li>Ein Deck antippen öffnet die Liste. „✏ Im Deck-Editor öffnen“ lädt es zum Anpassen (Analyse, Testspielfeld, Upgrades); „💾 In Meine Decks speichern“ legt eine eigene Kopie an; „⚔ Als Gegner“ setzt es für Vergleich und Forge-Duelle; „📥 Gekauft – in meine Sammlung“ fügt alle Karten deiner Sammlung hinzu (nach einer Rückfrage).</li>
+<li>Sammlerversionen mit identischer Liste erscheinen nur einmal. Karten, die in der Kartendatenbank fehlen (z. B. ganz neue Promokarten), werden beim Deck genannt.</li></ul>
 <h3 id=h-brackets>Brackets – die offiziellen Stärkestufen</h3>
 <p>Mit den <b>Commander Brackets</b> (von Wizards of the Coast und dem Commander Format Panel, offiziell noch „Beta“) sprecht ihr vor der Partie ab, wie stark eure Decks sind, damit ähnlich starke Decks gegeneinander spielen. Sie sind eine Gesprächshilfe, kein Bauverbot.</p>
 <table class=ftable><tr><th>Bracket</th><th>Was ihr erwarten könnt</th><th>Deckbau-Regeln</th></tr>
@@ -4396,7 +4470,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <header id=top><h2>Manaschmiede</h2>
 <p class=wotc>Fan-Werkzeug für das Commander-Format von <b>Magic: The Gathering®</b> · Magic: The Gathering stammt von
 <a href="https://magic.wizards.com/de" target=_blank rel=noopener>Wizards of the Coast</a></p>
-<nav id=mainnav role=tablist><a href="#willkommen" data-v=willkommen>🏠 Willkommen</a><a href="#neu" data-v=neu class=navneu>🌱 Neu hier?</a><a href="#deck" data-v=deck>🛠 Deck bauen</a><a href="#gegner" data-v=gegner>⚔ Gegner &amp; Duell</a><a href="#decks" data-v=decks>📂 Meine Decks</a><a href="#galerie" data-v=galerie class=srvonly hidden>🌍 Galerie</a><a href="#sammlung" data-v=sammlung>📦 Sammlung</a><a href="#spieltisch" data-v=spieltisch>🎲 Spieltisch</a><a href="#suche" data-v=suche>🔎 Kartensuche</a><a href="#regeln" data-v=regeln>📖 Regeln</a></nav></header>
+<nav id=mainnav role=tablist><a href="#willkommen" data-v=willkommen>🏠 Willkommen</a><a href="#neu" data-v=neu class=navneu>🌱 Neu hier?</a><a href="#deck" data-v=deck>🛠 Deck bauen</a><a href="#gegner" data-v=gegner>⚔ Gegner &amp; Duell</a><a href="#decks" data-v=decks>📂 Meine Decks</a><a href="#galerie" data-v=galerie class=srvonly hidden>🌍 Galerie</a><a href="#precons" data-v=precons>🎁 Precons</a><a href="#sammlung" data-v=sammlung>📦 Sammlung</a><a href="#spieltisch" data-v=spieltisch>🎲 Spieltisch</a><a href="#suche" data-v=suche>🔎 Kartensuche</a><a href="#regeln" data-v=regeln>📖 Regeln</a></nav></header>
 <p class=info id=info></p>
 <div id=userbar class=hint></div>
 <div id=upd class=updbar>Prüfe auf Aktualisierungen ...</div>
@@ -4655,6 +4729,12 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <select id=galsort><option value=new>neueste zuerst</option><option value=likes>beliebteste zuerst</option><option value=eur>günstigste zuerst</option></select>
 <button class=primary id=galgo>🔎 Suchen</button></form>
 <div id=galres></div></section>
+<section id=v-precons class=page hidden><h3>🎁 Precons – fertige Commander-Decks <button type=button class=qh data-h=precons>?</button></h3>
+<p class=hint id=pcintro>Alle offiziellen Commander-Precons mit vollständiger Deckliste. Antippen zeigt die Liste; von dort kannst du das Deck im Editor öffnen, speichern, als Gegner nehmen oder – wenn du es gekauft hast – in deine Sammlung übernehmen.</p>
+<form id=pcf class=galf><input id=pcq placeholder="Suche: Deckname, Commander oder Set" size=36><span class=galci id=pcci></span>
+<select id=pcset title="Set"><option value="">alle Sets</option></select>
+<select id=pcsort><option value=new>neueste zuerst</option><option value=old>älteste zuerst</option><option value=eur>günstigste zuerst</option><option value=eurd>teuerste zuerst</option><option value=own>meiste Karten in meiner Sammlung</option></select></form>
+<div id=pcres></div></section>
 <section id=v-suche class=page hidden>
 <h3>Kartensuche <button type=button class=qh data-h=suche>?</button></h3>
 <form id=f autocomplete=off>
@@ -4690,7 +4770,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='45';
+const PAGE_VERSION='46';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -4720,12 +4800,12 @@ const UA_MOBILE=/Android|iPhone|iPod|Windows Phone|Mobile|CommanderDB-Android/i.
 function isPhone(){const w=window.innerWidth;if(layoutPref=='mobile')return true;if(layoutPref=='desktop')return false;
  return UA_MOBILE?w<1000:w<=760}
 const MOBMAIN=[['willkommen','🏠','Start'],['neu','🌱','Neu hier?'],['deck','🛠','Deck'],['gegner','⚔','Duell'],['spieltisch','🎲','Tisch']];
-const MOBMORE=[['decks','📂 Meine Decks'],['galerie','🌍 Galerie'],['sammlung','📦 Sammlung'],['suche','🔎 Kartensuche'],['regeln','📖 Regeln']];
+const MOBMORE=[['decks','📂 Meine Decks'],['galerie','🌍 Galerie'],['precons','🎁 Precons'],['sammlung','📦 Sammlung'],['suche','🔎 Kartensuche'],['regeln','📖 Regeln']];
 function buildMobNav(){const n=E('mobnav'),m=E('mobmore');if(!n||n.childElementCount)return;
  MOBMAIN.forEach(([v,i,t])=>{const a=$('a');a.href='#'+v;a.dataset.v=v;if(v=='neu')a.className='neu';const si=$('span',i);si.className='i';a.append(si,$('span',t));a.onclick=()=>m.classList.remove('open');n.append(a)});
  const mb=$('button');mb.type='button';mb.id='mobmorebtn';const si=$('span','☰');si.className='i';mb.append(si,$('span','Mehr'));
  mb.onclick=()=>m.classList.toggle('open');n.append(mb);
- MOBMORE.forEach(([v,t])=>{const a=$('a',t);a.href='#'+v;a.dataset.v=v;a.onclick=()=>m.classList.remove('open');m.append(a)});
+ MOBMORE.forEach(([v,t])=>{const a=$('a',t);a.href='#'+v;a.dataset.v=v;if(v=='galerie'){a.hidden=!(ME&&ME.server);MEP.then(x=>a.hidden=!x.server)}a.onclick=()=>m.classList.remove('open');m.append(a)});
  const hp=$('a','❓ Hilfe');hp.href='#';hp.onclick=e=>{e.preventDefault();m.classList.remove('open');E('helpbtn').click()};m.append(hp);
  markMobNav((location.hash||'#willkommen').slice(1))}
 function markMobNav(v){if(v=='start')v='deck';document.querySelectorAll('#mobnav a').forEach(a=>a.classList.toggle('on',a.dataset.v==v));
@@ -5331,6 +5411,53 @@ async function bracketBox(o,combos){o.id='brbox';o.innerHTML='';const ex=deck.ex
  row.append($('b','Mein Ziel-Bracket: '),sel,msg);res.append(row);cmp();
  if(!r.combos_checked){const bc=$('button',r.combo_error?'🔗 Combos erneut prüfen':'🔗 Combos jetzt prüfen');bc.type='button';bc.id='brcombos';bc.onclick=()=>{clearTimeout(BRT);bracketBox(o,true)};res.append(bc)}
  else{const sm=$('div','Combos geprüft mit Commander Spellbook'+(r.rules[3].count?'':' – keine spielentscheidende Zwei-Karten-Combo gefunden')+'.');sm.className='hint';sm.id='brcombook';res.append(sm)}}
+
+// ---- Precon-Übersicht
+const PC={ci:new Set(),data:null};
+async function pcInit(){const c=E('pcci');if(c.childElementCount)return pcRender();
+ ['W','U','B','R','G','C'].forEach(x=>{const b=$('button');b.type='button';b.dataset.c=x;b.className='pip p'+x;b.textContent=x=='C'?'◇':x;b.title={W:'Weiß',U:'Blau',B:'Schwarz',R:'Rot',G:'Grün',C:'farblos'}[x]+' (höchstens diese Farben)';
+  b.onclick=()=>{PC.ci.has(x)?PC.ci.delete(x):PC.ci.add(x);b.classList.toggle('on',PC.ci.has(x));pcRender()};c.append(b)});
+ E('pcf').onsubmit=e=>{e.preventDefault()};['pcq','pcset','pcsort'].forEach(i=>E(i).addEventListener(i=='pcq'?'input':'change',pcRender));
+ const o=E('pcres');P(o,'lade Precons …','hint');const r=await J('/api/precon_catalog');PC.data=r;
+ if(!r.loaded){o.innerHTML='';P(o,'Die Precon-Decklisten sind noch nicht geladen (einmalig ca. 30 MB von GitHub).','hint');
+  const b=$('button','Precon-Decklisten jetzt laden');b.type='button';b.className='primary';b.id='pcload';b.onclick=async()=>{b.disabled=true;b.textContent='Lade …';const x=await J('/api/load_precons',{});if(x.error){b.textContent=x.error;return}E('pcci').innerHTML='';pcInit()};o.append(b);return}
+ const sets=[...new Set(r.precons.map(p=>p.set))];sets.forEach(x=>{const op=$('option',x);op.value=x;E('pcset').append(op)});
+ if(r.has_collection&&!E('pcsort').dataset.d){E('pcsort').dataset.d=1}
+ pcRender()}
+function pcRender(){const o=E('pcres');const r=PC.data;if(!r||!r.loaded)return;o.innerHTML='';
+ const q=E('pcq').value.trim().toLowerCase(),st=E('pcset').value,so=E('pcsort').value;
+ let l=r.precons.filter(p=>(!q||(p.name+' '+p.commander+' '+p.set).toLowerCase().includes(q))&&(!st||p.set==st)
+  &&(!PC.ci.size||[...p.ci.replace('C','')].every(c=>PC.ci.has(c))&&(p.ci!='C'||PC.ci.has('C'))));
+ const srt={old:(a,b)=>a.date.localeCompare(b.date),eur:(a,b)=>a.eur-b.eur,eurd:(a,b)=>b.eur-a.eur,own:(a,b)=>(b.owned||0)-(a.owned||0)}[so];if(srt)l=[...l].sort(srt);
+ P(o,l.length+' von '+r.precons.length+' Precons'+(r.at?' · Stand der Decklisten: '+r.at:''),'hint');
+ if(!l.length)return;
+ const t=$('table');t.className='ftable pctab';t.id='pctable';o.append(t);
+ const hr=t.insertRow();['','Deck','Commander','Set','Wert','Bracket'].concat(r.has_collection?['hast']:[]).forEach((x,i)=>{const th=$('th',x);if(i==4||i==6)th.className='r';hr.append(th)});
+ let last=null;
+ l.forEach(p=>{if(so=='new'||so=='old'){if(p.set!=last){last=p.set;const sr=t.insertRow();sr.className='pcset';const c=sr.insertCell();c.colSpan=r.has_collection?7:6;c.append($('b',p.set),$('span',' · '+p.date))}}
+  const tr=t.insertRow();tr.dataset.id=p.id;tr.className='pcrow';tr.onclick=()=>pcOpen(p.id);
+  tr.insertCell().append(manaEl((p.ci||'C').split('').map(x=>'{'+x+'}').join('')));
+  const cn=tr.insertCell();cn.append($('b',p.name));tr.insertCell().textContent=p.commander;tr.insertCell().textContent=so=='new'||so=='old'?p.date:p.set;
+  const ce=tr.insertCell();ce.className='r';ce.textContent=fe(p.eur);tr.insertCell().append(brBadge('',p.bracket_est));
+  if(r.has_collection){const co=tr.insertCell();co.className='r';co.textContent=(p.owned||0)+' %'}})}
+async function pcOpen(id){const d=await J('/api/precon?id='+id);const meta=(PC.data&&PC.data.precons||[]).find(x=>x.id==id)||{};
+ const b=dlgOpen(d.error?'Precon':d.name);if(d.error){P(b,d.error,'warn');return}
+ const h=$('p');h.append(manaEl((d.ci||'C').split('').map(x=>'{'+x+'}').join('')),' ',$('b',d.commander),' · '+d.set+' · '+d.date+' · '+(meta.cards||'')+' Karten · ca. '+fe(meta.eur)+' ',brBadge('',meta.bracket_est));b.append(h);
+ if(meta.owned!=null)P(b,'Davon in deiner Sammlung: '+meta.owned+' % (ohne Standardländer).','hint');
+ const bar=$('div');bar.className='pcbar';const msg=$('div');msg.id='pcmsg';
+ const ed=$('button','✏ Im Deck-Editor öffnen');ed.type='button';ed.className='primary';ed.id='pcedit';ed.onclick=()=>{closeSwap();location.hash='#deck';useMine({name:d.name,commander:d.commander,list:d.export})};
+ const sv=$('button','💾 In Meine Decks speichern');sv.type='button';sv.id='pcsave';sv.onclick=async()=>{const x=await J('/api/deck_save',{name:d.name+' (Precon)',commander:d.commander,list:d.export,extra:'{}'});msg.textContent=x.error?'⚠ '+x.error:'✓ als „'+x.name+'“ gespeichert';msg.className=x.error?'warn':'ok';if(!x.error){sv.disabled=true;myDecks(x.decks)}};
+ const op=$('button','⚔ Als Gegner');op.type='button';op.id='pcopp';op.onclick=()=>{const has=deck&&!deck.error;if(has)closeSwap();setOpp({kind:'precon',id:id,name:d.name,commander:d.commander,set:d.set});if(!has){msg.textContent='✓ als Gegner gesetzt – jetzt ein eigenes Deck bauen oder laden, dann vergleichen oder in Forge spielen.';msg.className='ok'}};
+ const cp=$('button','📋 Liste kopieren');cp.type='button';cp.onclick=async()=>{await copyText(d.export);cp.textContent='✓ kopiert'};
+ const co=$('button','📥 Gekauft – in meine Sammlung');co.type='button';co.id='pccoll';co.title='Alle Karten dieses Precons zu deiner Sammlung hinzufügen';
+ co.onclick=async()=>{if(co.dataset.ok!='1'){co.dataset.ok='1';co.textContent='Wirklich alle '+(meta.cards||'')+' Karten hinzufügen?';return}
+  const x=await J('/api/precon_to_collection',{id:id});msg.textContent=x.error?'⚠ '+x.error:'✓ '+x.imported+' Karten in die Sammlung übernommen ('+x.imp_unique+' verschiedene).';msg.className=x.error?'warn':'ok';co.disabled=true;co.textContent='✓ übernommen';
+  const r2=await J('/api/precon_catalog');PC.data=r2;pcRender()};
+ bar.append(ed,' ',sv,' ',op,' ',cp,' ',co);b.append(bar,msg);
+ if(d.missing&&d.missing.length)P(b,'Nicht in der Kartendatenbank gefunden: '+d.missing.join(', '),'warn');
+ const w=$('div');w.className='pclist';w.id='pclist';b.append(w);
+ d.groups.forEach(g=>{const s=$('div');s.className='pcg';s.append($('h4',g.name+' ('+g.cards.reduce((a,c)=>a+c.qty,0)+')'));
+  g.cards.forEach(c=>{const r=$('div');r.append(c.qty+'× ',cardName(c.name,c.scryfall,c.image));if(c.gc){const x=$('span',' GC');x.className='gcm';x.title='Game Changer';r.append(x)}s.append(r)});w.append(s)})}
 
 // Probehand und Starthand-Statistik (London-Mulligan)
 function libraryCards(){return deck.groups.filter(g=>g.name!='Commander').flatMap(g=>g.cards.flatMap(c=>Array(c.qty).fill(c)))}
@@ -6323,13 +6450,14 @@ async function rules(q){const o=E('rres');o.textContent='Suche ...';
   d.append(b);richText(d,x.text,words);o.append(d)})}
 E('rf').onsubmit=e=>{e.preventDefault();rules(E('rq').value.trim())};
 // Tabs der Seite (über die Adresse #name erreichbar, Zurück-Taste funktioniert)
-let rulesLoaded=false;const PAGES=['willkommen','neu','deck','gegner','decks','galerie','sammlung','spieltisch','suche','regeln'];
+let rulesLoaded=false;const PAGES=['willkommen','neu','deck','gegner','decks','galerie','precons','sammlung','spieltisch','suche','regeln'];
 function showView(v){if(v=='start')v='deck';if(!PAGES.includes(v))v='willkommen';
  document.querySelectorAll('section.page').forEach(x=>x.hidden=x.id!='v-'+v);
  document.querySelectorAll('#mainnav a[data-v]').forEach(a=>{a.classList.toggle('on',a.dataset.v==v);a.setAttribute('aria-selected',a.dataset.v==v)});markMobNav(v);
  document.body.dataset.page=v;
  if(v=='regeln'&&!rulesLoaded){rulesLoaded=true;rules('')}
  if(v=='galerie'){galInit();galSearch()}
+ if(v=='precons')pcInit();
  if(v=='spieltisch'){tableSetup();tableGame();J('/api/games').then(tableStats)}
  if(v=='gegner'){const ok=!!(deck&&!deck.error);E('nogegner').hidden=ok;E('cmpbox').style.display=ok?'block':'none'}}
 function goTab(v){if(location.hash!='#'+v)location.hash=v;else showView(v)}
@@ -6960,6 +7088,10 @@ class H(BaseHTTPRequestHandler):
                 return precon_list(con, g("q"), g("ci").upper()) if has_precons(con) else []
             if path == "/api/precon":
                 return precon_view(p)
+            if path == "/api/precon_catalog":
+                return precon_catalog(con, uid)
+            if path == "/api/precon_to_collection":
+                return precon_to_collection(con, int(g("id") or 0), uid)
             if path == "/api/alternatives":
                 return alternatives(p)
             if path == "/api/combos":
