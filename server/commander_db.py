@@ -27,6 +27,8 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 45: Fehler behoben: „Combos mitprüfen“ brach ab, sobald Commander Spellbook Combos lieferte. Die Bracket-Einstufung
+            prüft Combos jetzt automatisch mit (Internet), sobald ein Deck geladen ist; ohne Verbindung bleibt die Einstufung ohne Combos.
 Version 44: Bracket-Einstufung je Deck nach den offiziellen Regeln (Game Changer, Massen-Landzerstörung, Extra-Züge,
             Zwei-Karten-Combos) mit Begründung, eigenem Ziel-Bracket, Anzeige in Meine Decks, Galerie (mit Filter) und
             Teilen-Seite sowie ausführlicher Erklärung der fünf Brackets in der Hilfe.
@@ -98,7 +100,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "44"
+APP_VERSION = "45"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -3287,7 +3289,8 @@ def compare(p):
 
 
 # ---------------------------------------------------------------- Combos (Commander Spellbook)
-SPELLBOOK = "https://backend.commanderspellbook.com/find-my-combos"
+SPELLBOOK_BASE = (ENV("CDB_SPELLBOOK_URL", "") or "https://backend.commanderspellbook.com").rstrip("/")  # umleitbar für Tests
+SPELLBOOK = SPELLBOOK_BASE + "/find-my-combos"
 BRACKET_TAG = {"R": "Ruthless", "S": "Spicy", "P": "Powerful", "O": "Oddball", "C": "Core", "E": "Exhibition", "B": "gebannt"}
 
 
@@ -3373,8 +3376,9 @@ def bracket_check(con, entries, commander_names, combos=None):
     two, early = [], []
     if combos and combos.get("combos") is not None:
         for c in combos["combos"]:
-            if c.get("win") and len(c["cards"]) <= 2:
-                two.append({"cards": c["cards"], "median": c.get("median"), "result": c.get("result", "")})
+            names = [x["name"] if isinstance(x, dict) else str(x) for x in c.get("cards") or []]
+            if c.get("win") and len(names) <= 2:
+                two.append({"cards": names, "median": c.get("median"), "result": ", ".join(c.get("produces") or [])})
                 if (c.get("median") or 99) < 6:
                     early.append(two[-1])
     rules = [
@@ -3410,7 +3414,8 @@ def bracket_check(con, entries, commander_names, combos=None):
            "note": note, "rules": rules, "combos_checked": rules[3]["checked"], "illegal": illegal,
            "spellbook": (combos or {}).get("spellbook") if combos else None}
     if not rules[3]["checked"]:
-        out["note"] += " Zwei-Karten-Combos sind noch nicht geprüft (Knopf „Combos mitprüfen“, braucht Internet)."
+        out["note"] += (" Zwei-Karten-Combos konnten nicht geprüft werden (Commander Spellbook nicht erreichbar)." if combos is not None
+                        else " Zwei-Karten-Combos werden gerade bei Commander Spellbook geprüft …")
     return out
 
 
@@ -3442,7 +3447,7 @@ def bracket_quick(con, commander, lst):
 
 
 
-ESTIMATE_URL = "https://backend.commanderspellbook.com/estimate-bracket"
+ESTIMATE_URL = SPELLBOOK_BASE + "/estimate-bracket"
 
 
 def estimate_bracket(con, commanders, main):
@@ -3903,7 +3908,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 44)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 45)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -4290,7 +4295,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <ul><li><b>Game Changer:</b> eine offizielle Liste besonders spielstarker Karten (zurzeit 53, Stand 9. Februar 2026, z. B. Rhystic Study, Smothering Tithe, Demonic Tutor). Sie sind nicht verboten, bestimmen aber das Bracket. Die Kennzeichnung kommt mit den Kartendaten von Scryfall und ist nach jeder Aktualisierung aktuell.</li>
 <li><b>Massen-Landzerstörung / Mana-Entzug:</b> Karten wie Armageddon oder „Länder enttappen nicht“ – in Bracket 1–3 nicht vorgesehen.</li>
 <li><b>Extra-Züge:</b> wenige sind ab Bracket 2 in Ordnung, „Ketten“ (mehrere hintereinander oder in Schleife) erst ab Bracket 4. Das Programm wertet mehr als 3 Extra-Zug-Karten als Kette.</li>
-<li><b>Zwei-Karten-Combos:</b> zwei Karten, die zusammen das Spiel entscheiden (z. B. unendlich Schaden). Bracket 3 erlaubt sie nur, wenn sie nicht schon vor etwa Zug 6 zusammenkommen. Geprüft wird mit „🔗 Combos mitprüfen“ über Commander Spellbook (braucht Internet); der früheste Zug ist eine Schätzung aus vielen gezogenen Probehänden.</li>
+<li><b>Zwei-Karten-Combos:</b> zwei Karten, die zusammen das Spiel entscheiden (z. B. unendlich Schaden). Bracket 3 erlaubt sie nur, wenn sie nicht schon vor etwa Zug 6 zusammenkommen. Die Manaschmiede prüft das automatisch über Commander Spellbook, sobald ein Deck geladen ist (braucht Internet; ohne Verbindung bleibt dieser Punkt offen und lässt sich mit „🔗 Combos erneut prüfen“ nachholen). Der früheste Zug ist eine Schätzung aus vielen gezogenen Probehänden.</li>
 <li><b>So stuft die Manaschmiede ein:</b> In der Deckansicht zeigt „🎚 Bracket-Einstufung“ für jede Regel, was gefunden wurde, und daraus das niedrigste mögliche Bracket. Was ein Programm nicht sehen kann, bleibt offen: ob ein Deck ohne eingeschränkte Karten Bracket 1 oder 2 ist (Absicht) und ob ein starkes Deck 4 oder 5 ist (Turnier-Metagame). Deshalb legst du dein <b>Ziel-Bracket</b> selbst fest; es wird mit dem Deck gespeichert, steht als „B3“ in „Meine Decks“, in der Galerie (auch als Filter) und auf der Teilen-Seite. Ohne Angabe steht dort die Schätzung „≈B3“. Enthält das Deck Karten über dem gewählten Ziel, erscheint ⚠ mit den betreffenden Karten.</li>
 <li><b>Am Tisch:</b> Sagt euer Bracket an und nennt Besonderheiten (Combos, Extra-Züge, starke Commander). Der offizielle Stand steht bei Wizards: <a href="https://magic.wizards.com/en/news/announcements/introducing-commander-brackets-beta" target=_blank rel=noopener>Einführung</a>, <a href="https://magic.wizards.com/en/news/announcements/commander-brackets-beta-update-february-9-2026" target=_blank rel=noopener>letzte Aktualisierung (9.2.2026)</a>.</li></ul>
 <h3 id=h-galerie>Deck-Galerie (nur im Server-Betrieb)</h3>
@@ -4685,7 +4690,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='44';
+const PAGE_VERSION='45';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -5293,10 +5298,17 @@ function brBadge(tgt,est){const s=$('span');s.className='brb'+(tgt?' brt':'');
  else if(est){s.textContent='≈B'+est;s.title='Bracket-Schätzung des Programms (ohne Combo-Prüfung): '+est}else s.textContent='–';
  if(tgt&&est){const lo=parseInt(est);if(lo>parseInt(tgt)){s.classList.add('brwarn');s.textContent+=' ⚠';s.title+=' – das Deck enthält Karten über diesem Bracket'}}
  return s}
-async function bracketBox(o,combos){o.id='brbox';o.innerHTML='';const hh=$('h4','🎚 Bracket-Einstufung');hh.append(qBtn('brackets'));o.append(hh);
+let BRT=null;
+async function bracketBox(o,combos){o.id='brbox';o.innerHTML='';const ex=deck.export;
+ // Combos automatisch mitprüfen: einmal je Deckstand, kurz verzögert (bei schnellem Bearbeiten nur der letzte Stand)
+ const same=deck.brCombos&&deck.brCombos.list==ex;
+ if(!combos&&same&&!deck.brCombos.err)combos='cached';
+ else if(!combos&&!same&&!deck.error){clearTimeout(BRT);BRT=setTimeout(()=>{const b=E('brbox');if(b&&deck.export==ex)bracketBox(b,true)},deck.brCombos?4000:800)}const hh=$('h4','🎚 Bracket-Einstufung');hh.append(qBtn('brackets'));o.append(hh);
  const res=$('div');o.append(res);P(res,combos?'prüfe Combos bei Commander Spellbook …':'prüfe …','hint');
- const r=await J('/api/bracket',{list:deck.export,commander:deck.commander||'',combos:combos?1:0});res.innerHTML='';
+ const r=await J('/api/bracket',{list:ex,commander:deck.commander||'',combos:combos?1:0});
+ if(deck.export!=ex)return;res.innerHTML='';
  if(r.error){P(res,r.error,'warn');return}
+ if(combos)deck.brCombos={list:ex,err:!!r.combo_error};
  const big=$('div');big.className='brbig';big.id='brresult';big.append($('b','Bracket '+r.bracket),' – '+r.name);res.append(big);
  P(res,r.note,'hint');
  const t=$('table');t.className='ftable brtab';t.id='brrules';res.append(t);const hr=t.insertRow();['Regel','gefunden','erlaubt ab Bracket','Karten'].forEach(x=>hr.append($('th',x)));
@@ -5317,7 +5329,8 @@ async function bracketBox(o,combos){o.id='brbox';o.innerHTML='';const hh=$('h4',
   else{msg.className='ok';msg.textContent=' ✓ passt zu den prüfbaren Regeln'+(r.combos_checked?'':' (Combos noch ungeprüft)')+'.'}};
  sel.onchange=()=>{deck.bracketTarget=sel.value;cmp();deck.msg='Ziel-Bracket gesetzt – mit „Speichern“ übernehmen.'};
  row.append($('b','Mein Ziel-Bracket: '),sel,msg);res.append(row);cmp();
- if(!combos){const bc=$('button','🔗 Combos mitprüfen (Commander Spellbook)');bc.type='button';bc.id='brcombos';bc.onclick=()=>bracketBox(o,true);res.append(bc)}}
+ if(!r.combos_checked){const bc=$('button',r.combo_error?'🔗 Combos erneut prüfen':'🔗 Combos jetzt prüfen');bc.type='button';bc.id='brcombos';bc.onclick=()=>{clearTimeout(BRT);bracketBox(o,true)};res.append(bc)}
+ else{const sm=$('div','Combos geprüft mit Commander Spellbook'+(r.rules[3].count?'':' – keine spielentscheidende Zwei-Karten-Combo gefunden')+'.');sm.className='hint';sm.id='brcombook';res.append(sm)}}
 
 // Probehand und Starthand-Statistik (London-Mulligan)
 function libraryCards(){return deck.groups.filter(g=>g.name!='Commander').flatMap(g=>g.cards.flatMap(c=>Array(c.qty).fill(c)))}
