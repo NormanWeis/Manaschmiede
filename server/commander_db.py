@@ -27,6 +27,9 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 56: Kaufassistent (Sammlung, auch „Kauf planen“ im Deck): fehlende Karten für ein Deck, alle Decks oder die Wunschliste;
+            Budget mit Vorrang für mehrfach genutzte Karten, Druck und Foil je Karte, Aufteilung Cardmarket/Trader-online,
+            Cardmarket-Wants für beliebige Drucke, Precon-Check, CSV, „gekauft“ übernimmt Karten mit Druck in die Sammlung.
 Version 55: Messlabor mit Umfang-Stufen (Schnell, Standard, Gründlich, Sehr gründlich, eigene Einstellung), jeweils mit ungefährer
             Dauer passend zu Varianten und Gegnern; Stufen über der Partien-Grenze sind gesperrt.
 Version 54: Messlabor (Gegner & Duell): Kartentausch-Varianten oder KI-Profile per Forge gegen ein Gegnerfeld messen, gleicher
@@ -127,7 +130,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "55"
+APP_VERSION = "56"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -3492,6 +3495,7 @@ td.r,th.r{text-align:right}.hint{opacity:.75;font-size:14px}.err{color:#ff8a72}f
 #gnbox .gnpod{margin:6px 0;padding:8px;border:1px solid #7a5c2e55;border-radius:8px}#gnbox .gnpod button{margin:3px}#gnbox button.gnwin{background:linear-gradient(#f1d27a,#b8891f);color:#1b140e;font-weight:bold}
 #gnbox .gnqr{width:180px;background:#fff;border-radius:6px;margin:6px 0}#gnbox .gnp{margin:3px 0}#gnbox .gnhead{font-size:1.15em;margin:6px 0}
 #labwrap{margin-top:14px}#labwrap .labvar{margin:3px 0}#labwrap progress{width:260px;vertical-align:middle}#labwrap .labrun{margin:4px 0}#labres td.w{background:#e3f1e3;font-weight:bold}#labres td.l{color:#b5432f}
+#buybox .buysum div{margin:2px 0}#buytab tr.buyover td{background:#f9eeda55}#buytab tr.buyskip td{opacity:.45;text-decoration:line-through}#buytab td div{font-size:12px;opacity:.75}#buybox .buypc{margin:6px 0}
 </style>
 <h1 id=t>Spielabend</h1><div class=hint id=s></div><div id=m class=err></div><div id=r></div><h2>Rangliste</h2><table id=st></table><div id=se></div>
 <footer>Manaschmiede · <a href=/impressum>Impressum</a> · <a href=/datenschutz>Datenschutz</a></footer>
@@ -5160,6 +5164,221 @@ def duel_status(p, uid=0):
     return out
 
 
+# ---------------------------------------------------------------- Kaufassistent: fehlende Karten planen, je Händler aufteilen, Budget, Precon-Check
+BUY_SHOPS = ("cm", "to")
+
+
+def buy_tables(con):
+    con.execute("CREATE TABLE IF NOT EXISTS buy_prefs(owner INTEGER, name TEXT, set_code TEXT DEFAULT '', number TEXT DEFAULT '', "
+                "foil INTEGER DEFAULT 0, shop TEXT DEFAULT '', skip INTEGER DEFAULT 0, PRIMARY KEY(owner, name))")
+
+
+def buy_need(con, p, uid):
+    """Bedarf je Quelle: deck (Liste), deck_id, shopping (alle Decks), wish (Wunschliste). -> ({name: menge}, {name: [decks]}, titel)"""
+    g = lambda k: (p.get(k) or [""])[0]
+    src = g("source") or "shopping"
+    own = owned_map(con, uid) if g("owned") != "0" else {}
+    need, where, title = {}, {}, ""
+    if src == "shopping":
+        sl = shopping_list(con, uid, share=g("share") != "0")
+        for x in sl["items"]:
+            q = x["missing"] if g("owned") != "0" else x["need"]
+            need[x["name"]] = q
+            where[x["name"]] = x["decks"]
+        return need, where, "Alle Decks", sl["decks"]
+    if src == "wish":
+        wish_table(con)
+        for n, q in con.execute("SELECT name, qty FROM wishlist WHERE owner = ?", (uid,)):
+            m = q - own.get(n, 0) if g("owned") != "0" else q
+            if m > 0:
+                need[n] = m
+                where[n] = ["Wunschliste"]
+        return need, where, "Wunschliste", 0
+    if src == "deck_id":
+        d = deck_get(con, int(g("deck_id") or 0), uid)
+        if not d:
+            raise ValueError("Deck nicht gefunden.")
+        text, cmd, title = d["list"], d["commander"] or "", d["name"]
+    else:
+        text, cmd, title = g("list"), g("commander"), g("deck_name") or "Aktuelles Deck"
+    cnt = dict(list_counts(text))
+    for c in [x.strip() for x in (cmd or "").split(" + ") if x.strip()]:
+        cnt.setdefault(c, 1)
+    for n, q in cnt.items():
+        if is_basic(con, n):
+            continue
+        m = q - own.get(n, 0)
+        if m > 0:
+            need[n] = m
+            where[n] = [title]
+    return need, where, title, 1
+
+
+def buy_plan(p, uid=0):
+    g = lambda k: (p.get(k) or [""])[0]
+    con = db()
+    con.row_factory = sqlite3.Row
+    buy_tables(con)
+    inv_tables(con)
+    try:
+        need, where, title, ndecks = buy_need(con, p, uid)
+    except ValueError as e:
+        return {"error": str(e)}
+    default_shop = g("default_shop") if g("default_shop") in BUY_SHOPS else "cm"
+    try:
+        budget = float(g("budget").replace(",", ".")) if g("budget").strip() else 0.0
+    except ValueError:
+        budget = 0.0
+    prefs = {r["name"]: r for r in con.execute("SELECT * FROM buy_prefs WHERE owner = ?", (uid,))}
+    cheap = eur_map(con, need)
+    items = []
+    for n, q in need.items():
+        pf = prefs.get(n)
+        pr = None
+        if pf is not None and pf["set_code"]:
+            pr = con.execute("SELECT * FROM prints WHERE set_code = ? AND number = ?", (pf["set_code"], pf["number"])).fetchone()
+        foil = int(pf["foil"]) if pf is not None else 0
+        price, src = print_price(con, pr, foil) if pr is not None else (None, None)
+        if price is None and not (pr is not None and foil):
+            price, src = cheap.get(n), "cheapest" if cheap.get(n) is not None else None
+        cm = CM_LINK.format(pr["cm_id"]) if pr is not None and pr["cm_id"] else cm_link(n)
+        if cm and foil:
+            cm += "&isFoil=Y"
+        items.append({"name": n, "qty": q, "decks": where.get(n, []), "print": {"set_code": pr["set_code"], "number": pr["number"],
+                      "set_name": pr["set_name"], "image": pr["image"]} if pr is not None else None, "foil": foil,
+                      "shop": (pf["shop"] if pf is not None and pf["shop"] in BUY_SHOPS else default_shop),
+                      "skip": bool(pf["skip"]) if pf is not None else False, "price": price, "src": src,
+                      "cheapest": cheap.get(n), "total": round(price * q, 2) if price is not None else None, "cm": cm})
+    # Budget: Karten in wenigen Decks zuletzt, sonst die günstigsten zuerst – so passen möglichst viele Karten hinein
+    order = sorted([x for x in items if not x["skip"]], key=lambda x: (-len(x["decks"]), x["total"] if x["total"] is not None else 1e9, x["name"]))
+    spent = 0.0
+    for x in order:
+        t = x["total"] or 0
+        x["fits"] = not budget or spent + t <= budget + 1e-9
+        if x["fits"]:
+            spent += t
+    for x in items:
+        if x["skip"]:
+            x["fits"] = False
+    items.sort(key=lambda x: (x["skip"], not x["fits"], x["shop"], -(x["total"] or 0), x["name"]))
+    act = [x for x in items if not x["skip"]]
+    shops = {}
+    for x in act:
+        s = shops.setdefault(x["shop"], {"cards": 0, "total": 0.0, "noprice": 0})
+        s["cards"] += x["qty"]
+        s["total"] = round(s["total"] + (x["total"] or 0), 2)
+        s["noprice"] += int(x["price"] is None)
+    total = round(sum(x["total"] or 0 for x in act), 2)
+    # Cardmarket-Wants: beliebiger Druck als Liste zum Einfügen, bestimmter Druck/Foil einzeln über Produktlinks
+    cm_any = [x for x in act if x["shop"] == "cm" and not x["print"] and not x["foil"] and x["fits"]]
+    cm_spec = [x for x in act if x["shop"] == "cm" and (x["print"] or x["foil"]) and x["fits"]]
+    out = {"title": title, "decks": ndecks, "items": items, "total": total, "budget": budget, "in_budget": round(spent, 2),
+           "over": round(max(0.0, total - budget), 2) if budget else 0.0, "shops": shops,
+           "cm_any_text": "\n".join(f"{x['qty']} {x['name']}" for x in cm_any), "cm_specific": len(cm_spec),
+           "noprice": sum(1 for x in act if x["price"] is None), "precons": buy_precons(con, {x["name"]: x for x in act})}
+    return out
+
+
+def buy_precons(con, items):
+    """Precons, die viele der fehlenden Karten enthalten – manchmal günstiger als Einzelkarten."""
+    if not items or not has_precons(con):
+        return []
+    names = list(items)
+    hit = {}
+    for i in range(0, len(names), 900):
+        part = names[i:i + 900]
+        for pid, n in con.execute(f"SELECT precon_id, name FROM precon_cards WHERE name IN ({','.join('?' * len(part))})", part):
+            hit.setdefault(pid, set()).add(n)
+    out = []
+    for pid, cov in hit.items():
+        value = sum((items[n]["cheapest"] or 0) * min(items[n]["qty"], 1) for n in cov)
+        if len(cov) < 3 and value < 10:
+            continue
+        pr = con.execute("SELECT id, name, set_name, commander FROM precons WHERE id = ?", (pid,)).fetchone()
+        if not pr:
+            continue
+        allv = con.execute("SELECT sum(c.qty * coalesce(CAST(k.eur AS REAL), 0)) FROM precon_cards c LEFT JOIN cards k ON k.name = c.name "
+                           "WHERE c.precon_id = ?", (pid,)).fetchone()[0] or 0
+        out.append({"id": pr["id"], "name": pr["name"], "set": pr["set_name"], "commander": pr["commander"], "cards": sorted(cov),
+                    "covered": len(cov), "value": round(value, 2), "precon_value": round(allv, 2)})
+    out.sort(key=lambda x: (-x["value"], -x["covered"]))
+    return out[:5]
+
+
+def buy_set(p, uid=0):
+    """Wahl je Karte merken: Druck (set_code/number oder leer = beliebig), Foil, Händler, überspringen."""
+    g = lambda k: (p.get(k) or [""])[0]
+    con = db()
+    buy_tables(con)
+    name = g("name")
+    if not name:
+        return {"error": "Karte fehlt."}
+    cur = con.execute("SELECT set_code, number, foil, shop, skip FROM buy_prefs WHERE owner = ? AND name = ?", (uid, name)).fetchone()
+    v = dict(zip(("set_code", "number", "foil", "shop", "skip"), cur or ("", "", 0, "", 0)))
+    if "set_code" in p:
+        v["set_code"], v["number"] = g("set_code").upper(), g("number")
+    if "foil" in p:
+        v["foil"] = 1 if g("foil") == "1" else 0
+    if "shop" in p:
+        v["shop"] = g("shop") if g("shop") in BUY_SHOPS else ""
+    if "skip" in p:
+        v["skip"] = 1 if g("skip") == "1" else 0
+    con.execute("INSERT OR REPLACE INTO buy_prefs VALUES(?,?,?,?,?,?,?)", (uid, name, v["set_code"], v["number"], v["foil"], v["shop"], v["skip"]))
+    con.commit()
+    return buy_plan(p, uid)
+
+
+def buy_done(p, uid=0):
+    """Gekaufte Karten in die Sammlung übernehmen (mit gewähltem Druck), Wunschliste und gemerkte Wahl aufräumen."""
+    g = lambda k: (p.get(k) or [""])[0]
+    try:
+        got = json.loads(g("items") or "[]")
+        assert isinstance(got, list)
+    except Exception:
+        return {"error": "Ungültige Auswahl."}
+    con = db()
+    con.row_factory = sqlite3.Row
+    buy_tables(con)
+    wish_table(con)
+    n = 0
+    for it in got[:500]:
+        name = str(it.get("name") or "")
+        q = int(it.get("qty") or 1)
+        if not name or q <= 0 or not con.execute("SELECT 1 FROM cards WHERE name = ?", (name,)).fetchone():
+            continue
+        inv_add(con, uid, {"name": name, "qty": q, "set_code": it.get("set_code") or "", "number": it.get("number") or "",
+                           "foil": 1 if it.get("foil") else 0, "cond": "", "lang": ""})
+        w = con.execute("SELECT qty FROM wishlist WHERE owner = ? AND name = ?", (uid, name)).fetchone()
+        if w:
+            if w[0] <= q:
+                con.execute("DELETE FROM wishlist WHERE owner = ? AND name = ?", (uid, name))
+            else:
+                con.execute("UPDATE wishlist SET qty = qty - ? WHERE owner = ? AND name = ?", (q, uid, name))
+        con.execute("DELETE FROM buy_prefs WHERE owner = ? AND name = ?", (uid, name))
+        n += q
+    con.commit()
+    out = buy_plan(p, uid)
+    out["added"] = n
+    return out
+
+
+def buy_csv(p, uid=0):
+    r = buy_plan(p, uid)
+    if r.get("error"):
+        return r
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Anzahl", "Karte", "Edition", "Nummer", "Foil", "Händler", "Preis je Stück (EUR)", "Summe (EUR)", "Im Budget", "Decks", "Link"])
+    for x in r["items"]:
+        if x["skip"]:
+            continue
+        pr = x["print"] or {}
+        w.writerow([x["qty"], x["name"], pr.get("set_code", ""), pr.get("number", ""), "ja" if x["foil"] else "", {"cm": "Cardmarket", "to": "Trader-online"}[x["shop"]],
+                    f"{x['price']:.2f}".replace(".", ",") if x["price"] is not None else "", f"{x['total']:.2f}".replace(".", ",") if x["total"] is not None else "",
+                    "ja" if x["fits"] else "nein", ", ".join(x["decks"]), x["cm"] or ""])
+    return {"csv": buf.getvalue(), "file": "Kaufplan.csv"}
+
+
 # ---------------------------------------------------------------- Messlabor: Deckvarianten und KI-Piloten per Forge messen
 MAX_LAB_GAMES = max(4, int(ENV("CDB_MAX_LAB_GAMES", "200" if SERVER else "600")))
 LAB_PROFILES = ("Default", "Cautious", "Reckless", "Experimental", "Hard", "Hardest")
@@ -5526,7 +5745,7 @@ def lab_api(path, p, uid=0):
     return {"error": "Unbekannte Aktion."}
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 55)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 56)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -6321,6 +6540,9 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <p class=hint>Welche Karten fehlen dir für alle gespeicherten Decks zusammen? Standardländer zählen nicht.</p>
 <label><input type=checkbox id=shopshare checked> Karten wandern zwischen Decks (sonst braucht jedes Deck eigene Exemplare)</label>
 <button type=button class=primary id=shopgo>Einkaufsliste berechnen</button><div id=shopres></div></details>
+<details class=subbox id=buybox><summary><b>🧭 Kaufassistent</b> <span class=hint>Budget, Druck &amp; Foil, Aufteilung auf Händler, Precon-Check</span></summary>
+<p class=hint>Plant den Kauf fehlender Karten: für ein Deck, alle Decks oder die Wunschliste. Je Karte Druck, Foil und Händler wählbar; gekaufte Karten landen mit dem gewählten Druck in der Sammlung.</p>
+<div id=buyctl></div><div id=buyres></div></details>
 <details class=subbox id=wishbox><summary><b>⭐ Wunschliste &amp; Preisalarm</b> <span class=hint id=wishsum></span></summary>
 <p class=hint>Karten, die du kaufen möchtest. Mit Zielpreis erscheint auf der Startseite ein Hinweis, sobald der Preis darunter fällt (geprüft bei jeder Kartenaktualisierung).</p>
 <div class=wishadd><input id=wishname placeholder="Karte, z. B. Sol Ring" size=28><input id=wishqty size=3 value=1 inputmode=numeric title="Anzahl">
@@ -6400,7 +6622,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='55';
+const PAGE_VERSION='56';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -6974,6 +7196,8 @@ async function budgetBox(o){const h=$('h4','💸 Budget-Tausch');o.append(h);
     bt.onclick=()=>{for(const g of deck.groups){const ci=g.cards.findIndex(c=>c.name==x.name);if(ci>=0){markOut(x.name);g.cards[ci]=Object.assign({},a,{qty:g.cards[ci].qty,swapped:true});recalc();return}}};d.append(bt,' ')});
    const w=$('div',x.reason);w.className='hint';d.append(w);res.append(d)});P(res,r.hint,'hint')}}
 E('shopgo').onclick=shopCalc;
+E('buybox').addEventListener('toggle',()=>{if(E('buybox').open&&!E('buyctl').firstChild)buyInit()});
+
 E('wishgo').onclick=async()=>{const r=await J('/api/wish_add',{text:(E('wishqty').value||'1')+' '+E('wishname').value,target:E('wishtarget').value});if(!r.error){E('wishname').value='';E('wishtarget').value=''}wishShow(r)};
 E('folderadd').onclick=()=>folderPut('add');E('folderrem').onclick=()=>folderPut('remove');
 E('wishbox').addEventListener('toggle',()=>{if(E('wishbox').open)J('/api/wishlist').then(wishShow)});
@@ -7549,7 +7773,8 @@ async function ownBox(o){const r=await J('/api/ownership',{list:deck.export,comm
  b.append($('b','Sammlung: '),String(r.percent)+' % des Decks besitzt du'+(r.missing.length?' · es fehlen '+r.missing.length+' Karten (ca. '+r.missing_eur.toFixed(2).replace('.',',')+' €)':' · alles vorhanden'));
  if(r.shared.length)P(b,'Schon in anderen Decks verbaut (nicht genug Exemplare frei): '+r.shared.join(', '),'hint');
  if(r.missing.length){const bt=$('button','Fehlende Karten kopieren');bt.type='button';bt.onclick=async()=>{await copyText(r.missing.map(n=>'1 '+n).join('\\n'));bt.textContent='✓ kopiert'};
-  const bw=$('button','⭐ Fehlende auf die Wunschliste');bw.type='button';bw.id='ownwish';bw.onclick=async()=>{const x=await J('/api/wish_add',{text:r.missing.map(n=>'1 '+n).join('\\n')});bw.textContent='✓ '+x.added+' auf der Wunschliste'};b.append(bt,' ',bw)}
+  const bk=$('button','🧭 Kauf planen');bk.type='button';bk.id='ownbuy';bk.onclick=async()=>{location.hash='#sammlung';await new Promise(r=>setTimeout(r,300));const bb=E('buybox');bb.open=true;await buyInit({source:'deck'});bb.scrollIntoView({behavior:'smooth'})};
+  const bw=$('button','⭐ Fehlende auf die Wunschliste');bw.type='button';bw.id='ownwish';bw.onclick=async()=>{const x=await J('/api/wish_add',{text:r.missing.map(n=>'1 '+n).join('\\n')});bw.textContent='✓ '+x.added+' auf der Wunschliste'};b.append(bt,' ',bk,' ',bw)}
  document.querySelectorAll('#out [data-name]:not(.stc)').forEach(el=>{const c=r.cards[el.dataset.name];if(!c||c.basic)return;
   const t=$('span',c.owned?(c.free?' ✓':' ⚠ auch in '+c.other.join(', ')):' ✗ fehlt');t.className=c.owned?(c.free?'tag':'hint'):'warn';
   t.title=c.owned?c.owned+'× in deiner Sammlung':'nicht in deiner Sammlung';el.append(t)})}
@@ -7857,6 +8082,82 @@ async function duelBox(){const gen=++DUELGEN;const o=E('duel');o.innerHTML='';o.
    if(s.done){clearInterval(duelTimer);go.disabled=false;stop.remove()}};
   duelTimer=setInterval(poll,2500);poll()};
  labBox(o,gen)}
+// ---------- Kaufassistent: Bedarf je Händler, Druck/Foil, Budget, Precon-Check, gekauft → Sammlung
+let BUY=null,BUYP=null;
+const eur=v=>v==null?'–':v.toFixed(2).replace('.',',')+' €',nK=n=>n+(n==1?' Karte':' Karten');
+async function buyInit(pre){const box=E('buybox');if(!box)return;const c=E('buyctl');c.innerHTML='';
+ const src=$('select');src.id='buysrc';src.append(new Option('Alle gespeicherten Decks','shopping'),new Option('Wunschliste','wish'));
+ if(typeof deck!='undefined'&&deck&&deck.export)src.append(new Option('Deck im Editor: '+(deck.name||deck.commander||'ohne Namen'),'deck'));
+ const dl=await J('/api/decks');(Array.isArray(dl)?dl:(dl.decks||[])).forEach(d=>src.append(new Option('Deck: '+d.name,'deck_id:'+d.id)));
+ const bud=$('input');bud.id='buybudget';bud.size=6;bud.placeholder='z. B. 50';bud.inputMode='decimal';
+ const shop=$('select');shop.id='buyshop';shop.append(new Option('Cardmarket','cm'),new Option('Trader-online','to'));
+ const own=$('input');own.type='checkbox';own.id='buyowned';own.checked=true;const ol=$('label');ol.append(own,' Eigene Sammlung abziehen');
+ const go=$('button','🧭 Kaufplan erstellen');go.type='button';go.className='primary';go.id='buygo';
+ c.append('Was kaufen? ',src,'  Budget (€, optional): ',bud,'  Standard-Händler: ',shop,' ',ol,' ',go);
+ try{const s=JSON.parse(localStorage.getItem('buyset')||'{}');if(s.budget)bud.value=s.budget;if(s.shop)shop.value=s.shop}catch(e){}
+ if(pre&&pre.source){src.value=pre.source}
+ go.onclick=()=>{try{localStorage.setItem('buyset',JSON.stringify({budget:bud.value,shop:shop.value}))}catch(e){}buyLoad()};
+ if(pre)buyLoad()}
+function buyParams(){const v=E('buysrc').value;const p={budget:E('buybudget').value,default_shop:E('buyshop').value,owned:E('buyowned').checked?1:0};
+ if(v=='deck')Object.assign(p,{source:'deck',list:deck.export,commander:deck.commander||'',deck_name:deck.name||''});
+ else if(v.startsWith('deck_id:'))Object.assign(p,{source:'deck_id',deck_id:v.slice(8)});else p.source=v;return p}
+async function buyLoad(extra,url){const o=E('buyres');if(!extra)o.innerHTML='<p class=hint>Berechne …</p>';
+ const r=await J(url||'/api/buy_plan',Object.assign(buyParams(),extra||{}));BUY=r;buyRender(r)}
+function buyRender(r){const o=E('buyres');o.innerHTML='';if(r.error){P(o,r.error,'warn');return}
+ if(r.added)P(o,'✔ '+nK(r.added)+' in die Sammlung übernommen.','tag');
+ const act=r.items.filter(x=>!x.skip);
+ if(!r.items.length){P(o,'Für „'+r.title+'“ fehlt keine Karte – alles da.','tag');return}
+ const sm=$('div');sm.className='buysum';sm.id='buysum';o.append(sm);
+ sm.append($('b',nK(act.reduce((a,x)=>a+x.qty,0))+' für '+eur(r.total)),' · '+r.title);
+ Object.entries(r.shops).forEach(([k,s])=>sm.append($('div',SHOPS[k].name+': '+nK(s.cards)+', '+eur(s.total)+(s.noprice?' (+'+s.noprice+' ohne Preis)':''))));
+ if(r.budget){const b=$('div');b.id='buybud';b.className=r.over?'warn':'tag';
+  b.textContent='Budget '+eur(r.budget)+': '+(r.over?eur(r.in_budget)+' passen hinein, '+nK(act.filter(x=>!x.fits).length)+' ('+eur(r.over)+' darüber) sind markiert – Karten, die in mehreren Decks stecken, haben Vorrang, sonst die günstigsten zuerst.':'alles passt ('+eur(r.budget-r.total)+' übrig).');sm.append(b)}
+ if(r.noprice)P(sm,nK(r.noprice)+' ohne bekannten Preis sind nicht eingerechnet.','hint');
+ // Tabelle
+ const t=$('table');t.id='buytab';t.className='duel';o.append(t);const h=t.insertRow();
+ const all=$('input');all.type='checkbox';all.title='Alle auswählen';all.onchange=()=>t.querySelectorAll('.buyck').forEach(c=>c.checked=all.checked);
+ const th0=$('th');th0.append(all);h.append(th0);['Anz.','Karte','Druck','Händler','Preis','Summe',''].forEach(x=>h.append($('th',x)));
+ r.items.forEach(x=>{const tr=t.insertRow();tr.dataset.name=x.name;if(x.skip)tr.className='buyskip';else if(!x.fits)tr.className='buyover';
+  const ck=$('input');ck.type='checkbox';ck.className='buyck';ck.disabled=x.skip;tr.insertCell().append(ck);
+  tr.insertCell().textContent=x.qty;const nc=tr.insertCell();nc.append(cardName(x.name));if(x.decks.length>1)nc.append($('div',x.decks.length+' Decks: '+x.decks.join(', ')));
+  if(!x.fits&&!x.skip)nc.append($('div','über Budget'));
+  const pc=tr.insertCell();const pb=$('button',(x.print?x.print.set_code+' #'+x.print.number:'beliebig')+(x.foil?' ✨':''));pb.type='button';pb.className='buyprint';
+  pb.title=x.print?x.print.set_name:'Günstigste Druckversion – zum Festlegen klicken';pb.onclick=()=>buyPrint(x);pc.append(pb);
+  const sc=tr.insertCell();const ss=$('select');ss.className='buyshopsel';ss.append(new Option('CM','cm'),new Option('TO','to'));ss.value=x.shop;
+  ss.onchange=()=>buyLoad({name:x.name,shop:ss.value},'/api/buy_set');sc.append(ss);
+  tr.insertCell().textContent=eur(x.price)+(x.src=='cheapest'&&x.print?' *':'');tr.insertCell().textContent=eur(x.total);
+  const lc=tr.insertCell();const url=x.shop=='cm'?(x.cm||SHOPS.cm.search(x.name)):SHOPS.to.search(x.name);
+  const a=shopA(x.shop,url,x.shop=='cm'?(x.print||x.foil?'Produktseite des gewählten Drucks'+(x.foil?' (Foil)':''):'Günstigste Druckversion auf Cardmarket'):'Bei Trader-online suchen');lc.append(a,' ');
+  const sk=$('button',x.skip?'↺':'✕');sk.type='button';sk.className='buyskipbtn';sk.title=x.skip?'Wieder einplanen':'Nicht kaufen (z. B. schon bestellt)';
+  sk.onclick=()=>buyLoad({name:x.name,skip:x.skip?0:1},'/api/buy_set');lc.append(sk)});
+ // Je Händler
+ const hd=$('div');hd.id='buyshops';o.append(hd);
+ if(r.shops.cm){const b=$('div');b.className='savebox';b.append($('b','Cardmarket: '));
+  if(r.cm_any_text){const cb=$('button','🛒 Liste kopieren & Wants öffnen');cb.type='button';cb.id='buycmwants';cb.onclick=()=>cmWants(r.cm_any_text,cb);b.append(cb,' ',$('span',nK(r.cm_any_text.split('\\n').length)+' mit beliebigem Druck'))}
+  if(r.cm_specific)P(b,nK(r.cm_specific)+' mit festgelegtem Druck oder Foil bitte einzeln über den CM-Link in der Tabelle in den Warenkorb legen – die Wants-Liste kennt keine Drucke.','hint');hd.append(b)}
+ if(r.shops.to){const b=$('div');b.className='savebox';const tl=act.filter(x=>x.shop=='to'&&x.fits);b.append($('b','Trader-online: '),nK(tl.length)+' – über die TO-Links in der Tabelle suchen und in den Warenkorb legen. ');
+  const cb=$('button','Liste kopieren');cb.type='button';cb.id='buytocopy';cb.onclick=async()=>{await copyText(tl.map(x=>x.qty+' '+x.name).join('\\n'));cb.textContent='✓ kopiert'};b.append(cb);hd.append(b)}
+ // Precon-Check
+ if(r.precons.length){const d=$('details');d.id='buyprecons';d.className='subbox';keepOpen(d);d.append($('summary','📦 Precon-Check: '+r.precons.length+' Precons enthalten mehrere der fehlenden Karten'));
+  P(d,'Manchmal ist ein Precon günstiger als die Einzelkarten. Vergleiche den Kaufpreis beim Händler mit dem Wert der fehlenden Karten.','hint');
+  r.precons.forEach(pc=>{const row=$('div');row.className='buypc';row.append($('b',pc.name),' ('+pc.set+') – enthält '+pc.covered+' fehlende Karten im Wert von '+eur(pc.value)+' · Einzelkartenwert des ganzen Precons '+eur(pc.precon_value)+' ',sealedLinks(pc.name));
+   row.append($('div',pc.cards.join(', ')));d.append(row)});o.append(d)}
+ // Abschluss
+ const f=$('p');const done=$('button','✔ Ausgewählte als gekauft in die Sammlung');done.type='button';done.id='buydone';
+ done.onclick=async()=>{const sel=[...t.querySelectorAll('tr')].filter(tr=>tr.querySelector('.buyck:checked')).map(tr=>{const x=r.items.find(i=>i.name==tr.dataset.name);
+   return {name:x.name,qty:x.qty,set_code:x.print?x.print.set_code:'',number:x.print?x.print.number:'',foil:x.foil}});
+  if(!sel.length){alert('Bitte zuerst gekaufte Karten ankreuzen.');return}buyLoad({items:JSON.stringify(sel)},'/api/buy_done')};
+ const cs=$('button','CSV herunterladen');cs.type='button';cs.id='buycsv';cs.onclick=async()=>{const x=await J('/api/buy_csv',buyParams());if(x.csv)download(x.file,x.csv)};
+ f.append(done,' ',cs);o.append(f);
+ P(o,'Preise: Cardmarket-Preisliste (Trend) bzw. Scryfall; * = Preis der günstigsten Druckversion, weil für den gewählten Druck keiner vorliegt. Trader-online liefert keine Preisliste – dort gilt der Preis im Shop. Anmeldung und Kauf laufen direkt beim Händler.','hint')}
+async function buyPrint(x){const b=dlgOpen('Druck für '+x.name);const any=$('button','Beliebiger Druck (günstigster)');any.type='button';any.id='buyany';
+ any.onclick=()=>{closeSwap();buyLoad({name:x.name,set_code:'',number:'',foil:0},'/api/buy_set')};b.append(any);
+ const l=$('div');l.id='buyprints';b.append(l);P(l,'Lade Drucke …','hint');const r=await J('/api/prints?name='+encodeURIComponent(x.name));l.innerHTML='';
+ if(r.error){P(l,r.error,'warn');return}if(r.warn)P(l,r.warn,'hint');
+ const t=$('table');l.append(t);r.prints.forEach(pr=>{const tr=t.insertRow();tr.className='buyprow';tr.insertCell().textContent=pr.set_name+' ('+pr.set_code+' #'+pr.number+')';tr.insertCell().textContent=(pr.released||'').slice(0,4);
+  const c=tr.insertCell();const mk=(foil,price)=>{const bt=$('button',(foil?'✨ Foil ':'Normal ')+eur(price));bt.type='button';bt.className=foil?'buyfoil':'buynorm';
+   bt.onclick=()=>{closeSwap();buyLoad({name:x.name,set_code:pr.set_code,number:pr.number,foil:foil?1:0},'/api/buy_set')};c.append(bt,' ')};
+  if(pr.finishes.includes('nonfoil'))mk(0,pr.eur);if(pr.finishes.includes('foil')||pr.finishes.includes('etched'))mk(1,pr.eur_foil)})}
 // ---------- Messlabor: Kartentausch oder KI-Profil per Forge messen, mit Restzeit
 let LABT=null,LABINFO=null,LABLAST=null;
 const fmtDur=s=>{s=Math.max(0,Math.round(s||0));if(s<60)return 'unter 1 Min.';const m=Math.round(s/60);if(m<60)return 'ca. '+m+' Min.';return 'ca. '+Math.floor(m/60)+' Std. '+(m%60?(m%60)+' Min.':'')};
@@ -9202,6 +9503,14 @@ class H(BaseHTTPRequestHandler):
         con = db()
         con.row_factory = sqlite3.Row
         try:
+            if path == "/api/buy_plan":
+                return buy_plan(p, uid)
+            if path == "/api/buy_set":
+                return buy_set(p, uid)
+            if path == "/api/buy_done":
+                return buy_done(p, uid)
+            if path == "/api/buy_csv":
+                return buy_csv(p, uid)
             if path.startswith("/api/lab_"):
                 return lab_api(path, p, uid)
             if path.startswith("/api/gn_"):
