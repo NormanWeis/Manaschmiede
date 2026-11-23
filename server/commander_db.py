@@ -27,6 +27,8 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 55: Messlabor mit Umfang-Stufen (Schnell, Standard, Gründlich, Sehr gründlich, eigene Einstellung), jeweils mit ungefährer
+            Dauer passend zu Varianten und Gegnern; Stufen über der Partien-Grenze sind gesperrt.
 Version 54: Messlabor (Gegner & Duell): Kartentausch-Varianten oder KI-Profile per Forge gegen ein Gegnerfeld messen, gleicher
             Zufallsstart, Siegquote mit 90-%-Bereich, Urteil, Restzeit; Ergebnisse archiviert, Übernehmen ins Deck. Duelle mit
             KI-Profil und Vorausschau.
@@ -125,7 +127,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "54"
+APP_VERSION = "55"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -5524,7 +5526,7 @@ def lab_api(path, p, uid=0):
     return {"error": "Unbekannte Aktion."}
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 54)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 55)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -6398,7 +6400,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='54';
+const PAGE_VERSION='55';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -7838,9 +7840,9 @@ async function duelBox(){const gen=++DUELGEN;const o=E('duel');o.innerHTML='';o.
   if(m>2&&+n.value>5)n.value='3'};
  run.append($('br'));
  {const li=await J('/api/lab_list');if(gen!=DUELGEN)return;const ai=$('select');ai.id='duelai';(li.profiles||['Default']).forEach(x=>ai.append(new Option(x,x)));const pil=labPilot();if(pil)ai.value=pil;
-  const dmc=$('select');dmc.id='duelmc';[['off','aus'],['on','an'],['max','maximal']].forEach(([v,t])=>dmc.append(new Option(t,v)));
+  const dmc=$('select');dmc.id='duelmc';[['off','aus (ca. 15 s je Partie)'],['on','an (ca. 30 s je Partie)'],['max','maximal (ca. 50 s je Partie)']].forEach(([v,t])=>dmc.append(new Option(t,v)));
   const kd=$('details');kd.id='duelki';kd.append($('summary','⚙ KI-Einstellungen'+(pil?' (KI-Pilot: '+pil+')':'')),'KI-Profil deines Decks: ',ai,'  Vorausschau: ',dmc);
-  P(kd,'Die Gegner spielen mit „Default“. Mit Vorausschau prüft die KI mögliche Züge vorher durch – stärker, aber etwa 2–4× langsamer.','hint');run.append(kd)}
+  P(kd,'Die Gegner spielen mit „Default“. Mit Vorausschau prüft die KI mögliche Züge vorher durch – stärker, aber langsamer. Zeiten gelten für 1 gegen 1; Runden zu dritt oder viert dauern deutlich länger.','hint');run.append(kd)}
  const n=$('input');n.size=4;n.type='number';n.min=1;n.max=ME.max_games||100;n.value=String(Math.min(10,ME.max_games||10));
  run.append('Anzahl Partien (max. '+(ME.max_games||100)+'): ',n,' ');
  const go=$('button','Duell starten');go.type='button';run.append(go);
@@ -7896,11 +7898,31 @@ async function labBox(o,gen){let ready=false;const wrap=$('details');wrap.id='la
  body.append($('h4','Gegnerfeld'),obox,ao);
  // Umfang
  const n=$('input');n.type='number';n.id='labn';n.min=2;n.max=100;n.value=10;n.size=4;n.oninput=est;
- const mc=$('select');mc.id='labmc';[['off','aus (schnell)'],['on','an'],['max','maximal (wie Forge am PC)']].forEach(([v,t])=>mc.append(new Option(t,v)));mc.onchange=est;
+ const mc=$('select');mc.id='labmc';[['off','aus (ca. 15 s je Partie)'],['on','an (ca. 30 s je Partie)'],['max','maximal, wie Forge am PC (ca. 50 s je Partie)']].forEach(([v,t])=>mc.append(new Option(t,v)));mc.onchange=est;
  const es=$('p');es.id='labest';es.className='hint';
  const go=$('button','▶ Messung starten');go.type='button';go.className='primary';go.id='labgo';
  const stop=$('button','Abbrechen');stop.type='button';stop.id='labstop';stop.hidden=true;
- body.append($('h4','Umfang'),'Partien je Variante und Gegner: ',n,'  KI-Vorausschau: ',mc,es,go,' ',stop);
+ // Umfang als Stufe mit ungefährer Dauer; „Eigene Einstellung“ für Partien und Vorausschau von Hand
+ const LABPRE=[{k:'quick',t:'Schnell',n:10,mc:'off',pf:'few',d:'10 Partien je Variante und Gegner, ohne Vorausschau – zeigt grobe Tendenzen und große Unterschiede.'},
+  {k:'std',t:'Standard',n:20,mc:'off',pf:'all',d:'20 Partien, alle KI-Profile – erkennt Unterschiede ab etwa 25 Prozentpunkten zuverlässig.'},
+  {k:'deep',t:'Gründlich',n:40,mc:'off',pf:'all',d:'40 Partien, alle KI-Profile – macht auch kleinere Unterschiede sichtbar.'},
+  {k:'max',t:'Sehr gründlich',n:30,mc:'on',pf:'all',d:'30 Partien mit Vorausschau: die KI prüft Züge vorher durch und spielt stärker, dauert etwa doppelt so lange je Partie.'},
+  {k:'custom',t:'Eigene Einstellung',d:'Partien und Vorausschau selbst festlegen.'}];
+ const pre=$('select');pre.id='labpreset';LABPRE.forEach(x=>pre.append(new Option(x.t,x.k)));const pd=$('p');pd.className='hint';pd.id='labpredesc';
+ const man=$('span');man.id='labmanual';man.append('Partien je Variante und Gegner: ',n,'  KI-Vorausschau: ',mc);
+ const FEW=['Cautious','Reckless','Experimental'];
+ const preProfs=x=>x.pf=='few'?FEW.filter(f=>info.profiles.includes(f)&&f!=base.value):info.profiles.filter(f=>f!=base.value);
+ const durOf=(nv,nvar,nop,m)=>{const tot=nv*nvar*nop;return [tot,(tot*({off:15,on:35,max:60}[m]||15)+nvar*nop*15)/Math.max(1,info.workers||1)]};
+ function applyPre(){const x=LABPRE.find(y=>y.k==pre.value);pd.textContent=x.d;man.hidden=x.k!='custom';if(x.k=='custom'){est();return}
+  n.value=x.n;mc.value=x.mc;if(mode.value=='pilot')pbox.querySelectorAll('.labpf').forEach(c=>c.checked=preProfs(x).includes(c.value));est()}
+ function preLabels(){const nop=obox.children.length||1;[...pre.options].forEach(o=>{const x=LABPRE.find(y=>y.k==o.value);if(x.k=='custom'){o.textContent=x.t;return}
+  const nvar=1+(mode.value=='swap'?variants().length:preProfs(x).length);const [tot,sec]=durOf(x.n,nvar,nop,x.mc);
+  o.textContent=x.t+' – '+(nvar<2?'?':fmtDur(sec))+' ('+tot+' Partien)'+(tot>info.max?' · über der Grenze':'');o.disabled=tot>info.max&&o.value!=pre.value})}
+ pre.onchange=applyPre;n.addEventListener('input',()=>{pre.value='custom';pd.textContent=LABPRE[4].d});mc.addEventListener('change',()=>{pre.value='custom';pd.textContent=LABPRE[4].d});
+ base.addEventListener('change',()=>{pbox.querySelectorAll('.labpf').forEach(c=>{c.disabled=c.value==base.value;if(c.disabled)c.checked=false});if(pre.value!='custom')applyPre()});
+ pbox.querySelectorAll('.labpf').forEach(c=>{c.disabled=c.value==base.value;if(c.disabled)c.checked=false});
+ mode.addEventListener('change',()=>{if(pre.value!='custom')applyPre()});
+ body.append($('h4','Umfang'),pre,man,pd,es,go,' ',stop);
  const out=$('div');out.id='labout';body.append(out);if(LABLAST&&LABLAST.result)labShow(out,LABLAST);
  const arch=$('details');arch.id='labarch';arch.append($('summary','📁 Frühere Messungen ('+info.runs.length+')'));body.append(arch);labArchive(arch,info.runs,out);
  function variants(){return [...vrows.children].map(r=>({out:r.querySelector('.labout').value.split(',').map(x=>x.trim()).filter(Boolean),in:r.querySelector('.labin').value.split(',').map(x=>x.trim()).filter(Boolean)})).filter(v=>v.out.length||v.in.length)}
@@ -7908,8 +7930,8 @@ async function labBox(o,gen){let ready=false;const wrap=$('details');wrap.id='la
  function est(){if(!ready)return;const nv=Math.max(2,+n.value||2),nvar=1+(mode.value=='swap'?variants().length:profs().length),nop=obox.children.length||1;
   const tot=nv*nvar*nop,per={off:15,on:35,max:60}[mc.value]||15;
   es.textContent=nvar<2?'Bitte mindestens eine Variante angeben.':tot+' Partien ('+nvar+' Varianten × '+nop+' Gegner × '+nv+') · voraussichtlich '+fmtDur((tot*per+nvar*nop*15)/Math.max(1,info.workers||1))+(tot>info.max?' – mehr als erlaubt ('+info.max+')':'');
-  go.disabled=nvar<2||tot>info.max}
- ready=true;addOpp(true);est();
+  go.disabled=nvar<2||tot>info.max;preLabels()}
+ ready=true;addOpp(true);pre.value='quick';applyPre();
  go.onclick=async()=>{const specs=[...obox.querySelectorAll('select')].map(s=>s.value);
   const prm=Object.assign(mineP(),oppP(),{mode:mode.value,games:n.value,mc:mc.value,opps:specs.join(','),deck_name:deck&&deck.name||'',
    variants:JSON.stringify(variants()),ai:mode.value=='pilot'?base.value:(labPilot()||'Default'),profiles:profs().join(',')});
