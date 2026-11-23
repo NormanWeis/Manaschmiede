@@ -27,6 +27,9 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 51: Neuer Spieltisch (allein und zu zweit) nach dem Vorbild digitaler Kartenspiele: Gegner oben, Spielfeld in der Mitte,
+            Hand als Fächer, Leben und Stapel als Symbole, ein großer Zug-Knopf, Phasenleiste, Karten ziehen per Drag & Drop,
+            Aktionen beim Antippen, alles Weitere hinter ⚙; Protokoll und Statistik im Seitenmenü.
 Version 50: Textansicht der Spieltische („Aa“): Karten als lesbare Kacheln mit Name, Manakosten, Typ, Regeltext,
             Stärke/Widerstand bzw. Loyalität; große Ansicht mit vollem Text; Stärke/Widerstand werden beim Kartenimport gespeichert.
 Version 49: Spieltische am Handy: „📱 Quer“ (Vollbild + Querformat), Hinweis im Hochformat, eigenes Querformat-Layout,
@@ -114,7 +117,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "50"
+APP_VERSION = "51"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -4613,7 +4616,8 @@ def playtest_decks(p, uid=0):
         for r, q in entries:
             if r["name"] not in cn:
                 lib += [card(r)] * max(0, min(int(q), 99))
-        return {"name": name, "cmds": [card(r) for r in cmds], "cards": lib}
+        ci = "".join(x for x in "WUBRG" if any(x in (r["color_identity"] or "") for r in cmds))
+        return {"name": name, "cmds": [card(r) for r in cmds], "cards": lib, "ci": ci}
     mine, missing = entries_from_list(con, g("list"), g("commander"))
     if not mine:
         return {"error": "Bitte zuerst ein Deck laden."}
@@ -4771,7 +4775,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 50)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 51)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -5072,6 +5076,22 @@ body.mtg .ctile{background:#2a2018;color:#f1e3c6}
 .ctile .cpt{position:absolute;right:4px;bottom:2px;font-weight:bold;background:#a8843a;color:#1b140e;border-radius:4px;padding:0 4px}
 .ptc.cmd .ctile,.pvc.cmd .ctile{border:2px solid #b8891f}
 #czoom .ctile.big{width:min(92vw,420px);font-size:16px;padding:14px 16px 30px;max-height:84vh;overflow:auto}#czoom .ctile.big .cth b{font-size:20px}#czoom .ctile.big .cpt{font-size:16px;bottom:8px;right:10px}
+/* Spieltisch im Arena-Stil */
+#pv.ar{position:fixed;inset:0;z-index:200;padding:0;display:flex;flex-direction:column;overflow:hidden;user-select:none;-webkit-user-select:none;
+ background:radial-gradient(ellipse at 50% 55%,#2d3b30 0%,#18201a 65%,#0c100d 100%);color:#eee;--cw:100px}#pv.ar[hidden]{display:none!important}#pv.ar button{font-family:inherit}#pv.ar .artop{display:flex;justify-content:space-between;align-items:center;padding:5px 10px;gap:6px;flex-shrink:0}#pv.ar .arinfo{display:flex;align-items:center;gap:8px;font-size:14px}#pv.ar .arphases{display:flex;gap:3px}#pv.ar .arph{width:28px;height:28px;border-radius:50%;border:1px solid #fff3;background:#0004;color:#bbb;padding:0;font-size:13px;min-height:0}#pv.ar .arph.on{background:#e0a744;color:#1b140e;border-color:#e0a744}#pv.ar .arphname{font-size:12px;opacity:.65}#pv.ar .artools{display:flex;gap:6px}#pv.ar .aricon{width:38px;height:38px;min-height:0;border-radius:50%;border:1px solid #fff3;background:#0006;color:#eee;font-size:17px;padding:0;display:inline-flex;align-items:center;justify-content:center}#pv.ar .aricon:hover{border-color:#e0a744}#pv.ar .arpl{display:flex;align-items:center;gap:8px;padding:4px 10px;flex-shrink:0}#pv.ar .arpl.top{background:#0003}#pv.ar .aravatar{position:relative;width:62px;height:62px;min-height:0;border-radius:50%;border:3px solid #666;background:radial-gradient(circle at 35% 30%,#4a3b2a,#1b140e);
+ color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0;flex-shrink:0}#pv.ar .arpl.act .aravatar{border-color:#e0a744;box-shadow:0 0 16px #e0a744aa}#pv.ar .arlife{font-size:24px;line-height:1}#pv.ar .arname{font-size:9px;max-width:54px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;opacity:.75}#pv.ar .arbadge{position:absolute;top:-6px;right:-10px;background:#4b8a3a;border-radius:9px;padding:0 5px;font-size:11px;font-style:normal}#pv.ar .arbadge.cd{right:auto;left:-10px;background:#8a3a3a}#pv.ar .arpile{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:40px;height:54px;min-height:0;border-radius:6px;border:1px solid #fff3;
+ background:#0005;color:#eee;padding:0;font-size:16px;line-height:1.1}#pv.ar .arpile b{font-size:12px}#pv.ar .arcz{display:flex;gap:4px;align-items:center;min-width:30px;min-height:54px;border:1px dashed #e0a74466;border-radius:6px;padding:2px;justify-content:center}#pv.ar .arbacks{display:flex;align-items:center;margin-left:auto;padding-left:8px}#pv.ar .arbacks i{width:16px;height:24px;margin-left:-8px;border-radius:3px;background:linear-gradient(135deg,#5a3d22,#2a1b10);border:1px solid #a8843a}#pv.ar .arbacks b{margin-left:6px}#pv.ar .arfield{flex:1;display:flex;flex-direction:column;overflow:auto;padding:2px 10px;min-height:0}#pv.ar .arhalf{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;min-height:70px;border-radius:10px;padding:4px}#pv.ar .arhalf.top{justify-content:flex-start}#pv.ar .armid{height:2px;background:linear-gradient(90deg,transparent,#e0a74488,transparent);margin:4px 0;flex-shrink:0}#pv.ar .arrow{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;align-items:flex-end;min-height:10px}#pv.ar .arstack{position:relative;display:flex}#pv.ar .arstack .arc+.arc{margin-left:calc(var(--cw)*var(--tk,1)*-.45)}#pv.ar .arstackn{position:absolute;bottom:-4px;right:-4px;background:#000c;border-radius:8px;padding:0 5px;font-size:11px;z-index:5}#pv.ar .arempty{opacity:.35;font-size:13px;padding:16px}#pv.ar .arc{position:relative;width:calc(var(--cw)*var(--tk,1)*var(--bfk,.8));aspect-ratio:.716;border-radius:6px;cursor:pointer;touch-action:none;transition:transform .15s,box-shadow .15s;flex-shrink:0}#pv.ar .arc img{width:100%;height:100%;object-fit:cover;border-radius:6px;display:block;pointer-events:none;box-shadow:0 2px 6px #0009}#pv.ar .arc .arn{display:block;width:100%;height:100%;box-sizing:border-box;border:1px solid #a8843a;border-radius:6px;background:#2a2018;color:#f1e3c6;font-size:11px;padding:4px;overflow:hidden}#pv.ar .arc.sm{width:calc(var(--cw)*var(--tk,1)*var(--bfk,.8)*.72)}#pv.ar .arc.tap{transform:rotate(90deg) scale(.88);margin:0 calc(var(--cw)*var(--tk,1)*.13)}#pv.ar .arc.sel{box-shadow:0 0 0 3px #e0a744,0 0 18px #e0a744;border-radius:7px}#pv.ar .arc.cmd img,#pv.ar .arc.cmd .arn{outline:2px solid #e0a744}#pv.ar .arc.dragging{opacity:.3}#arghost{position:fixed;z-index:500;pointer-events:none;width:calc(var(--cw)*var(--tk,1)*.85);aspect-ratio:.716;transform:rotate(-5deg) scale(1.08);opacity:.92}#arghost img{width:100%;height:100%;border-radius:6px;object-fit:cover}#pv.ar .drop-on{outline:3px dashed #e0a744;outline-offset:2px;background:#e0a74418}#pv.ar .arcnt,#pv.ar .artax{position:absolute;top:3px;right:3px;background:#000c;color:#fff;border-radius:9px;padding:0 6px;font-size:12px;z-index:3}#pv.ar .artax{background:#b8891f}#pv.ar .arc.txt{aspect-ratio:auto;width:calc(var(--cw)*var(--tk,1)*1.25);min-height:calc(var(--cw)*var(--tk,1)*.6)}#pv.ar .arc.txt.sm{width:calc(var(--cw)*var(--tk,1)*1.05)}#pv.ar .arc.txt.tap{transform:none;margin:0;opacity:.55}#pv.ar .arc.txt.tap .ctile{border-style:dashed}#pv.ar .ctile{background:#2a2018;color:#f1e3c6;min-height:inherit}#pv.ar .arbottom{display:flex;align-items:flex-end;gap:8px;padding:4px 10px 8px;background:linear-gradient(0deg,#000a,transparent);flex-shrink:0}#pv.ar .arpl.me{flex-wrap:wrap;width:150px;justify-content:center;padding:0;gap:5px}#pv.ar .arhand{flex:1;display:flex;justify-content:center;align-items:flex-end;min-height:calc(var(--cw)*var(--tk,1)*.95);padding-top:10px;min-width:0;margin-bottom:calc(var(--cw)*var(--tk,1)*-.45)}#pv.ar .arhand .arc{width:calc(var(--cw)*var(--tk,1));margin-left:calc(var(--ov,0px)*-1);transform:rotate(var(--rot)) translateY(var(--lift));transform-origin:50% 130%}#pv.ar .arhand .arc:first-child{margin-left:0}#pv.ar .arhand .arc.txt{width:calc(var(--cw)*var(--tk,1)*1.3)}@media(hover:hover){#pv.ar .arhand .arc:hover{transform:translateY(-38%) scale(1.15);z-index:60!important}}#pv.ar .arhand .arc.sel{transform:translateY(-38%) scale(1.15);z-index:60!important}#pv.ar .argobox{display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0}#pv.ar .argo{min-width:124px;min-height:52px;border-radius:26px;border:0;background:linear-gradient(180deg,#f2b84f,#c47d16);color:#1b140e;font-weight:bold;font-size:16px;box-shadow:0 3px 10px #000a;padding:0 18px;cursor:pointer}#pv.ar .argo:hover{filter:brightness(1.1)}#pv.ar #arsel{position:absolute;left:50%;transform:translateX(-50%);top:52px;z-index:70;background:#1b140ef2;border:1px solid #e0a744;border-radius:12px;
+ padding:6px 8px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;max-width:94vw;box-shadow:0 4px 18px #000b}#pv.ar .arselname{margin-right:4px;max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}#pv.ar #arsel button{min-height:34px;padding:2px 10px}#pv.ar #arsel{flex-wrap:nowrap;width:max-content}#pv.ar #arsel.open{flex-wrap:wrap;width:min(420px,94vw)}#pv.ar .arselname{font-size:14px}#pv.ar .armorelist{display:none;width:100%;flex-wrap:wrap;gap:5px}#pv.ar #arsel.open .armorelist{display:flex}#pv.ar #arsheet{position:absolute;top:50px;right:0;bottom:0;width:min(380px,92vw);z-index:90;background:#1b140ef8;border-left:1px solid #a8843a;overflow:auto;padding:10px 12px;box-shadow:-6px 0 20px #000a}#pv.ar .arsh{display:flex;justify-content:space-between;align-items:center;font-size:17px;margin-bottom:6px}#pv.ar .arsec{margin:8px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}#pv.ar .arsec h4{width:100%;margin:4px 0 0;font-size:12px;opacity:.65;font-weight:normal;text-transform:uppercase;letter-spacing:.06em}#pv.ar .arsec .arbig{min-width:56px;min-height:44px;font-size:17px}#pv.ar .argrid{display:flex;flex-wrap:wrap;gap:6px}#pv.ar #arsheet table.duel{font-size:13px;color:#eee}#pv.ar #pvlog div{font-size:13px;padding:2px 0;border-bottom:1px solid #fff1}#pv.ar #armull{position:absolute;inset:0;z-index:80;background:#000c;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:10px;overflow:auto}#pv.ar #armull h3{margin:0}#pv.ar .armullrow{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}#pv.ar .armullrow .arc{width:min(calc(var(--cw)*var(--tk,1)*1.2),calc((100vw - 90px)/7),calc(42vh*.716))}#pv.ar .armullrow .arc.txt{width:calc(var(--cw)*var(--tk,1)*1.5)}#pv.ar .armullbtn{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center}#pv.ar .arsub{opacity:.8}#pv.ar .armullb{min-height:44px;border-radius:22px;padding:0 18px}#pv.ar .arsmall{font-size:12px}#pv.ar #artoast{position:absolute;top:50px;left:50%;transform:translateX(-50%);background:#000d;color:#f1e3c6;padding:5px 14px;border-radius:14px;font-size:13px;z-index:60;pointer-events:none;opacity:0;max-width:80vw;text-align:center}#pv.ar #artoast.fade{animation:artoast 2.8s ease}@keyframes artoast{0%{opacity:0}8%{opacity:1}75%{opacity:1}100%{opacity:0}}#pv.ar .arrot{display:none}@media(max-width:760px){#pv.ar{--cw:70px}#pv.ar .aravatar{width:50px;height:50px}#pv.ar .arlife{font-size:19px}#pv.ar .arpile{width:32px;height:44px;font-size:13px}#pv.ar .argo{min-width:96px;min-height:46px;font-size:14px}#pv.ar .arphname{display:none}#pv.ar .arpl.me{width:118px}}@media(orientation:portrait) and (max-width:600px){#pv.ar .arrot{display:inline-flex}#pv.ar #arsel,#pv.ar #arsel.open{flex-wrap:wrap;width:94vw;justify-content:center}#pv.ar .arselname{width:100%;max-width:none;text-align:center}#pv.ar .armullrow .arc{width:calc((100vw - 60px)/4)}#pv.ar .arph:not(.on){display:none}#pv.ar .arinfo{font-size:12px;gap:4px}#pv.ar .arbottom{flex-wrap:wrap}#pv.ar .arhand{order:3;width:100%;flex-basis:100%}#pv.ar .arpl.me{width:auto;flex-wrap:nowrap}#pv.ar .argobox{margin-left:auto;flex-direction:row}}@media(orientation:landscape) and (max-height:520px){#pv.ar #arsheet{top:36px}#pv.ar{--cw:26vh;--bfk:.62}#pv.ar .arhalf,#pv.ar .arhalf.top{flex-direction:row;align-items:center;justify-content:center;min-height:0}#pv.ar .arhalf .arrow{flex-wrap:nowrap}#pv.ar .arhalf.top .arrow.lands{order:0}#pv.ar .arfield{justify-content:center}#pv.ar .armid{margin:2px 0}#pv.ar .artop{padding:2px 8px}#pv.ar .aricon{width:30px;height:30px;font-size:14px}#pv.ar .arph{width:22px;height:22px;font-size:11px}#pv.ar .arphname{display:none}#pv.ar .aravatar{width:44px;height:44px;border-width:2px}#pv.ar .arlife{font-size:17px}#pv.ar .arname{display:none}#pv.ar .arpl.top{padding:2px 8px}#pv.ar .arpile{width:28px;height:38px;font-size:12px}#pv.ar .arcz{min-height:38px}#pv.ar .arbottom{padding:2px 8px 4px}#pv.ar .arpl.me{width:112px}#pv.ar .argo{min-height:42px;min-width:92px;font-size:14px}#pv.ar .arhand{padding-top:8px}#pv.ar #arsel{top:38px}}
+
+/* Spielmatten und Avatar-Ring in den Farben des Decks */
+#pv.ar{background:var(--matglow,none),radial-gradient(ellipse at 50% 55%,#2d3b30 0%,#18201a 65%,#0c100d 100%)}
+#pv.ar[data-mat=colors]{background:var(--matglow,none),radial-gradient(ellipse at 50% 50%,#2a2622 0%,#16120f 70%,#0b0908 100%)}
+#pv.ar[data-mat=felt]{background:repeating-linear-gradient(45deg,#ffffff05 0 2px,transparent 2px 6px),radial-gradient(ellipse at 50% 55%,#2f4a36 0%,#1a2a1e 65%,#0d150f 100%)}
+#pv.ar[data-mat=parch]{background:radial-gradient(ellipse at 50% 45%,#5a4a32 0%,#3a2e1f 60%,#1e170f 100%);}
+#pv.ar[data-mat=cmd]{background:linear-gradient(#0009,#000c),var(--matimg,none) center/cover no-repeat,#16120f}
+#pv.ar .aravatar{border:3px solid transparent;background:radial-gradient(circle at 35% 30%,#4a3b2a,#1b140e) padding-box,var(--ring,#888) border-box}
+#pv.ar .arpl.act .aravatar{box-shadow:0 0 16px #e0a744cc}
+#pv.ar .arcz{align-items:flex-start;height:max-content}#pv.ar .armid{height:3px;background:linear-gradient(90deg,transparent,#f3ecd255,#2f74b855,#4a3f4855,#c8402c55,#2f7d4555,transparent)}
 </style>
 <style id=mobcss>
 /* ---------- Handyansicht (body.mob): wird per Geräteerkennung oder von Hand gesetzt ---------- */
@@ -5185,7 +5205,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>Manabasis:</b> zählt je Farbe die Quellen (Länder einschließlich Fetch- und Suchländern, Mana-Artefakte/-Kreaturen bis Manawert 2; Ramp-Zauber bis Manawert 3, die ein Land suchen, zählen halb) und berechnet, wie wahrscheinlich du jede Karte rechtzeitig wirken kannst. „Zu wenig Quellen“ heißt: mehr Länder oder Mana dieser Farbe einplanen. Die schwierigsten Karten stehen rechts.</li>
 <li><b>Probehand:</b> zieht 7 zufällige Karten; „Karte ziehen“ simuliert die nächsten Züge, „Mulligan“ mischt neu (London-Mulligan). Darüber steht eine Statistik aus 20.000 Starthänden: wie oft die Hand behaltbar ist (2–5 Länder) und wie oft du in Zug 1–4 ein Land spielen kannst.</li>
 <li><b>Deck-Editor:</b> „↶ Rückgängig“ / „↷ Wiederherstellen“ (auch Strg+Z / Strg+Y) nehmen jede Änderung an der Liste zurück (60 Schritte). Eigene Gruppen: eine Karte in eine andere Gruppe ziehen – beim Ziehen erscheint unten eine Leiste mit allen Gruppen, dem Maybeboard und „Entfernen“ – oder bei der Karte ⇄ antippen und eine Gruppe wählen bzw. eine neue anlegen. Eigene Gruppen werden mit dem Deck gespeichert, auf der Teilen-Seite als Abschnitte gezeigt und beim Archidekt-Export als Kategorie mitgegeben. „☐ Mehrfachauswahl“ setzt Häkchen vor die Karten; die markierten Karten lassen sich gemeinsam verschieben, taggen, ins Maybeboard legen oder entfernen. Die Ansicht „Stapel“ zeigt die Karten als Bildstapel nach Manawert; antippen sucht Ersatz.</li>
-<li><b>🎮 Testspielfeld:</b> spielt das Deck allein Zug für Zug durch (Goldfischen). Commander in der Kommandozone (Steuer +2 pro Wurf), Bibliothek, Friedhof, Exil, Länderreihe, Spielfeld, Spielmarken, Zähler, Lebenspunkte, Mulligan, „Oberste X“ ansehen, Bibliothek durchsuchen und Rückgängig (40 Schritte). Karte antippen = ausspielen/tappen, gedrückt halten oder Rechtsklick = weitere Aktionen. Tasten: D ziehen, N nächster Zug, U enttappen, M mischen, Strg+Z rückgängig, Esc schließen.</li></ul>
+<li><b>🎮 Testspielfeld:</b> spielt das Deck allein Zug für Zug durch (Goldfischen): Starthand behalten oder Mulligan (der erste ist frei), dann ziehen, Länder und Zauber spielen, Commander wirken (Steuer +2 pro Wurf). Der Spieltisch ist aufgebaut wie bei digitalen Kartenspielen: oben der Gegner (Leben, Stapel, verdeckte Hand), in der Mitte das Spielfeld – Kreaturen und Co. zur Mitte, Länder nach außen, gleiche Länder gestapelt –, unten deine Hand als Fächer. Links unten dein Avatar mit Lebenspunkten, daneben 📚 Bibliothek, 🪦 Friedhof, 🌀 Exil und die Kommandozone; rechts unten der große Knopf „Zug beenden“ (Leertaste) und 🃏 zum Ziehen. Oben die Phasenleiste (antippen markiert die Phase, die aktuelle antippen = weiter). <b>Bedienen:</b> Karte antippen zeigt nur die passenden Aktionen (z. B. „Ausspielen“, „Tappen“, „Wirken“), „Mehr“ den Rest; Karten lassen sich auch ziehen – auf das Spielfeld, 🪦, 🌀, 📚, die Hand oder die Kommandozone. Zweimal antippen tappt, lange drücken oder Rechtsklick zeigt die Karte groß. Avatar antippen: Leben, Gift, Commander-Schaden. Alles Weitere liegt hinter ⚙: Spielmatte (Farben des Decks, Filz, Pergament, Bild des Commanders), Textansicht „Aa“, Kartengröße, Querformat, Tokens aus dem Deck, Würfel und Münze, Statistik, Protokoll, Partie beenden. Kurze Meldungen zeigen, was gerade passiert ist; ↶ nimmt Schritte zurück (Taste Z). Regeln prüft der Tisch nicht.</li>
 
 <h3 id=h-import>Importieren und Speichern</h3>
 <ul><li><b>Speichern:</b> im umrahmten Feld „💾 Deck speichern“ direkt unter der Deck-Überschrift einen Namen eingeben und <b>Speichern</b> klicken. Gleicher Name = altes Deck wird überschrieben.</li>
@@ -5263,8 +5283,8 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>Precon wählen:</b> In der Liste „Precon auswählen“ stehen alle offiziellen Precons mit Namen, Commander und Farben, nach Set und Jahr geordnet; ganz oben die zu deinen Farben passenden. Wer den Namen kennt, kann auch im Suchfeld nach Precon, Commander oder Set suchen.</li>
 <li>Anzahl Partien wählen (10 ist ein guter Anfang) und <b>Duell starten</b>. Die erste Partie dauert etwas länger, weil Forge startet. Eine Partie dauert meist 0,5–3 Minuten.</li></ol>
 <p><b>📊 Genaue Statistik:</b> unter dem Ergebnis eingeklappt. Je Deck: wie oft es begonnen (und dann gewonnen) hat, Ø Mulligans, in welcher Runde der Commander zuerst kam und wie oft er gewirkt wurde, Ø Länder und Zauber, Ø Schaden an Gegnern (davon im Kampf), die am häufigsten gewirkten Karten, die Karten mit dem meisten Schaden und „Schlüsselkarten“, mit denen das Deck deutlich öfter gewinnt als im Schnitt. Bei „Einzelne Partien“ zeigt <b>🔎 Verlauf</b> eine Partie Zug für Zug: Länder, Zauber, Commander, Angriffe, Schaden und Lebenspunkte, dazu ein Diagramm der Lebenspunkte. „Runde“ zählt die eigenen Züge eines Spielers.</p>
-<p><b>🃏 Selbst spielen:</b> „Im Browser“ öffnet einen Spieltisch mit deinem Deck und dem Gegner; du spielst beide Seiten wie am echten Tisch: Starthand behalten oder Mulligan (der erste ist frei, danach Karten unter die Bibliothek), Länder und Zauber spielen, Commander aus der Kommandozone wirken (Commander-Steuer wird angezeigt), tappen (Doppelklick), Marken, Tokens, Friedhof, Exil, Bibliothek durchsuchen oder die obersten Karten ansehen, Leben, Gift und Commander-Schaden. „Nächster Zug“ enttappt und zieht für den nächsten Spieler, „Rückgängig“ nimmt Schritte zurück. Protokoll und Statistik zeigen den Verlauf; „Partie beenden“ trägt das Ergebnis ins Spielprotokoll ein. Regeln prüft der Spieltisch nicht. Für eine Testpartie allein gibt es weiterhin das „🎮 Testspielfeld“ bei der Probehand. Im lokalen Betrieb legt „🖥 In Forge selbst spielen“ beide Decks in Forge ab und öffnet Forge: dort links „Commander“ wählen, Spieler 1 ist dein Deck, Spieler 2 die KI mit dem Gegnerdeck – Forge prüft dann alle Regeln.</p>
-<p><b>📱 Spieltische am Handy:</b> Quer gehalten sind Hand und Spielfeld deutlich besser lesbar; im Hochformat erinnert ein Hinweis daran. „📱 Quer“ schaltet auf Vollbild und dreht ins Querformat (Android/Chrome; auf dem iPhone das Handy einfach drehen, die Drehsperre muss aus sein). Im Querformat passt sich die Kartengröße der Bildschirmhöhe an, die Knopfleiste wird einzeilig und lässt sich seitlich wischen. „A−“/„A+“ verkleinert bzw. vergrößert die Karten (bleibt gespeichert). „🔍 Groß ansehen“ im Kartenmenü – am Duell-Tisch auch durch langes Drücken auf eine Karte – zeigt die Karte bildschirmfüllend zum Lesen. <b>„Aa“ – Textansicht:</b> statt der Bilder erscheinen Kacheln mit Name, Manakosten, Typ, Regeltext (gekürzt, in der großen Ansicht vollständig) und Stärke/Widerstand bzw. Loyalität; getappte Karten werden blass und gestrichelt statt gedreht. Das ist auf kleinen Bildschirmen am besten lesbar und braucht keine Bilder aus dem Netz. Die Einstellung bleibt gespeichert. Stärke/Widerstand stehen nach der nächsten Aktualisierung der Kartendaten zur Verfügung. Am Duell-Tisch klappt ▾ den Bereich eines Spielers auf eine Zeile zusammen.</p>
+<p><b>🃏 Selbst spielen:</b> „Im Browser“ öffnet denselben Spieltisch mit deinem Deck und dem Gegner; du spielst beide Seiten. Nach „Zug beenden“ kommt der andere Spieler nach unten, ⇅ wechselt die Seite jederzeit. „Partie beenden“ (⚙) trägt das Ergebnis ins Spielprotokoll ein. Im lokalen Betrieb legt „🖥 In Forge selbst spielen“ beide Decks in Forge ab und öffnet Forge: dort links „Commander“ wählen, Spieler 1 ist dein Deck, Spieler 2 die KI mit dem Gegnerdeck – Forge prüft dann alle Regeln.</p>
+<p><b>📱 Am Handy:</b> quer gehalten ist der Tisch am besten lesbar; im Hochformat holt 📱 oben Vollbild und Querformat (Android/Chrome; auf dem iPhone das Handy einfach drehen). Die Hand ragt nur halb ins Bild und hebt sich beim Antippen. Für kleine Bildschirme helfen „Aa“ (Textkacheln mit Regeltext und Stärke/Widerstand) und die Kartengröße im ⚙-Menü.</p>
 <p><b>Ergebnis lesen:</b> Siege in Prozent, durchschnittlicher Siegzug, Siegart (z. B. Commander-Schaden, Combo) und welche Karte gewonnen hat. Die KI spielt solide, aber nicht perfekt – aussagekräftig sind Tendenzen über viele Partien. Läuft eine Partie zu lange, wird sie als Unentschieden gewertet.</p>
 
 <h3 id=h-regeln>Offizielle Regeln</h3>
@@ -5625,7 +5645,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='50';
+const PAGE_VERSION='51';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -5910,7 +5930,8 @@ async function manaBox(o){const box=$('div');o.append(box);
 let PT=null;const PTU=[];
 const ptId=()=>Math.random().toString(36).slice(2,9);
 function ptCard(c,extra){return Object.assign({id:ptId(),name:c.name,image:c.image||'',land:!!c.land,mana:c.mana||'',cmc:c.cmc||0,scryfall:c.scryfall||'',tapped:false,ctr:0,token:false},extra||{})}
-function ptNew(){if(!deck||!deck.groups){alert('Bitte zuerst ein Deck bauen oder öffnen.');return}
+function ptNew(){if(!deck||!deck.groups){alert('Bitte zuerst ein Deck bauen oder öffnen.');return}pvStart(false)}
+function ptNewClassic(){if(!deck||!deck.groups){alert('Bitte zuerst ein Deck bauen oder öffnen.');return}
  const lib=shuffle(libraryCards().map(c=>ptCard(c)));
  const cz=(deck.groups.find(g=>g.name=='Commander')||{cards:[]}).cards.map(c=>ptCard(c,{cmdr:true}));
  PT={name:deck.name||(cz[0]&&cz[0].name)||'Deck',lib:lib,hand:[],bf:[],gy:[],ex:[],cz:cz,turn:1,life:40,mull:0,mullBottom:0,casts:{},log:[]};
@@ -7144,7 +7165,7 @@ let PV=null,PVH=[];let pvUid=0;
 const pvShuf=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
 const pvCard=c=>Object.assign({},c,{id:++pvUid,tap:false,cnt:0});
 const pvLand=c=>/Land/.test((c.type||'').split(' // ')[0]);
-function pvPlayer(d){const p={name:d.name,lib:pvShuf(d.cards.map(pvCard)),hand:[],bf:[],gy:[],ex:[],cz:d.cmds.map(c=>Object.assign(pvCard(c),{cmd:true,casts:0})),
+function pvPlayer(d){const p={name:d.name,ci:d.ci||'',lib:pvShuf(d.cards.map(pvCard)),hand:[],bf:[],gy:[],ex:[],cz:d.cmds.map(c=>Object.assign(pvCard(c),{cmd:true,casts:0})),
  life:40,poison:0,cdmg:{},mull:0,kept:false,landsTurn:0,st:{lands:0,casts:0,cmdRound:null,cmdCasts:0,draws:0}};
  for(let i=0;i<7&&p.lib.length;i++)p.hand.push(p.lib.pop());return p}
 function pvSave(){try{localStorage.setItem('pvgame',JSON.stringify(PV))}catch(e){}}
@@ -7159,7 +7180,7 @@ async function pvStart(withOpp){const r=await J('/api/playtest',Object.assign(mi
 function alertBox(t){const o=dlgOpen('Hinweis');P(o,t,'warn')}
 function pvOpen(){let o=E('pv');if(!o){o=document.createElement('div');o.id='pv';document.body.append(o)}o.hidden=false;document.body.classList.add('pvopen');pvRender()}
 function pvClose(){const o=E('pv');if(o)o.hidden=true;document.body.classList.remove('pvopen');pvSave();tableExit()}
-function pvDo(f){pvSnap();PV.menu=null;f();pvSave();pvRender()}
+function pvDo(f){pvSnap();PV.menu=null;PV.sel=null;f();pvSave();pvRender();const l=PV.log[PV.log.length-1];if(l&&typeof arToast=='function')arToast(l[1])}
 function pvMove(p,c,from,to,where){const i=p[from].findIndex(x=>x.id==c.id);if(i<0)return;p[from].splice(i,1);
  if(to!='bf'){c.tap=false;c.cnt=0}
  if(c.tok&&to!='bf'){pvLog(p.name+': Token '+c.name+' verschwindet');return}
@@ -7177,94 +7198,211 @@ function pvKeep(i){const p=PV.pl[i];pvDo(()=>{const n=Math.max(0,p.mull-1);if(n)
  else{p.kept=true;pvLog(p.name+' behält '+p.hand.length+' Karten')}pvBegin()})}
 function pvBegin(){if(PV.turn||!PV.pl.every(p=>p.kept))return;PV.turn=1;const p=PV.pl[PV.act];PV.view=PV.act;
  pvLog('Zug 1 – '+p.name+' beginnt'+(PV.pl.length>1?' (zieht im ersten Zug keine Karte)':''))}
-function pvNext(){pvDo(()=>{const n=PV.pl.length;PV.act=(PV.act+1)%n;PV.turn++;const p=PV.pl[PV.act];p.landsTurn=0;
+function pvNext(){pvDo(()=>{const n=PV.pl.length;PV.act=(PV.act+1)%n;PV.turn++;PV.phase=0;const p=PV.pl[PV.act];p.landsTurn=0;
  p.bf.forEach(c=>c.tap=false);pvDraw(p,1);PV.view=PV.act;pvLog('Zug '+PV.turn+' (Runde '+pvRound()+') – '+p.name+': enttappt und zieht')})}
 function pvBtn(t,f,cls){const b=$('button',t);b.type='button';if(cls)b.className=cls;b.onclick=e=>{e.stopPropagation();f()};return b}
-function pvCardEl(p,c,zone,pi){const d=$('div');d.className='pvc'+(c.tap?' tap':'')+(c.cmd?' cmd':'');d.title=c.name+(c.type?' – '+c.type:'');d.dataset.n=c.name;
- if(TTEXT){d.classList.add('txt');d.append(textTile(c))}
- else if(c.image){const im=$('img');im.src=c.image;im.loading='lazy';im.alt=c.name;im.onerror=()=>{im.remove();d.append($('span',c.name))};d.append(im)}else d.append($('span',c.name));
- if(c.cnt)d.append(Object.assign($('b',(c.cnt>0?'+':'')+c.cnt),{className:'pvcnt'}));
- if(zone=='cz'&&c.casts)d.append(Object.assign($('b','+'+2*c.casts),{className:'pvtax',title:'Commander-Steuer'}));
- let lt=null,longp=false;d.addEventListener('pointerdown',()=>{longp=false;clearTimeout(lt);lt=setTimeout(()=>{longp=true;cardZoom(c)},550)});
- ['pointerup','pointerleave','pointercancel'].forEach(ev=>d.addEventListener(ev,()=>clearTimeout(lt)));d.addEventListener('contextmenu',e=>e.preventDefault());
- d.onclick=e=>{e.stopPropagation();if(longp){longp=false;return}if(PV.bottom&&zone=='hand'&&PV.bottom.p==pi){pvDo(()=>{pvMove(p,c,'hand','lib','bottom');PV.bottom.n--;
-   if(!PV.bottom.n){p.kept=true;PV.bottom=null;pvBegin()}});return}
-  PV.menu={pi,id:c.id,zone};pvRender()};
- d.ondblclick=e=>{if(zone=='bf'){e.stopPropagation();pvDo(()=>c.tap=!c.tap)}};
- if(PV.menu&&PV.menu.id==c.id){d.classList.add('sel');d.append(pvMenu(p,c,zone))}return d}
-function pvMenu(p,c,zone){const m=$('div');m.className='pvmenu';const a=(t,f)=>m.append(pvBtn(t,()=>pvDo(f)));
- m.append(pvBtn('🔍 Groß ansehen',()=>cardZoom(c)));
- if(zone=='hand'){a(pvLand(c)?'Land spielen':'Ausspielen',()=>pvPlay(p,c,'hand'));a('Abwerfen',()=>{pvMove(p,c,'hand','gy');pvLog(p.name+' wirft '+c.name+' ab')})}
- if(zone=='cz')a('Commander wirken',()=>pvCastCmd(p,c));
- if(zone=='bf'){a(c.tap?'Enttappen':'Tappen',()=>c.tap=!c.tap);a('+1 Marke',()=>c.cnt++);a('−1 Marke',()=>c.cnt--)}
- if(zone=='lib'||zone=='gy'||zone=='ex')a('Aufs Spielfeld',()=>pvPlay(p,c,zone));
- ['hand','gy','ex'].filter(z=>z!=zone).forEach(z=>a(ZN[z],()=>{pvMove(p,c,zone,z);pvLog(p.name+': '+c.name+' von '+ZN[zone]+' → '+ZN[z])}));
- if(zone!='lib'){a('Bibliothek oben',()=>{pvMove(p,c,zone,'lib');pvLog(p.name+': '+c.name+' oben auf die Bibliothek')});
-  a('Bibliothek unten',()=>{pvMove(p,c,zone,'lib','bottom');pvLog(p.name+': '+c.name+' unter die Bibliothek')})}
- if(c.cmd&&zone!='cz')a('Kommandozone',()=>{pvMove(p,c,zone,'cz');pvLog(p.name+': Commander '+c.name+' zurück in die Kommandozone')});
- m.append(pvBtn('✕',()=>{PV.menu=null;pvRender()}));return m}
-function pvRow(p,pi,list,zone,label){const r=$('div');r.className='pvrow';r.dataset.z=zone;r.append(Object.assign($('div',label+' ('+list.length+')'),{className:'pvlab'}));
- list.forEach(c=>r.append(pvCardEl(p,c,zone,pi)));return r}
-function pvArea(p,pi){const w=$('div');w.className='pvp'+(PV.act==pi&&PV.turn?' act':'');w.id='pvp'+pi;
- const h=$('div');h.className='pvhead';w.append(h);PV.fold=PV.fold||{};
- h.append(pvBtn(PV.fold[pi]?'▸':'▾',()=>{PV.fold[pi]=!PV.fold[pi];pvSave();pvRender()},'sw pvfold'));h.append($('b',p.name+(PV.act==pi&&PV.turn?' ▶ am Zug':'')));
- const lf=$('span',' ❤ '+p.life+' ');lf.className='pvlife';h.append(lf);
- [-5,-1,1,5].forEach(d=>h.append(pvBtn((d>0?'+':'')+d,()=>pvDo(()=>{p.life+=d;pvLog(p.name+': Leben '+(p.life-d)+' → '+p.life)}),'sw')));
- h.append(' ☠ '+p.poison+' ',pvBtn('+☠',()=>pvDo(()=>{p.poison++;pvLog(p.name+': '+p.poison+' Giftmarken')}),'sw'));
- PV.pl.forEach((q,qi)=>{if(qi==pi)return;const v=p.cdmg[qi]||0;h.append(' · Commander-Schaden von '+q.name+': '+v+' ',
-  pvBtn('+1',()=>pvDo(()=>{p.cdmg[qi]=v+1;p.life--;pvLog(p.name+': 1 Commander-Schaden von '+q.name+' (gesamt '+(v+1)+')'+(v+1>=21?' – 21 erreicht, verloren!':''))}),'sw'))});
- if(PV.fold[pi]&&p.kept){w.classList.add('folded');h.append(' · Spielfeld '+p.bf.length+' · Hand '+p.hand.length+' · Friedhof '+p.gy.length);return w}
- const tb=$('div');tb.className='pvtools';w.append(tb);
- tb.append('📚 '+p.lib.length+' ',pvBtn('Ziehen',()=>pvDo(()=>{pvDraw(p,1);pvLog(p.name+' zieht eine Karte')})),
-  pvBtn('Mischen',()=>pvDo(()=>{pvShuf(p.lib);pvLog(p.name+' mischt die Bibliothek')})),
-  pvBtn('Oberste 3 ansehen',()=>{PV.pile={pi,zone:'lib',top:3};pvRender()}),pvBtn('Bibliothek durchsuchen',()=>{PV.pile={pi,zone:'lib'};pvLog(p.name+' durchsucht die Bibliothek');pvRender()}),
-  pvBtn('Alle enttappen',()=>pvDo(()=>p.bf.forEach(c=>c.tap=false))),
-  pvBtn('🪦 Friedhof '+p.gy.length,()=>{PV.pile={pi,zone:'gy'};pvRender()}),pvBtn('🌀 Exil '+p.ex.length,()=>{PV.pile={pi,zone:'ex'};pvRender()}));
- const tk=$('input');tk.placeholder='Token, z. B. 1/1 Soldat';tk.size=16;tb.append(tk,pvBtn('Token erstellen',()=>{const n=tk.value.trim()||'Token';
-  pvDo(()=>{p.bf.push(Object.assign(pvCard({name:n,type:'Token'}),{tok:true}));pvLog(p.name+' erstellt Token '+n)})}));
- if(!p.kept){const mb=$('div');mb.className='pvmull';w.append(mb);
-  if(PV.bottom&&PV.bottom.p==pi)mb.append($('b','Tippe '+PV.bottom.n+' Karte(n) in der Hand an, die unter die Bibliothek kommen.'));
-  else mb.append('Starthand: '+p.hand.length+' Karten'+(p.mull?' nach '+p.mull+' Mulligan':'')+' ',pvBtn('Behalten',()=>pvKeep(pi),'primary'),' ',pvBtn('Mulligan',()=>pvMull(pi)))}
- w.append(pvRow(p,pi,p.cz,'cz','Kommandozone'));
- w.append(pvRow(p,pi,p.bf.filter(c=>!pvLand(c)),'bf','Spielfeld'),pvRow(p,pi,p.bf.filter(pvLand),'bf','Länder'));
- if(PV.view==pi||!p.kept||PV.pl.length==1)w.append(pvRow(p,pi,p.hand,'hand','Hand'));
- else{const hh=$('div');hh.className='pvrow';hh.append('Hand: '+p.hand.length+' Karten (verdeckt) ',pvBtn('Hand zeigen',()=>{PV.view=pi;pvRender()}));w.append(hh)}
- return w}
-function pvPile(){const pp=PV.pile,p=PV.pl[pp.pi];let list=p[pp.zone];if(pp.top)list=list.slice(-pp.top).reverse();else if(pp.zone=='lib')list=list.slice().reverse();
- const o=$('div');o.id='pvpile';const h=$('div');h.className='pvhead';o.append(h);
- h.append($('b',p.name+' – '+(pp.top?'oberste '+pp.top+' Karten der Bibliothek':ZN[pp.zone])+' ('+list.length+')'),' ',
-  pvBtn('Schließen'+(pp.zone=='lib'&&!pp.top?' und mischen':''),()=>{if(pp.zone=='lib'&&!pp.top){pvDo(()=>{pvShuf(p.lib);pvLog(p.name+' mischt die Bibliothek')})}PV.pile=null;pvRender()}));
- if(pp.top)P(o,'Links liegt die oberste Karte. Antippen zum Verschieben (z. B. unter die Bibliothek für Scry).','hint');
- const r=$('div');r.className='pvrow';list.forEach(c=>r.append(pvCardEl(p,c,pp.zone,pp.pi)));o.append(r);return o}
 function pvStats(){const t=$('table');t.className='duel';t.id='pvstats';const hr=t.insertRow();['',...PV.pl.map(p=>p.name)].forEach(x=>hr.append($('th',x)));
  const row=(l,f)=>{const tr=t.insertRow();tr.insertCell().textContent=l;PV.pl.forEach(p=>tr.insertCell().textContent=f(p))};
  row('Mulligans',p=>String(p.mull));row('Commander zuerst gewirkt',p=>p.st.cmdRound?'Runde '+p.st.cmdRound+(p.st.cmdCasts>1?', '+p.st.cmdCasts+'× insgesamt':''):'noch nicht');
  row('Länder gespielt',p=>String(p.st.lands));row('Zauber gespielt',p=>String(p.st.casts));row('Karten gezogen (ohne Starthand)',p=>String(p.st.draws));
  row('Leben',p=>String(p.life));row('Karten in Bibliothek',p=>String(p.lib.length));return t}
-function pvEnd(){const o=$('div');o.id='pvend';P(o,'Partie beenden – wer hat gewonnen?','big');
- PV.pl.forEach((p,i)=>o.append(pvBtn(p.name,()=>pvFinish(i),'primary'),' '));o.append(pvBtn('ohne Wertung',()=>pvFinish(-1)),' ',pvBtn('Zurück',()=>{PV.done=null;pvRender()}));return o}
 async function pvFinish(w){PV.done={winner:w};pvLog('Partie beendet nach '+pvRound()+' Runden'+(w>=0?' – gewonnen hat '+PV.pl[w].name:''));pvSave();
  if(w>=0&&PV.pl.length>1){const r=await J('/api/game_save',{games:JSON.stringify([{players:PV.pl.map((p,i)=>({name:i?'Gegner (manuell)':'Ich',deck:p.name})),winner:w,turns:pvRound(),source:'manuell'}])});
   PV.done.saved=!r.error;PV.done.msg=r.error||'✓ Ins Spielprotokoll übernommen'}pvRender()}
-function pvRender(){const o=E('pv');if(!o||!PV)return;setTimeout(ttextLoad,0);o.innerHTML='';o.onclick=()=>{if(PV.menu){PV.menu=null;pvRender()}};
- const top=$('div');top.className='pvbar';o.append(top);
- top.append($('b','🃏 Testpartie'),' · '+(PV.turn?'Zug '+PV.turn+' (Runde '+pvRound()+')':'Starthände')+' ');
- if(PV.turn&&!PV.done)top.append(pvBtn('Nächster Zug ▶',pvNext,'primary'),' ');
- if(!PV.turn&&PV.pl.length>1)top.append(pvBtn('Startspieler: '+PV.pl[PV.act].name+' ⇄',()=>pvDo(()=>PV.act=1-PV.act)),' ');
- top.append(...tableTools((t,ti,fn,id)=>{const b=pvBtn(t,fn);b.title=ti;b.id=id;return b}),' ');
- top.append(pvBtn('↶ Rückgängig',()=>{if(!PVH.length)return;PV=JSON.parse(PVH.pop());pvSave();pvRender()}),' ',pvBtn('📊 Statistik',()=>{PV.showst=!PV.showst;pvRender()}),' ',
-  pvBtn('Partie beenden',()=>{PV.done={ask:true};pvRender()}),' ',pvBtn('Neu mischen',()=>pvStart(PV.pl.length>1)),' ',pvBtn('Schließen ✕',pvClose));
- o.append(rotHint());
- if(PV.missing.length)P(o,'Nicht gefunden und weggelassen: '+PV.missing.join(', '),'hint');
- if(PV.done&&PV.done.ask&&PV.done.winner==null)o.append(pvEnd());
- if(PV.done&&PV.done.winner!=null){P(o,'Partie beendet'+(PV.done.winner>=0?' – Sieger: '+PV.pl[PV.done.winner].name:'')+'. '+(PV.done.msg||''),'big');o.append(pvStats())}
- else if(PV.showst)o.append(pvStats());
- if(PV.pile)o.append(pvPile());
- const order=PV.pl.map((p,i)=>i);if(PV.pl.length>1&&PV.view==0)order.reverse();
- order.forEach(i=>o.append(pvArea(PV.pl[i],i)));
- const lg=$('details');lg.className='subbox';lg.id='pvlog';if(PV.logOpen)lg.open=true;lg.ontoggle=()=>PV.logOpen=lg.open;lg.append($('summary','Protokoll der Partie ('+PV.log.length+')'));
- PV.log.slice().reverse().slice(0,200).forEach(e=>lg.append($('div',(e[0]?'Zug '+e[0]+': ':'')+e[1])));o.append(lg);
- P(o,'Bedienung: Karte antippen öffnet die Aktionen, lange drücken zeigt sie groß, Doppelklick auf eine Karte im Spielfeld tappt sie. Regeln prüft der Spieltisch nicht – du entscheidest wie am echten Tisch. Die Partie bleibt gespeichert, bis du eine neue startest.','hint')}
+// ---- Spieltisch im Arena-Stil (allein oder zu zweit): Gegner oben, Spielfeld Mitte, Hand als Fächer unten,
+// ein großer Knopf für den Zug, alles Weitere hinter ⚙. Karten ziehen (Drag & Drop), antippen = Aktionen, lange drücken = groß.
+const PHASES=[['⟳','Enttappen, Versorgung, Ziehen'],['☀','Hauptphase 1'],['⚔','Kampf'],['☾','Hauptphase 2'],['⏹','Ende']];
+let AR={drag:null};
+function arMe(){return PV.view||0}
+const MCOL={W:'#f3ecd2',U:'#2f74b8',B:'#4a3f48',R:'#c8402c',G:'#2f7d45'};
+let ARMAT='colors';try{ARMAT=localStorage.getItem('armat')||'colors'}catch(e){}
+function arRing(ci){const c=(ci||'').split('').filter(x=>MCOL[x]);if(!c.length)return '#8a8a8a';if(c.length==1)return MCOL[c[0]];
+ const st=360/c.length;return 'conic-gradient('+c.map((x,i)=>MCOL[x]+' '+(i*st)+'deg '+((i+1)*st)+'deg').join(',')+')'}
+function arMat(o){const me=PV.pl[arMe()],op=arOpp()!=null?PV.pl[arOpp()]:null;o.dataset.mat=ARMAT;o.style.removeProperty('--matimg');
+ const glow=(ci,pos)=>(ci||'').split('').filter(x=>MCOL[x]).map((x,i,a)=>'radial-gradient(ellipse at '+(a.length>1?(15+70*i/(a.length-1)):50)+'% '+pos+',' +MCOL[x]+'55 0%,transparent 55%)');
+ if(ARMAT=='colors'){const g=[...glow(me.ci,'100%'),...(op?glow(op.ci,'0%'):[])];o.style.setProperty('--matglow',g.join(',')||'none')}
+ else o.style.setProperty('--matglow','none');
+ if(ARMAT=='cmd'){const c=me.cz[0]||me.bf.find(x=>x.cmd);const img=c&&c.image?c.image.replace('/normal/','/art_crop/').replace('/large/','/art_crop/'):'';if(img)o.style.setProperty('--matimg','url("'+img+'")')}}
+function arOpp(){return PV.pl.length>1?1-arMe():null}
+function arToast(t){const o=E('pv');if(!o)return;let x=E('artoast');if(!x){x=$('div');x.id='artoast';o.append(x)}x.textContent=t;x.classList.remove('fade');void x.offsetWidth;x.classList.add('fade')}
+function arDo(f,toast){pvSnap();PV.sel=null;if(PV.sheet&&!['life','lib'].includes(PV.sheet.kind))PV.sheet=null;f();pvSave();pvRender();const l=PV.log[PV.log.length-1];if(toast!==false&&l)arToast(l[1])}
+function arIcon(t,title,fn,cls,id){const b=$('button',t);b.type='button';b.title=title;b.setAttribute('aria-label',title);b.className='aricon'+(cls?' '+cls:'');if(id)b.id=id;
+ b.onclick=e=>{e.stopPropagation();fn(e)};return b}
+// --- Karte
+function arCard(p,c,zone,pi,small){const d=$('div');d.className='arc'+(c.tap?' tap':'')+(c.cmd?' cmd':'')+(c.tok?' tok':'')+(small?' sm':'')+
+  (PV.sel&&PV.sel.id==c.id?' sel':'');d.dataset.id=c.id;d.dataset.zone=zone;d.dataset.pi=pi;d.title=c.name;
+ if(TTEXT){d.classList.add('txt');d.append(textTile(c))}
+ else if(c.image){d.append(Object.assign($('span',c.name),{className:'arn'}));const im=$('img');im.src=c.image;im.loading='lazy';im.alt=c.name;im.draggable=false;im.onerror=()=>im.remove();d.append(im)}
+ else d.append(Object.assign($('span',c.name),{className:'arn'}));
+ if(c.cnt)d.append(Object.assign($('b',(c.cnt>0?'+':'')+c.cnt),{className:'arcnt',title:'Marken'}));
+ if(zone=='cz'&&c.casts)d.append(Object.assign($('b','+'+2*c.casts),{className:'artax',title:'Commander-Steuer'}));
+ arPointer(d,p,c,zone,pi);return d}
+function arPointer(d,p,c,zone,pi){let lt=null,sx=0,sy=0,long=false,moved=false;
+ d.addEventListener('contextmenu',e=>{e.preventDefault();cardZoom(c)});
+ d.addEventListener('pointerdown',e=>{if(e.button>0)return;sx=e.clientX;sy=e.clientY;long=false;moved=false;clearTimeout(lt);
+  lt=setTimeout(()=>{if(!moved){long=true;cardZoom(c)}},550);
+  const mv=ev=>{if(Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)>14&&!moved&&!long&&['hand','bf','cz','gy','ex'].includes(zone)&&!(PV.bottom)){moved=true;clearTimeout(lt);arDragStart(d,p,c,zone,pi,ev)}
+   if(moved)arDragMove(ev)};
+  const up=ev=>{document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',up);clearTimeout(lt);
+   if(moved){arDragEnd(ev);return}if(long)return;arClick(p,c,zone,pi)};
+  document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',up)});
+ }
+function arClick(p,c,zone,pi){if(PV.bottom&&zone=='hand'&&PV.bottom.p==pi){arDo(()=>{pvMove(p,c,'hand','lib','bottom');PV.bottom.n--;pvLog(p.name+' legt eine Karte unter die Bibliothek');
+   if(!PV.bottom.n){p.kept=true;PV.bottom=null;pvBegin()}},false);return}
+ const now=Date.now();if(zone=='bf'&&AR.last&&AR.last.id==c.id&&now-AR.last.t<400){AR.last=null;arDo(()=>{c.tap=!c.tap;pvLog(p.name+': '+c.name+(c.tap?' getappt':' enttappt'))},false);return}
+ AR.last={id:c.id,t:now};PV.sel=PV.sel&&PV.sel.id==c.id?null:{pi,id:c.id,zone};pvRender()}
+// --- Drag & Drop: Karte auf Spielfeld, Friedhof, Exil, Bibliothek, Hand oder Kommandozone ziehen
+function arDragStart(d,p,c,zone,pi,ev){const g=d.cloneNode(true);g.id='arghost';g.classList.remove('sel');document.body.append(g);
+ AR.drag={p,c,zone,pi,g,src:d};d.classList.add('dragging');arDragMove(ev)}
+function arDragMove(ev){const dr=AR.drag;if(!dr)return;dr.g.style.left=(ev.clientX-30)+'px';dr.g.style.top=(ev.clientY-40)+'px';
+ document.querySelectorAll('.drop-on').forEach(x=>x.classList.remove('drop-on'));const t=arTarget(ev);if(t)t.classList.add('drop-on')}
+function arTarget(ev,dr){dr=dr||AR.drag;dr.g.style.display='none';const el=document.elementFromPoint(ev.clientX,ev.clientY);dr.g.style.display='';
+ const t=el&&el.closest('[data-drop]');return t&&+t.dataset.pi==dr.pi?t:null}
+function arDragEnd(ev){const dr=AR.drag;AR.drag=null;if(!dr)return;const t=arTarget({clientX:ev.clientX,clientY:ev.clientY},dr);
+ dr.g.remove();document.querySelectorAll('.drop-on').forEach(x=>x.classList.remove('drop-on'));dr.src.classList.remove('dragging');
+ if(!t)return;const to=t.dataset.drop,{p,c,zone}=dr;if(to==zone)return;
+ arDo(()=>{if(to=='bf'){if(zone=='cz')pvCastCmd(p,c);else pvPlay(p,c,zone)}
+  else if(to=='cz'){if(!c.cmd)return;pvMove(p,c,zone,'cz');pvLog(p.name+': '+c.name+' zurück in die Kommandozone')}
+  else{pvMove(p,c,zone,to);pvLog(p.name+': '+c.name+' → '+ZN[to])}})}
+// --- Aktionsleiste der gewählten Karte (wenige, klare Knöpfe; Rest unter „Mehr“)
+function arSelBar(){const s=PV.sel;if(!s)return null;const p=PV.pl[s.pi];const c=(p[s.zone]||[]).find(x=>x.id==s.id);if(!c){PV.sel=null;return null}
+ const w=$('div');w.id='arsel';w.onclick=e=>e.stopPropagation();w.append(Object.assign($('b',c.name),{className:'arselname'}));
+ const a=(t,f,cls)=>w.append(pvBtn(t,()=>arDo(f),cls));const z=s.zone;
+ if(z=='hand'){a(pvLand(c)?'Land spielen':'Ausspielen',()=>pvPlay(p,c,'hand'),'primary');a('Abwerfen',()=>{pvMove(p,c,'hand','gy');pvLog(p.name+' wirft '+c.name+' ab')})}
+ if(z=='cz')a('Wirken'+(c.casts?' (+'+2*c.casts+')':''),()=>pvCastCmd(p,c),'primary');
+ if(z=='bf'){a(c.tap?'Enttappen':'Tappen',()=>{c.tap=!c.tap},'primary');a('+1',()=>c.cnt++);a('−1',()=>c.cnt--)}
+ if(['gy','ex','lib'].includes(z))a('Aufs Spielfeld',()=>pvPlay(p,c,z),'primary');
+ if(z!='hand'&&z!='cz')a('Hand',()=>{pvMove(p,c,z,'hand');pvLog(p.name+': '+c.name+' → Hand')});
+ w.append(pvBtn('🔍',()=>cardZoom(c),'aricon'));
+ const more=pvBtn('Mehr ▾',()=>{w.classList.toggle('open')},'armore');w.append(more);
+ const m=$('div');m.className='armorelist';w.append(m);const b=(t,f)=>m.append(pvBtn(t,()=>arDo(f)));
+ ['gy','ex'].filter(x=>x!=z).forEach(x=>{b('→ '+ZN[x],()=>{pvMove(p,c,z,x);pvLog(p.name+': '+c.name+' → '+ZN[x])})});
+ if(z!='lib'){b('→ Bibliothek oben',()=>{pvMove(p,c,z,'lib');pvLog(p.name+': '+c.name+' oben auf die Bibliothek')});b('→ Bibliothek unten',()=>{pvMove(p,c,z,'lib','bottom');pvLog(p.name+': '+c.name+' unter die Bibliothek')})}
+ if(c.cmd&&z!='cz')b('→ Kommandozone',()=>{pvMove(p,c,z,'cz');pvLog(p.name+': Commander '+c.name+' zurück in die Kommandozone')});
+ if(z=='bf')b('Kopie als Token',()=>{p.bf.push(Object.assign(pvCard({name:c.name+' (Kopie)',image:c.image,type:c.type}),{tok:true}));pvLog(p.name+' kopiert '+c.name)});
+ w.append(pvBtn('✕',()=>{PV.sel=null;pvRender()},'aricon arx'));return w}
+// --- Spielerleiste: Avatar mit Leben, Stapel, Kommandozone
+function arPlayerBar(pi,top){const p=PV.pl[pi];const w=$('div');w.className='arpl'+(top?' top':' me')+(PV.act==pi&&PV.turn?' act':'');w.id='arpl'+pi;
+ const av=$('button');av.type='button';av.className='aravatar';av.id='arav'+pi;av.style.setProperty('--ring',arRing(p.ci));av.title=p.name+' – Leben, Gift, Commander-Schaden';
+ av.append(Object.assign($('b',String(p.life)),{className:'arlife'}),Object.assign($('span',p.name),{className:'arname'}));
+ if(p.poison)av.append(Object.assign($('i','☠'+p.poison),{className:'arbadge'}));
+ const cd=Object.values(p.cdmg||{}).reduce((a,b)=>Math.max(a,b),0);if(cd)av.append(Object.assign($('i','⚔'+cd),{className:'arbadge cd',title:'höchster Commander-Schaden'}));
+ av.onclick=e=>{e.stopPropagation();PV.sheet={kind:'life',pi};pvRender()};w.append(av);
+ const pile=(z,ic,title,fn)=>{const b=$('button');b.type='button';b.className='arpile';b.dataset.drop=z;b.dataset.pi=pi;b.id='arz-'+z+pi;b.title=title;
+  b.append($('span',ic),$('b',String(p[z].length)));b.onclick=e=>{e.stopPropagation();fn()};return b};
+ w.append(pile('lib','📚','Bibliothek – antippen: Aktionen',()=>{PV.sheet={kind:'lib',pi};pvRender()}),
+  pile('gy','🪦','Friedhof',()=>{PV.sheet={kind:'pile',pi,zone:'gy'};pvRender()}),pile('ex','🌀','Exil',()=>{PV.sheet={kind:'pile',pi,zone:'ex'};pvRender()}));
+ const cz=$('div');cz.className='arcz';cz.dataset.drop='cz';cz.dataset.pi=pi;cz.title='Kommandozone';p.cz.forEach(c=>cz.append(arCard(p,c,'cz',pi,true)));if(!p.cz.length)cz.append($('span','👑'));w.append(cz);
+ if(top&&pi!=arMe()){const h=$('div');h.className='arbacks';h.title='Hand: '+p.hand.length+' Karten';for(let i=0;i<Math.min(p.hand.length,10);i++)h.append($('i'));h.append($('b',String(p.hand.length)));w.append(h)}
+ return w}
+// --- Spielfeld einer Seite: Kreaturen & Co. zur Mitte, Länder nach außen
+function arHalf(pi,top){const p=PV.pl[pi];const h=$('div');h.className='arhalf'+(top?' top':'');h.dataset.drop='bf';h.dataset.pi=pi;h.id='arbf'+pi;
+ const perm=$('div');perm.className='arrow perm';p.bf.filter(c=>!pvLand(c)).forEach(c=>perm.append(arCard(p,c,'bf',pi)));
+ const lands=$('div');lands.className='arrow lands';
+ const grp={};p.bf.filter(pvLand).forEach(c=>{(grp[c.name]=grp[c.name]||[]).push(c)});
+ Object.values(grp).forEach(g=>{const st=$('div');st.className='arstack';g.forEach(c=>st.append(arCard(p,c,'bf',pi,true)));if(g.length>1)st.append(Object.assign($('b','×'+g.length),{className:'arstackn'}));lands.append(st)});
+ if(!p.bf.length)perm.append(Object.assign($('span','Karten hierher ziehen oder antippen → Ausspielen'),{className:'arempty'}));
+ top?h.append(lands,perm):h.append(perm,lands);return h}
+// --- Hand als Fächer
+function arHand(pi){const p=PV.pl[pi];const h=$('div');h.className='arhand';h.dataset.drop='hand';h.dataset.pi=pi;h.id='arhand';
+ const n=p.hand.length;p.hand.forEach((c,i)=>{const el=arCard(p,c,'hand',pi);const m=(n-1)/2,off=i-m;
+  el.style.setProperty('--rot',(n>1?off*Math.min(4,24/n):0)+'deg');el.style.setProperty('--lift',(Math.abs(off)*Math.min(5,30/n))+'px');el.style.zIndex=i+1;h.append(el)});
+ requestAnimationFrame(()=>{const w=h.clientWidth,cw=h.firstChild?h.firstChild.offsetWidth:80;const ov=n>1?Math.max(-cw*.15,(n*cw-w+20)/(n-1)):0;h.style.setProperty('--ov',Math.max(0,ov)+'px')});
+ return h}
+// --- Seitenmenü (⚙, Protokoll, Statistik, Stapel, Leben, Tokens, Ende)
+function arSheet(){const s=PV.sheet;if(!s)return null;const w=$('div');w.id='arsheet';w.onclick=e=>e.stopPropagation();
+ const head=$('div');head.className='arsh';w.append(head);const title=$('b');head.append(title,pvBtn('✕',()=>{PV.sheet=null;pvRender()},'aricon arx'));
+ const sec=t=>{const d=$('div');d.className='arsec';if(t)d.append($('h4',t));w.append(d);return d};
+ const btn=(o,t,f,cls,id)=>{const b=pvBtn(t,f,cls);if(id)b.id=id;o.append(b);return b};
+ const me=PV.pl[s.pi!=null?s.pi:arMe()];
+ if(s.kind=='menu'){title.textContent='Menü';
+  let a=sec('Spielmatte');[['colors','Farben des Decks'],['felt','Klassischer Filz'],['parch','Pergament'],['cmd','Bild des Commanders']].forEach(([k,t])=>btn(a,(ARMAT==k?'✓ ':'')+t,()=>{ARMAT=k;try{localStorage.setItem('armat',k)}catch(e){}pvRender()},'','armat-'+k));
+  a=sec('Ansicht');btn(a,(TTEXT?'✓ ':'')+'Aa Textansicht',()=>{ttextToggle()},'','ttext');btn(a,'A−',()=>{tableSize(-1);pvRender()},'','tsmall');btn(a,'A+',()=>{tableSize(1);pvRender()},'','tbig');btn(a,'📱 Quer + Vollbild',()=>tableLandscape(),'','tquer');
+  if(PV.pl.length>1)btn(a,'⇅ Seite wechseln (Hand von '+PV.pl[1-arMe()].name+')',()=>{PV.view=1-arMe();PV.sel=null;PV.sheet=null;pvRender()},'','arswap');
+  a=sec('Aktionen');btn(a,'✨ Token erzeugen',()=>{PV.sheet={kind:'tokens',pi:arMe()};pvRender()},'','artok');btn(a,'↺ Alle enttappen',()=>arDo(()=>{me.bf.forEach(c=>c.tap=false);pvLog(me.name+' enttappt alles')}));
+  btn(a,'🎲 Würfeln / Münze',()=>arDo(()=>pvLog('Würfel: W6 = '+(1+Math.floor(Math.random()*6))+', W20 = '+(1+Math.floor(Math.random()*20))+', Münze: '+(Math.random()<.5?'Kopf':'Zahl'))),'','ardice');
+  a=sec('Partie');btn(a,'📊 Statistik',()=>{PV.sheet={kind:'stats'};pvRender()},'','arstats');btn(a,'📜 Protokoll',()=>{PV.sheet={kind:'log'};pvRender()},'','arlog');
+  if(!PV.turn&&PV.pl.length>1)btn(a,'Startspieler: '+PV.pl[PV.act].name+' ⇄',()=>arDo(()=>{PV.act=1-PV.act;pvLog('Startspieler: '+PV.pl[PV.act].name)}));
+  btn(a,'🏁 Partie beenden',()=>{PV.sheet={kind:'end'};pvRender()},'','arend');btn(a,'⟲ Neue Partie',()=>pvStart(PV.pl.length>1),'','arnew');
+  a=sec('Bedienung');a.append(Object.assign($('div','Karte antippen: Aktionen · ziehen: auf Spielfeld, 🪦, 🌀, 📚 oder Hand legen · lange drücken / Rechtsklick: groß ansehen · Doppelklick bzw. zweimal antippen: tappen. Tasten: Leertaste = Zug beenden, D = ziehen, T = tappen, Z = rückgängig, Esc = schließen. Regeln prüft der Tisch nicht.'),{className:'hint'}));
+  if(PV.missing.length)a.append(Object.assign($('div','Nicht gefunden und weggelassen: '+PV.missing.join(', ')),{className:'hint'}))}
+ if(s.kind=='life'){const p=PV.pl[s.pi];title.textContent=p.name;
+  let a=sec('Leben: '+p.life);[-5,-1,1,5].forEach(d=>btn(a,(d>0?'+':'')+d,()=>arDo(()=>{p.life+=d;pvLog(p.name+': Leben '+(p.life-d)+' → '+p.life)}),'arbig'));
+  a=sec('Gift: '+p.poison);btn(a,'−1',()=>arDo(()=>{p.poison=Math.max(0,p.poison-1);pvLog(p.name+': '+p.poison+' Giftmarken')}));btn(a,'+1',()=>arDo(()=>{p.poison++;pvLog(p.name+': '+p.poison+' Giftmarken'+(p.poison>=10?' – verloren!':''))}));
+  PV.pl.forEach((q,qi)=>{if(qi==s.pi)return;const v=p.cdmg[qi]||0;const b=sec('Commander-Schaden von '+q.name+': '+v);
+   btn(b,'+1 (kostet 1 Leben)',()=>arDo(()=>{p.cdmg[qi]=v+1;p.life--;pvLog(p.name+': 1 Commander-Schaden von '+q.name+' (gesamt '+(v+1)+')'+(v+1>=21?' – 21 erreicht, verloren!':''))}))})}
+ if(s.kind=='lib'){const p=PV.pl[s.pi];title.textContent='📚 Bibliothek – '+p.lib.length+' Karten';const a=sec('');
+  btn(a,'🃏 Karte ziehen',()=>arDo(()=>{pvDraw(p,1);pvLog(p.name+' zieht eine Karte')}),'primary','ardraw2');btn(a,'🔀 Mischen',()=>arDo(()=>{pvShuf(p.lib);pvLog(p.name+' mischt')}));
+  const n=$('input');n.type='number';n.min=1;n.max=20;n.value=3;n.style.width='3.5em';const b2=$('div');b2.className='arsec';b2.append('Oberste ',n,' ');
+  b2.append(pvBtn('ansehen',()=>{PV.sheet={kind:'pile',pi:s.pi,zone:'lib',top:Math.max(1,parseInt(n.value)||3)};pvRender()}));w.append(b2);
+  btn(a,'🔎 Durchsuchen',()=>{PV.sheet={kind:'pile',pi:s.pi,zone:'lib'};pvLog(p.name+' durchsucht die Bibliothek');pvRender()},'','arsearch')}
+ if(s.kind=='pile'){const p=PV.pl[s.pi];let list=p[s.zone];if(s.top)list=list.slice(-s.top).reverse();else if(s.zone=='lib')list=list.slice().reverse();
+  title.textContent=(s.top?'Oberste '+s.top+' Karten':ZN[s.zone])+' – '+p.name+' ('+list.length+')';
+  if(s.top)w.append(Object.assign($('div','Links die oberste. Karte antippen → Aktionen (z. B. unter die Bibliothek für Scry).'),{className:'hint'}));
+  const g=$('div');g.className='argrid';list.forEach(c=>g.append(arCard(p,c,s.zone,s.pi,true)));if(!list.length)g.append($('span','leer'));w.append(g);
+  if(s.zone=='lib'&&!s.top)w.append(pvBtn('Schließen und mischen',()=>{PV.sheet=null;arDo(()=>{pvShuf(p.lib);pvLog(p.name+' mischt')})}))}
+ if(s.kind=='tokens'){const p=PV.pl[s.pi];title.textContent='✨ Token für '+p.name;const a=sec('');const inp=$('input');inp.placeholder='z. B. 1/1 Goblin';inp.id='artokname';
+  a.append(inp,pvBtn('Erzeugen',()=>{const v=inp.value.trim()||'Token';PV.sheet=null;arDo(()=>{p.bf.push(Object.assign(pvCard({name:v,type:'Token'}),{tok:true}));pvLog(p.name+' erzeugt Token '+v)})},'primary'));
+  const l=sec('Tokens aus dem Deck');l.id='artoklist';l.append(Object.assign($('span','lade …'),{className:'hint'}));
+  const names=[...new Set(['lib','hand','bf','gy','ex','cz'].flatMap(z=>p[z].map(c=>c.name)))];
+  J('/api/tokens',{list:names.map(n=>'1 '+n).join('\\n'),commander:p.cz.map(c=>c.name).join(' + ')}).then(r=>{l.innerHTML='';l.append($('h4','Tokens aus dem Deck'));
+   (r.tokens||[]).forEach(t=>l.append(pvBtn(t.name+(t.type?' – '+t.type:''),()=>{PV.sheet=null;arDo(()=>{p.bf.push(Object.assign(pvCard({name:t.name,image:t.image||'',type:t.type||'Token'}),{tok:true}));pvLog(p.name+' erzeugt Token '+t.name)})},'artokbtn')));
+   if(!(r.tokens||[]).length)l.append(Object.assign($('span','Keine Tokens im Deck erkannt.'),{className:'hint'}))})}
+ if(s.kind=='stats'){title.textContent='📊 Statistik';w.append(pvStats())}
+ if(s.kind=='log'){title.textContent='📜 Protokoll ('+PV.log.length+')';const l=$('div');l.id='pvlog';PV.log.slice().reverse().slice(0,300).forEach(e=>l.append($('div',(e[0]?'Zug '+e[0]+': ':'')+e[1])));w.append(l)}
+ if(s.kind=='end'){title.textContent='🏁 Partie beenden';const a=sec('Wer hat gewonnen?');a.id='pvend';PV.pl.forEach((p,i)=>btn(a,p.name,()=>{PV.sheet={kind:'done'};pvFinish(i)},'primary'));
+  btn(a,'ohne Wertung',()=>{PV.sheet={kind:'done'};pvFinish(-1)})}
+ if(s.kind=='done'&&PV.done){title.textContent='Partie beendet';w.append(Object.assign($('p',(PV.done.winner>=0?'Sieger: '+PV.pl[PV.done.winner].name+'. ':'')+(PV.done.msg||'')),{className:'big'}),pvStats());
+  w.append(pvBtn('⟲ Neue Partie',()=>pvStart(PV.pl.length>1),'primary'))}
+ return w}
+// --- Starthand / Mulligan
+function arMull(){const i=PV.bottom?PV.bottom.p:PV.pl.findIndex(p=>!p.kept);if(i<0)return null;const p=PV.pl[i];
+ const w=$('div');w.id='armull';w.onclick=e=>e.stopPropagation();
+ w.append($('h3',PV.pl.length>1?'Starthand – '+p.name:'Deine Starthand'));
+ w.append(Object.assign($('div',PV.bottom?'Tippe '+PV.bottom.n+' Karte'+(PV.bottom.n>1?'n':'')+' an, die unter die Bibliothek '+(PV.bottom.n>1?'kommen':'kommt')+'.':(p.mull?p.mull+'. Mulligan'+(p.mull==1?' (frei)':'')+' · ':'')+p.hand.length+' Karten · '+p.hand.filter(pvLand).length+' Länder'),{className:'arsub'}));
+ const r=$('div');r.className='armullrow';p.hand.forEach(c=>r.append(arCard(p,c,'hand',i)));w.append(r);
+ if(!PV.bottom){const b=$('div');b.className='armullbtn';b.append(pvBtn('Behalten',()=>pvKeep(i),'argo'),pvBtn('Mulligan',()=>pvMull(i),'armullb'));
+  if(PV.pl.length>1&&!PV.turn&&i==0)b.append(pvBtn('Beginnt: '+PV.pl[PV.act].name+' ⇄',()=>arDo(()=>{PV.act=1-PV.act;pvLog('Startspieler: '+PV.pl[PV.act].name)}),'arsmall'));w.append(b)}
+ return w}
+// --- Gesamtansicht
+function pvRender(){const o=E('pv');if(!o||!PV)return;setTimeout(ttextLoad,0);o.innerHTML='';o.className='ar'+(PV.pl.length>1?' duel':' solo');arMat(o);o.scrollTop=0;o.onscroll=()=>{if(o.scrollTop)o.scrollTop=0};
+ o.onclick=()=>{if(PV.sel||PV.sheet){PV.sel=null;PV.sheet=null;pvRender()}};
+ const me=arMe(),op=arOpp(),pm=PV.pl[me];
+ const top=$('div');top.className='artop';o.append(top);
+ const info=$('div');info.className='arinfo';info.append($('b',PV.turn?'Zug '+PV.turn:'Start'),PV.turn&&PV.pl.length>1?' · Runde '+pvRound():'');
+ if(PV.turn){const ph=$('div');ph.className='arphases';PHASES.forEach(([ic,t],k)=>{const b=pvBtn(ic,()=>{PV.phase=(PV.phase||0)==k?(k+1)%PHASES.length:k;pvSave();pvRender()},'arph'+((PV.phase||0)==k?' on':''));b.title=t;ph.append(b)});
+  info.append(ph,Object.assign($('span',PHASES[PV.phase||0][1]),{className:'arphname'}))}
+ top.append(info);
+ const tr=$('div');tr.className='artools';
+ if(op!=null)tr.append(arIcon('⇅','Seite wechseln: die andere Hand zeigen',()=>{PV.view=1-me;PV.sel=null;pvRender()},'','arswapq'));
+ tr.append(arIcon('↶','Rückgängig (Z)',()=>{if(!PVH.length)return;PV=JSON.parse(PVH.pop());pvSave();pvRender()},'','arundo'),
+  Object.assign(arIcon('📱','Quer + Vollbild',()=>tableLandscape(),'arrot','tquer2')),
+  arIcon('⚙','Menü: Ansicht, Tokens, Würfel, Statistik, Protokoll, Partie beenden',()=>{PV.sheet=PV.sheet&&PV.sheet.kind=='menu'?null:{kind:'menu'};pvRender()},'','armenu'),
+  arIcon('✕','Schließen (Esc) – die Partie bleibt gespeichert',pvClose,'','arclose'));
+ top.append(tr);
+ if(op!=null)o.append(arPlayerBar(op,true));
+ const field=$('div');field.className='arfield';o.append(field);
+ if(op!=null)field.append(arHalf(op,true),Object.assign($('div'),{className:'armid'}));
+ field.append(arHalf(me,false));
+ const bot=$('div');bot.className='arbottom';o.append(bot);
+ bot.append(arPlayerBar(me,false),arHand(me));
+ const go=$('div');go.className='argobox';
+ if(PV.turn&&!PV.done){const mine=PV.act==me;
+  go.append(pvBtn('🃏',()=>arDo(()=>{pvDraw(pm,1);pvLog(pm.name+' zieht eine Karte')}),'aricon ardraw'));
+  const g=pvBtn(PV.pl.length>1?(mine?'Zug beenden':'Weiter: '+PV.pl[PV.act].name):'Nächster Zug',pvNext,'argo');g.id='argo';g.title='Leertaste';go.append(g)}
+ else if(PV.done)go.append(pvBtn('⟲ Neue Partie',()=>pvStart(PV.pl.length>1),'argo'));
+ bot.append(go);
+ const sb=arSelBar();if(sb)o.append(sb);
+ const m=(!PV.turn||PV.bottom)&&!PV.done?arMull():null;if(m)o.append(m);
+ const sh=arSheet();if(sh)o.append(sh)}
+document.addEventListener('keydown',e=>{const o=E('pv');if(!o||o.hidden||!PV||/INPUT|TEXTAREA|SELECT/.test((e.target.tagName||'')))return;
+ const k=e.key.toLowerCase();
+ if(k=='escape'){e.preventDefault();if(PV.sheet||PV.sel){PV.sheet=null;PV.sel=null;pvRender()}else if(E('czoom'))E('czoom').remove();else pvClose()}
+ else if(k==' '&&PV.turn&&!PV.done){e.preventDefault();pvNext()}
+ else if(k=='d'&&PV.turn){const p=PV.pl[arMe()];arDo(()=>{pvDraw(p,1);pvLog(p.name+' zieht eine Karte')})}
+ else if(k=='z'){if(PVH.length){PV=JSON.parse(PVH.pop());pvSave();pvRender()}}
+ else if(k=='t'&&PV.sel&&PV.sel.zone=='bf'){const p=PV.pl[PV.sel.pi];const c=p.bf.find(x=>x.id==PV.sel.id);if(c)arDo(()=>{c.tap=!c.tap},false)}});
+
 function pvResume(){try{const s=JSON.parse(localStorage.getItem('pvgame')||'null');if(s&&s.pl){PV=s;PVH=[];pvUid=Math.max(pvUid,...PV.pl.flatMap(p=>[...p.lib,...p.hand,...p.bf,...p.gy,...p.ex,...p.cz].map(c=>c.id)),0);pvOpen();return true}}catch(e){}return false}
 
 // ---- Spieltisch
