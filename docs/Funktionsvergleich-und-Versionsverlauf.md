@@ -235,6 +235,52 @@ Zwei Maßstäbe nebeneinander: **Punkte** (0–3, wie im Punktevergleich oben, g
 
 **Quellen der Neubewertung (23.11.2026):** Forenbeiträge und Testberichte zu Moxfield und Archidekt (r/EDH, Lemmy/Feddit, MTG Nexus, Draftsim), Archidekt „Playtester 2.0“, TappedOut-Playtester-Rückmeldungen, Forge-Wiki und Forge-Forum (Slightly Magic), ManaBox-Anleitung und App-Bewertungen, Forendiskussionen zu EDHREC (MTG Salvation, TappedOut, MTG Nexus), Bracket-Rechner von Playgroup, Draftsim, ScrollVault, TableCommander und Nerd Leagues, Deckbox- und Deckstats-Forum zu Cardmarket-Preisen, Moxfield-Feedback zur Cardmarket-Preisgenauigkeit, StarCityGames und TappedOut zu KI-Deckbau, Playgroup-Übersicht zu Spielverfolgung und Spielabenden.
 
+## Verbesserungsplan: von den größten Lücken zur Spitze (Stand 23.11.2026)
+
+Sortiert nach der größten Lücke. „Überholen“ nennt den Punkt, an dem die Manaschmiede etwas bieten könnte, das die führenden Anbieter nicht haben. Aufwand: S = bis eine Version, M = zwei bis drei Versionen, L = größeres Vorhaben.
+
+| Bereich | Heute | Ziel | Maßnahmen | Überholen | Aufwand | Abhängig von |
+| --- | --- | --- | --- | --- | --- | --- |
+| Turniere und Spielabende | 25 % | 95 % | Spielabend-Modus: Teilnehmer, Pods zufällig, nach Swiss oder nach Bracket, Punkte-Schema wählbar, Rangliste, Saison/Liga, Beitritt per QR-Code, Ergebnis direkt vom Spieltisch am Handy, Wiederholungen von Gegnern vermeiden. Bewertung mit TrueSkill statt Elo (Elo ist für Partien mit mehr als zwei Spielern nicht gebaut). | Pods nach Bracket und gemessener Deckstärke aus Spielprotokoll und Forge-Simulation – „faire Tische“, die TopDeck und Playgroup so nicht bieten. | M | Punkteschema eurer Runde; Server im Netz erreichbar |
+| Kaufen und Händler | 55 % | 75–85 % | Kaufassistent: fehlende Karten je Händler aufteilen, Cardmarket-Wants getrennt nach Druck/Foil, Preisvergleich sobald Händler einen Preis-Feed freigeben; Precon-Preisvergleich. | Einziger deutscher Händlervergleich für Commander-Listen – nur mit Freigabe der Händler. | S–M | Antworten von Trader-online und cardcosmos |
+| Kartenempfehlungen | 60 % | 85–95 % | Kartenrollen aus Scryfall-Tagger (otag: Ramp, Entfernung, Kartenziehen …) statt Textmustern; Combos von Spellbook; Daten aus eigenem Spielprotokoll und Galerie; EDHREC-Daten nur mit Erlaubnis. | **Gemessene Empfehlungen:** Forge spielt das Deck mit und ohne Kandidatenkarte gegen passende Precons und misst die Änderung der Siegquote. EDHREC zählt, wie oft eine Karte gespielt wird – die Manaschmiede würde messen, ob sie hilft. | M–L | Rechenzeit (Server-CPU); ggf. Erlaubnis EDHREC |
+| Teilen und Community | 60 % | 80–90 % | Primer-Editor (Text mit Kartenlinks und -bildern), „In Moxfield/Archidekt öffnen“, Benachrichtigung per Discord-Webhook, optional Verbund mehrerer Manaschmiede-Server mit gemeinsamer Galerie (freiwillig je Deck). | Selbst betriebene Galerie mit Simulationswerten und Bracket je Deck. | M–L | Entscheidung über öffentliche Instanz (Impressum, Datenschutz, Moderation) |
+| Kartenscanner | 70 % | 90 % | Sammlernummer und Set-Code unten links per Texterkennung lesen und so den exakten Druck bestimmen; danach Bildvergleich nur noch zwischen den Drucken; Foil von Hand umschalten. | Direkter Eintrag in Sammlung je Druck mit Cardmarket-Preis. | M | Testfotos von deinem Handy |
+| Deck automatisch bauen | 70 % | 90 % | Rollen aus Tagger, Ziel-Bracket, Budget und Sammlung; danach Selbstspiel-Schleife: bauen → gegen Precons simulieren → schwächste Karten tauschen. | Kein Anbieter prüft gebaute Decks durch echte Partien. | M | Rechenzeit |
+| KI-Partien | 70 % | 85 % | Vor dem Duell warnen, welche Karten die Forge-KI kaum spielen kann (Kennzeichnung in den Kartenskripten), Konfidenzintervall statt nur Siegquote, „nie gewirkte Karten“ je Deck, mehr Partien im Hintergrund. | Bleibt Alleinstellung. | S | – |
+| Spielprotokoll und Siegquoten | 75 % | 95 % | TrueSkill je Spieler und Deck, Erzfeinde, Zugdauer, Spaß-Bewertung, vorsichtig berechnete Siegquote bei wenigen Partien. | Verknüpft mit Forge-Werten: „im Test stark, am Tisch schwach“. | S–M | – |
+| Testspiel | 85 % | 95 % | Mehrfachauswahl, freie Platzierung, Online-Partie zu zweit über den eigenen Server. | Online-Tisch mit eigenem Deck- und Sammlungsbestand. | M–L | – |
+| Combos und Brackets | 85 % | 95 % | Zusatzsignale für Bracket 4 (schnelle Manaquellen, freie Gegenzauber); Prüfung gegen alle 178 Precons als Referenzsatz. | Bracket mit gemessener Spielstärke aus Forge. | S | – |
+| Deck-Editor | 85 % | 95 % | Primer-Editor (siehe Community). | – | S–M | – |
+| Plattformen | 85 % | 95 % | iOS als eigene App statt nur Web-App. | – | M | Apple-Entwicklerkonto (99 $ pro Jahr) |
+
+**Was ich für die Umsetzung von dir brauche**
+
+1. **Reihenfolge**: welche Bereiche zuerst. Vorschlag: Spielabende → gemessene Empfehlungen → Scanner → Kaufassistent.
+2. **Spielabende**: wie eure Runde zählt (nur Sieg oder Punkte für Platzierungen, Unentschieden, Dreier-Tische), wie viele Spieler typisch, ob feste Pods oder neu gemischt, ob Saisons gewünscht.
+3. **Server**: ob die Manaschmiede für Spielabende und Online-Partien aus dem Internet erreichbar sein soll (Domain, HTTPS) oder nur im Heimnetz.
+4. **Öffentliche Instanz**: ja oder nein. Wenn ja: Impressum und Datenschutzerklärung (DSGVO), Moderation der Galerie, Nutzungsbedingungen – das musst du als Betreiber verantworten.
+5. **Scanner-Testmaterial**: 30–50 Handyfotos: aktuelle Karten, alte Rahmen vor 2003, Foils, deutsche und japanische Karten, Showcase/Borderless, Karten in Hüllen.
+6. **Rechenzeit**: ob der Server für Simulationen nachts mehrere Stunden voll ausgelastet werden darf (CPU-Kerne, RAM).
+7. **iOS**: ob du ein Apple-Entwicklerkonto anlegen möchtest.
+8. **Testspieler**: zwei bis vier Mitspieler, die Spielabend-Modus und Online-Tisch ausprobieren.
+
+**Kommunikatoren (Ansprechpartner)**
+
+| Wer | Wofür | Stand |
+| --- | --- | --- |
+| Trader-online.de | Preis- und Bestands-Feed für Einzelkarten, Erlaubnis für Preisvergleich, ggf. Partnerprogramm | noch nicht angefragt |
+| cardcosmos | Feed für versiegelte Ware (Precons), ggf. Partnerprogramm | noch nicht angefragt |
+| EDHREC | Erlaubnis zur Nutzung der öffentlichen JSON-Daten (Aufnahmequoten, Synergie) oder Partnerschaft | noch nicht angefragt |
+| Forge-Team (Card-Forge auf GitHub, Forum Slightly Magic) | KI-Profile, Kennzeichnung KI-ungeeigneter Karten, Lizenz (GPL) vor einer öffentlichen Verteilung | noch nicht angefragt |
+| Playgroup.gg | optional: Datenaustausch (Kartenwirkung aus echten Partien) | optional |
+| TopDeck.gg | optional: Turnier-Ergebnisse importieren | optional |
+| Commander Spellbook, Scryfall | keine Anfrage nötig; Nutzungsregeln (Abfrageabstände, Quellenangabe) werden eingehalten | erledigt |
+| Cardmarket | keine API, kein Partnerprogramm; Preisliste mit Kennzeichnung erlaubt | erledigt (19.11.2026) |
+| Örtliche Spieleläden | Testlauf für Spielabende | optional |
+
+Anfragen schreibe ich dir als Entwürfe; senden musst du sie selbst.
+
 ## Cardmarket-Anbindung: Möglichkeiten und Vorgehen (Stand 18.11.2026)
 
 | Weg | Was er liefert | Zugang heute | Eignung für die Manaschmiede |
