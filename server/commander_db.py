@@ -27,6 +27,9 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 54: Messlabor (Gegner & Duell): Kartentausch-Varianten oder KI-Profile per Forge gegen ein Gegnerfeld messen, gleicher
+            Zufallsstart, Siegquote mit 90-%-Bereich, Urteil, Restzeit; Ergebnisse archiviert, Übernehmen ins Deck. Duelle mit
+            KI-Profil und Vorausschau.
 Version 53: Spielabend-Modus (Spieltisch-Tab): Spieler eintragen, gemischte Vierer-Tische auslosen (wiederholte Paarungen werden
             vermieden), Sieger per Antippen, Rangliste nach Siegen, Saison optional; Mitspieler tragen Ergebnisse über Link/QR-Code ohne Konto
             ein (/n/CODE); Tisch direkt im Lebenszähler starten. Impressum und Datenschutzerklärung (/impressum, /datenschutz), vom Admin pflegbar.
@@ -122,7 +125,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "53"
+APP_VERSION = "54"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -3486,6 +3489,7 @@ td.r,th.r{text-align:right}.hint{opacity:.75;font-size:14px}.err{color:#ff8a72}f
 #gnbox .gnst{border-collapse:collapse;margin:6px 0}#gnbox .gnst td,#gnbox .gnst th{padding:4px 10px;border-bottom:1px solid #fff2;text-align:left}
 #gnbox .gnpod{margin:6px 0;padding:8px;border:1px solid #7a5c2e55;border-radius:8px}#gnbox .gnpod button{margin:3px}#gnbox button.gnwin{background:linear-gradient(#f1d27a,#b8891f);color:#1b140e;font-weight:bold}
 #gnbox .gnqr{width:180px;background:#fff;border-radius:6px;margin:6px 0}#gnbox .gnp{margin:3px 0}#gnbox .gnhead{font-size:1.15em;margin:6px 0}
+#labwrap{margin-top:14px}#labwrap .labvar{margin:3px 0}#labwrap progress{width:260px;vertical-align:middle}#labwrap .labrun{margin:4px 0}#labres td.w{background:#e3f1e3;font-weight:bold}#labres td.l{color:#b5432f}
 </style>
 <h1 id=t>Spielabend</h1><div class=hint id=s></div><div id=m class=err></div><div id=r></div><h2>Rangliste</h2><table id=st></table><div id=se></div>
 <footer>Manaschmiede · <a href=/impressum>Impressum</a> · <a href=/datenschutz>Datenschutz</a></footer>
@@ -5120,6 +5124,11 @@ def duel_start(p, uid=0):
     limit = max(30, min(int(g("timeout") or (900 if extra else 300)), 1200 if extra else 600))
     cmd = (FORGE_WRAPPER + [st["java"]] + FORGE_JVM + ["-jar", st["jar"], "sim", "-d", *files, "-D", tmp,
                                      "-n", str(n), "-f", "Commander", "-c", str(limit)])
+    profs = ai_profiles(st["dir"])
+    if g("ai") in profs and g("ai") != "Default":  # KI-Profil für dein Deck, die Gegner spielen mit „Default“
+        cmd += ["-a", g("ai")] + ["Default"] * (len(files) - 1)
+    if g("mc") in ("on", "max"):  # Vorausschau der KI (langsamer, spielt stärker)
+        cmd += ["-mc", g("mc")]
     jid = hashlib.sha1(f"{tmp}{datetime.datetime.now()}".encode()).hexdigest()[:10]
     players = [{"k": "a", "name": "Dein Deck"}, {"k": "b", "name": label(opp)}] + \
               [{"k": "cd"[i], "name": label(o)} for i, o in enumerate(extra)]
@@ -5149,7 +5158,373 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 53)</title>
+# ---------------------------------------------------------------- Messlabor: Deckvarianten und KI-Piloten per Forge messen
+MAX_LAB_GAMES = max(4, int(ENV("CDB_MAX_LAB_GAMES", "200" if SERVER else "600")))
+LAB_PROFILES = ("Default", "Cautious", "Reckless", "Experimental", "Hard", "Hardest")
+LAB_MC = ("off", "on", "max")
+
+
+def ai_profiles(forge_dir):
+    """KI-Profile, die diese Forge-Version mitbringt (res/ai/*.ai)."""
+    try:
+        found = sorted(f[:-3] for f in os.listdir(os.path.join(forge_dir, "res", "ai")) if f.endswith(".ai"))
+    except OSError:
+        found = []
+    return [x for x in LAB_PROFILES if x in found] + [x for x in found if x not in LAB_PROFILES] or ["Default"]
+
+
+def wilson(w, n, z=1.645):
+    """90-%-Vertrauensbereich einer Siegquote (Wilson), in Prozent."""
+    if not n:
+        return [0, 100]
+    p = w / n
+    d = 1 + z * z / n
+    c = (p + z * z / (2 * n)) / d
+    h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return [round(100 * max(0, c - h)), round(100 * min(1, c + h))]
+
+
+def lab_verdict(w1, n1, w0, n0):
+    """Unterschied zur Ausgangsversion: z-Wert zweier Anteile; ab |z| 1,645 deutlich (90 %), ab 0,84 eine Tendenz (80 %)."""
+    if not n1 or not n0:
+        return 0.0, "noch keine Daten"
+    if min(n1, n0) < 8:
+        return 0.0, "zu wenige Partien für ein Urteil"
+    p = (w1 + w0) / (n1 + n0)
+    se = math.sqrt(p * (1 - p) * (1 / n1 + 1 / n0)) if 0 < p < 1 else 0
+    z = ((w1 / n1) - (w0 / n0)) / se if se else 0.0
+    if z >= 1.645:
+        v = "deutlich besser"
+    elif z >= 0.84:
+        v = "eher besser"
+    elif z <= -1.645:
+        v = "deutlich schlechter"
+    elif z <= -0.84:
+        v = "eher schlechter"
+    else:
+        v = "kein messbarer Unterschied"
+    return round(z, 2), v
+
+
+def lab_apply(text, out, add):
+    """Deckliste als Text mit getauschten Karten (je Nennung eine Kopie)."""
+    cnt = list_counts(text)
+    low = {k.casefold(): k for k in cnt}
+    front = {k.split(" // ")[0].casefold(): k for k in cnt}
+    gone = []
+    for n in out:
+        k = low.get(n.casefold()) or front.get(n.casefold())
+        if not k or cnt.get(k, 0) <= 0:
+            gone.append(n)
+            continue
+        cnt[k] -= 1
+    for n in add:
+        cnt[n] = cnt.get(n, 0) + 1
+    return "\n".join(f"{q} {k}" for k, q in cnt.items() if q > 0), gone
+
+
+def lab_opponents(con, p, uid):
+    """Gegnerfeld: Liste aus precon:ID / deck:ID (bis 4), sonst der oben gewählte Gegner."""
+    g = lambda k: (p.get(k) or [""])[0]
+    out = []
+    for spec in [x.strip() for x in g("opps").split(",") if x.strip()][:4]:
+        kind, _, val = spec.partition(":")
+        o = None
+        if spec == "cur":
+            o = opponent(con, p)
+        elif kind == "precon" and val.isdigit():
+            o = opponent(con, {"precon": [val]})
+        elif kind == "deck" and val.isdigit():
+            d = deck_get(con, int(val), uid)
+            o = opponent(con, {"opp_list": [d["list"]], "opp_commander": [d["commander"] or ""], "opp_name": [d["name"]]}) if d else None
+        if not o or not o["cmds"]:
+            raise ValueError(f"Gegner „{spec}“ nicht gefunden oder ohne Commander.")
+        out.append(o)
+    if not out:
+        o = opponent(con, p)
+        if o and o["cmds"]:
+            out.append(o)
+    return out
+
+
+def lab_start(p, uid=0):
+    g = lambda k: (p.get(k) or [""])[0]
+    for k, j in list(JOBS.items()):
+        if j.get("finished") and j["finished"] < time.time() - 3600:
+            JOBS.pop(k, None)
+    if SERVER and any(j.get("owner") == uid and not j["done"] for j in JOBS.values()):
+        return {"error": "Du hast bereits ein laufendes Duell oder eine Messung – bitte warten oder abbrechen."}
+    st = forge_status()
+    if not st["ready"]:
+        return {"error": st["message"]}
+    profiles = ai_profiles(st["dir"])
+    con = db()
+    con.row_factory = sqlite3.Row
+    mode = "pilot" if g("mode") == "pilot" else "swap"
+    mine_cmd = resolve_cmds(con, g("commander"))
+    if not mine_cmd:
+        return {"error": "Für die Messung braucht dein Deck einen Commander."}
+    try:
+        opps = lab_opponents(con, p, uid)
+    except ValueError as e:
+        return {"error": str(e)}
+    if not opps:
+        return {"error": "Bitte mindestens einen Gegner wählen."}
+    ai = g("ai") if g("ai") in profiles else "Default"
+    mc = g("mc") if g("mc") in LAB_MC else "off"
+    variants = [{"key": "v0", "label": "Ausgangsversion" if mode == "swap" else f"KI „{ai}“", "out": [], "in": [], "ai": ai,
+                 "list": g("list")}]
+    if mode == "swap":
+        try:
+            raw = json.loads(g("variants") or "[]")
+        except ValueError:
+            return {"error": "Ungültige Varianten."}
+        for i, v in enumerate(raw[:6]):
+            out = [str(x).strip() for x in (v.get("out") or []) if str(x).strip()][:10]
+            add = [str(x).strip() for x in (v.get("in") or []) if str(x).strip()][:10]
+            if not out and not add:
+                continue
+            canon = []
+            for x in add:
+                r = con.execute("SELECT name FROM cards WHERE name = ? COLLATE NOCASE OR name LIKE ? COLLATE NOCASE LIMIT 1",
+                                (x, x + " // %")).fetchone()
+                if not r:
+                    return {"error": "Unbekannte Karte: " + x}
+                canon.append(r[0])
+            add = canon
+            text, gone = lab_apply(g("list"), out, add)
+            if gone:
+                return {"error": "Nicht im Deck: " + ", ".join(gone)}
+            _, missing = entries_from_list(con, text, g("commander"))
+            if missing:
+                return {"error": "Unbekannte Karte: " + ", ".join(missing[:5])}
+            label = str(v.get("label") or "").strip()[:80] or (" + ".join(add) + (" statt " + ", ".join(out) if out else ""))
+            variants.append({"key": f"v{len(variants)}", "label": label, "out": out, "in": add, "ai": ai, "list": text})
+        if len(variants) < 2:
+            return {"error": "Bitte mindestens eine Variante (Karte raus → Karte rein) angeben."}
+    else:
+        want = [x for x in g("profiles").split(",") if x in profiles] or [x for x in profiles if x != ai][:3]
+        for x in want:
+            if x != ai:
+                variants.append({"key": f"v{len(variants)}", "label": f"KI „{x}“", "out": [], "in": [], "ai": x, "list": g("list")})
+        if len(variants) < 2:
+            return {"error": "Bitte mindestens ein weiteres KI-Profil wählen."}
+    n = max(2, int(g("games") or 10))
+    total = n * len(variants) * len(opps)
+    if total > MAX_LAB_GAMES:
+        return {"error": f"Zu viele Partien ({total}). Erlaubt sind {MAX_LAB_GAMES} – weniger Partien, Varianten oder Gegner wählen."}
+    ent0, missing0 = entries_from_list(con, g("list"), g("commander"))
+    if not ent0:
+        return {"error": "Leere Deckliste."}
+    clean = lambda x: re.sub(r"[^\w !.,+-]", "", x)[:60] or "Deck"
+    jid = "lab" + hashlib.sha1(f"{uid}{time.time()}{random.random()}".encode()).hexdigest()[:8]
+    seed = int(g("seed")) if g("seed").isdigit() else random.randint(1, 10 ** 6)
+    tasks = []
+    for oi, o in enumerate(opps):
+        for v in variants:
+            tasks.append({"v": v["key"], "o": oi, "games": [], "done": False})
+    job = JOBS[jid] = {
+        "id": jid, "kind": "lab", "mode": mode, "owner": uid, "deck": g("deck_name")[:80] or "Mein Deck", "n": n, "total": total,
+        "seed": seed, "mc": mc, "variants": [{k: v[k] for k in ("key", "label", "out", "in", "ai")} for v in variants],
+        "opps": [{"name": ("Precon " if o["kind"] == "precon" else "") + o["name"]} for o in opps], "tasks": tasks,
+        "done": False, "queued": True, "started": time.time(), "active": 0.0, "played": 0, "clock": max(60, min(int(g("timeout") or 300), 600))}
+    lists = {v["key"]: v["list"] for v in variants}
+    files = {"opps": opps, "mine_cmd": mine_cmd, "lists": lists, "commander": g("commander"), "clean": clean}
+    workers = max(1, min(MAX_DUELS, len(tasks)))
+    job["workers"] = workers
+    for _ in range(workers):
+        threading.Thread(target=lab_worker, args=(job, files, st), daemon=True).start()
+    return lab_status({"job": [jid]}, uid)
+
+
+def lab_worker(job, files, st):
+    while not job.get("cancel"):
+        with LAB_LOCK:
+            t = next((x for x in job["tasks"] if not x.get("taken")), None)
+            if t:
+                t["taken"] = True
+        if not t:
+            break
+        DUEL_SLOTS.acquire()
+        job["queued"] = False
+        t0 = t["t0"] = time.time()
+        tmp = tempfile.mkdtemp(prefix="commander_lab_")
+        try:
+            if job.get("cancel"):
+                break
+            con = db()
+            con.row_factory = sqlite3.Row
+            ent, _ = entries_from_list(con, files["lists"][t["v"]], files["commander"])
+            o = files["opps"][t["o"]]
+            write_dck(os.path.join(tmp, "A.dck"), "Mein Deck", files["mine_cmd"], ent)
+            write_dck(os.path.join(tmp, "B.dck"), "Gegner " + files["clean"](o["name"]), o["cmds"], o["entries"])
+            v = next(x for x in job["variants"] if x["key"] == t["v"])
+            cmd = (FORGE_WRAPPER + [st["java"]] + FORGE_JVM + ["-jar", st["jar"], "sim", "-d", "A.dck", "B.dck", "-D", tmp,
+                   "-n", str(job["n"]), "-f", "Commander", "-c", str(job["clock"]), "-s", str(job["seed"] + t["o"]),
+                   "-a", v["ai"], "Default", "-mc", job["mc"]])
+            flags = 0x08000000 if os.name == "nt" else 0
+            proc = subprocess.Popen(cmd, cwd=st["dir"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=flags)
+            t["pid"] = proc.pid
+            buf, tail = [], []
+            for raw in proc.stdout:
+                line = decode_line(raw).rstrip("\r\n")
+                tail = (tail + [line])[-6:]
+                if line.startswith("Game Result:"):
+                    gm = parse_game(buf, line, "Ai(1)-")
+                    t["games"].append({"w": gm["winner"], "turn": gm["turn"]})
+                    with LAB_LOCK:
+                        job["played"] += 1
+                    buf = []
+                elif "Could not load deck" in line or "No deck found" in line:
+                    job["error"] = "Forge konnte ein Deck nicht laden: " + line
+                elif "Unknown AI profile" in line:
+                    job["error"] = "Forge kennt das KI-Profil nicht: " + line
+                else:
+                    buf.append(line)
+                    if len(buf) > 20000:
+                        buf = buf[-20000:]
+                if job.get("cancel"):
+                    proc.kill()
+                    break
+            proc.wait()
+            if not t["games"] and not job.get("cancel") and not job.get("error"):
+                job["error"] = "Forge hat kein Ergebnis geliefert. Letzte Ausgabe: " + " | ".join(tail[-4:])
+        except Exception as e:
+            job["error"] = f"Forge konnte nicht gestartet werden: {e}"
+        finally:
+            DUEL_SLOTS.release()
+            shutil.rmtree(tmp, ignore_errors=True)
+            t["done"] = True
+            with LAB_LOCK:
+                job["active"] += time.time() - t0
+        if job.get("error"):
+            job["cancel"] = True
+    with LAB_LOCK:
+        job["workers"] -= 1
+        last = job["workers"] <= 0
+    if last:
+        job["done"] = True
+        job["finished"] = time.time()
+        res = lab_results(job)
+        if job["played"]:
+            try:
+                con = db()
+                lab_tables(con)
+                cur = con.execute("INSERT INTO lab_runs(owner, created, deck, mode, result) VALUES(?,?,?,?,?)",
+                                  (job["owner"], datetime.datetime.now().isoformat(sep=" ", timespec="minutes"), job["deck"], job["mode"],
+                                   json.dumps(res, ensure_ascii=False)))
+                con.commit()
+                job["run_id"] = cur.lastrowid
+            except Exception as e:
+                print("Messlabor: Ergebnis nicht gespeichert:", e)
+
+
+LAB_LOCK = threading.Lock()
+
+
+def lab_tables(con):
+    con.execute("CREATE TABLE IF NOT EXISTS lab_runs(id INTEGER PRIMARY KEY, owner INTEGER, created TEXT, deck TEXT, mode TEXT, result TEXT)")
+
+
+def lab_results(job):
+    """Siegquote je Variante (gesamt und je Gegner), Vergleich mit der Ausgangsversion, Urteil."""
+    rows = []
+    for v in job["variants"]:
+        per, w, n, d, turns = [], 0, 0, 0, []
+        for oi, o in enumerate(job["opps"]):
+            gs = [g for t in job["tasks"] if t["v"] == v["key"] and t["o"] == oi for g in t["games"]]
+            ww = sum(1 for g in gs if g["w"] == "a")
+            per.append({"opp": o["name"], "wins": ww, "games": len(gs), "rate": round(100 * ww / len(gs)) if gs else None})
+            w += ww
+            n += len(gs)
+            d += sum(1 for g in gs if g["w"] == "draw")
+            turns += [g["turn"] for g in gs if g["w"] == "a" and g["turn"]]
+        rows.append({"key": v["key"], "label": v["label"], "out": v["out"], "in": v["in"], "ai": v["ai"], "wins": w, "games": n,
+                     "draws": d, "rate": round(100 * w / n) if n else None, "ci": wilson(w, n), "per": per,
+                     "turn": round(sum(turns) / len(turns), 1) if turns else None})
+    base = rows[0]
+    for r in rows[1:]:
+        r["delta"] = (r["rate"] - base["rate"]) if r["rate"] is not None and base["rate"] is not None else None
+        r["z"], r["verdict"] = lab_verdict(r["wins"], r["games"], base["wins"], base["games"])
+    best = max(rows[1:], key=lambda r: (r.get("z") or 0), default=None)
+    if best and (best.get("z") or 0) >= 0.84:
+        tip = (f"Empfehlung: „{best['label']}“ – {best['verdict']} ({best['rate']} % statt {base['rate']} % Siege)."
+               if job["mode"] == "swap" else f"Empfehlung: Dein Deck mit KI-Profil „{best['ai']}“ testen ({best['rate']} % statt {base['rate']} %).")
+    elif job["played"] >= job["total"]:
+        tip = "Keine Variante ist messbar besser. Mehr Partien je Variante machen kleinere Unterschiede sichtbar."
+    else:
+        tip = ""
+    return {"mode": job["mode"], "deck": job["deck"], "n": job["n"], "opps": job["opps"], "rows": rows, "tip": tip,
+            "played": job["played"], "total": job["total"], "seed": job["seed"], "mc": job["mc"]}
+
+
+def lab_eta(job):
+    """Restzeit: bisherige Rechenzeit je Partie × verbleibende Partien ÷ parallele Plätze; vorher ein grober Richtwert."""
+    left = job["total"] - job["played"]
+    if left <= 0 or job["done"]:
+        return 0, "fertig"
+    running = sum(time.time() - (t.get("t0") or time.time()) for t in job["tasks"] if t.get("taken") and not t["done"])
+    if job["played"] >= 2:
+        per = (job["active"] + running) / job["played"]
+        return round(left * per / max(1, min(MAX_DUELS, len(job["tasks"])))), "gemessen"
+    per = 15 if job["mc"] == "off" else 35 if job["mc"] == "on" else 60  # gemessen mit Forge 2.0.16, 1 gegen 1
+    tasks_left = sum(1 for t in job["tasks"] if not t["done"])
+    return round((left * per + tasks_left * 15) / max(1, min(MAX_DUELS, len(job["tasks"])))), "geschätzt"
+
+
+def lab_status(p, uid=0):
+    job = JOBS.get((p.get("job") or [""])[0])
+    if not job or job.get("owner", 0) != uid or job.get("kind") != "lab":
+        return {"error": "Unbekannte Messung."}
+    eta, how = lab_eta(job)
+    out = {"job": job["id"], "done": job["done"], "played": job["played"], "total": job["total"], "eta": eta, "eta_kind": how,
+           "queued": job.get("queued"), "error": job.get("error"), "cancelled": bool(job.get("cancel") and not job.get("error")),
+           "elapsed": round(time.time() - job["started"]), "result": lab_results(job), "run_id": job.get("run_id")}
+    if job.get("queued"):
+        out["waiting"] = sum(1 for j in JOBS.values() if j.get("queued") and not j["done"])
+    return out
+
+
+def lab_api(path, p, uid=0):
+    g = lambda k: (p.get(k) or [""])[0]
+    if path == "/api/lab_start":
+        return lab_start(p, uid)
+    if path == "/api/lab_status":
+        return lab_status(p, uid)
+    if path == "/api/lab_cancel":
+        job = JOBS.get(g("job"))
+        if job and job.get("owner", 0) == uid and job.get("kind") == "lab":
+            job["cancel"] = True
+            for t in job["tasks"]:
+                if t.get("pid") and not t["done"]:
+                    try:
+                        os.kill(t["pid"], 9)
+                    except OSError:
+                        pass
+        return {"ok": True}
+    con = db()
+    lab_tables(con)
+    if path == "/api/lab_list":
+        rows = con.execute("SELECT id, created, deck, mode, result FROM lab_runs WHERE owner = ? ORDER BY id DESC LIMIT 30", (uid,)).fetchall()
+        out = []
+        for i, c, d, m, r in rows:
+            r = json.loads(r)
+            out.append({"id": i, "created": c, "deck": d, "mode": m, "tip": r.get("tip"), "played": r.get("played"),
+                        "variants": len(r.get("rows") or [])})
+        st = forge_status()
+        return {"runs": out, "profiles": ai_profiles(st["dir"]) if st["ready"] else ["Default"], "max": MAX_LAB_GAMES,
+                "workers": MAX_DUELS, "ready": st["ready"]}
+    if path == "/api/lab_get":
+        r = con.execute("SELECT result FROM lab_runs WHERE id = ? AND owner = ?", (int(g("id") or 0), uid)).fetchone()
+        return json.loads(r[0]) if r else {"error": "Unbekannte Messung."}
+    if path == "/api/lab_delete":
+        con.execute("DELETE FROM lab_runs WHERE id = ? AND owner = ?", (int(g("id") or 0), uid))
+        con.commit()
+        return {"ok": True}
+    return {"error": "Unbekannte Aktion."}
+
+
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 54)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -6023,7 +6398,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='53';
+const PAGE_VERSION='54';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -7426,12 +7801,13 @@ async function loadCombos(){const o=E('combos');o.innerHTML='';o.append(h3q('Com
 
 // ---- Direktes Duell über Forge
 let duelTimer=null;
-async function duelBox(){const o=E('duel');o.innerHTML='';o.append(h3q('Direktes Duell (Regel-Engine Forge)','duell'));
+let DUELGEN=0;
+async function duelBox(){const gen=++DUELGEN;const o=E('duel');o.innerHTML='';o.append(h3q('Direktes Duell (Regel-Engine Forge)','duell'));
  P(o,'Dein Deck gegen „'+opp.name+'“: Beide Decks spielen mehrere komplette Partien Commander 1-gegen-1 (40 Leben, Commander-Schaden, Commander-Steuer) – KI gegen KI. Jede Karte wird mit ihren echten Fähigkeiten ausgeführt, auch Combos.','hint');
  const man=$('div');man.className='savebox';man.id='manualbox';o.append(man);
  man.append($('b','🃏 Selbst gegeneinander spielen'),' ',pvBtn('Im Browser: Dein Deck gegen „'+opp.name+'“',()=>pvStart(true),'primary'));
  P(man,'Du spielst beide Seiten am Spieltisch im Browser: Starthand und Mulligan, Ziehen, Ausspielen, Angriffe, Leben und Commander-Schaden, mit Protokoll und Statistik. Regeln prüft der Spieltisch nicht.','hint');
- const st=await J('/api/forge');await MEP;
+ const st=await J('/api/forge');await MEP;if(gen!=DUELGEN)return;
  if(!ME.server&&st.ready){const fb=pvBtn('🖥 In Forge selbst gegen die KI spielen',async()=>{fb.disabled=true;const r=await J('/api/forge_play',Object.assign(mineP(),oppP(),{deck_name:deck&&deck.name||''}));fb.disabled=false;
    const msg=E('forgeplaymsg')||man.appendChild(Object.assign($('p'),{id:'forgeplaymsg'}));
    msg.className=r.error?'warn':'hint';msg.textContent=r.error||('Forge '+(r.started?'startet gleich (beim ersten Mal etwa eine Minute)':'ist vorbereitet')+'. Die Decks liegen dort unter Commander: '+r.decks.join(' und ')+
@@ -7450,7 +7826,7 @@ async function duelBox(){const o=E('duel');o.innerHTML='';o.append(h3q('Direktes
  const mode=$('select');mode.id='duelmode';[['2','1 gegen 1'],['3','Commander-Runde zu dritt'],['4','Commander-Runde zu viert']].forEach(([v,t])=>{const op=$('option',t);op.value=v;mode.append(op)});
  const xb=$('div');xb.style.display='none';
  run.append('Spielform: ',mode,xb);
- const [pl,dl,all]=await Promise.all([J('/api/precons?ci='+encodeURIComponent(deck.ci||'')),J('/api/decks'),preconsAll()]);
+ const [pl,dl,all]=await Promise.all([J('/api/precons?ci='+encodeURIComponent(deck.ci||'')),J('/api/decks'),preconsAll()]);if(gen!=DUELGEN)return;
  const decks=Array.isArray(dl)?dl:(dl.decks||[]);
  const mkSel=(id,def)=>{const s=$('select');s.id=id;fillPreconSelect(s,all,{match:pl.slice(0,8),prefix:'precon:',decks:decks});
   if(s.options.length>def)s.selectedIndex=def;return s};
@@ -7461,19 +7837,115 @@ async function duelBox(){const o=E('duel');o.innerHTML='';o.append(h3q('Direktes
    ' Eine Partie dauert hier meist 1–10 Minuten; nach 15 Minuten wertet Forge sie als Unentschieden.';
   if(m>2&&+n.value>5)n.value='3'};
  run.append($('br'));
+ {const li=await J('/api/lab_list');if(gen!=DUELGEN)return;const ai=$('select');ai.id='duelai';(li.profiles||['Default']).forEach(x=>ai.append(new Option(x,x)));const pil=labPilot();if(pil)ai.value=pil;
+  const dmc=$('select');dmc.id='duelmc';[['off','aus'],['on','an'],['max','maximal']].forEach(([v,t])=>dmc.append(new Option(t,v)));
+  const kd=$('details');kd.id='duelki';kd.append($('summary','⚙ KI-Einstellungen'+(pil?' (KI-Pilot: '+pil+')':'')),'KI-Profil deines Decks: ',ai,'  Vorausschau: ',dmc);
+  P(kd,'Die Gegner spielen mit „Default“. Mit Vorausschau prüft die KI mögliche Züge vorher durch – stärker, aber etwa 2–4× langsamer.','hint');run.append(kd)}
  const n=$('input');n.size=4;n.type='number';n.min=1;n.max=ME.max_games||100;n.value=String(Math.min(10,ME.max_games||10));
  run.append('Anzahl Partien (max. '+(ME.max_games||100)+'): ',n,' ');
  const go=$('button','Duell starten');go.type='button';run.append(go);
  const res=$('div');o.append(res);
  go.onclick=async()=>{go.disabled=true;res.innerHTML='';
-  const j=await J('/api/duel_start',Object.assign(mineP(),oppP(),{games:n.value,extra:mode.value=='4'?s3.value+','+s4.value:mode.value=='3'?s3.value:''}));
+  const j=await J('/api/duel_start',Object.assign(mineP(),oppP(),{games:n.value,extra:mode.value=='4'?s3.value+','+s4.value:mode.value=='3'?s3.value:'',ai:E('duelai').value,mc:E('duelmc').value}));
   if(j.error){P(res,j.error,'warn');go.disabled=false;return}
   const stop=$('button','Abbrechen');stop.type='button';run.append(stop);
   stop.onclick=()=>J('/api/duel_cancel',{job:j.job});
   clearInterval(duelTimer);
   const poll=async()=>{const s=await J('/api/duel_status?job='+j.job);showDuel(res,s);
    if(s.done){clearInterval(duelTimer);go.disabled=false;stop.remove()}};
-  duelTimer=setInterval(poll,2500);poll()}}
+  duelTimer=setInterval(poll,2500);poll()};
+ labBox(o,gen)}
+// ---------- Messlabor: Kartentausch oder KI-Profil per Forge messen, mit Restzeit
+let LABT=null,LABINFO=null,LABLAST=null;
+const fmtDur=s=>{s=Math.max(0,Math.round(s||0));if(s<60)return 'unter 1 Min.';const m=Math.round(s/60);if(m<60)return 'ca. '+m+' Min.';return 'ca. '+Math.floor(m/60)+' Std. '+(m%60?(m%60)+' Min.':'')};
+function deckCardNames(){return deck.groups.flatMap(g=>g.cards).filter(c=>!c.basic).map(c=>c.name)}
+async function labBox(o,gen){let ready=false;const wrap=$('details');wrap.id='labwrap';wrap.className='subbox';o.append(wrap);keepOpen(wrap);
+ wrap.append($('summary','🔬 Messlabor: Änderungen und KI-Profile mit Forge messen'));
+ const body=$('div');wrap.append(body);
+ const info=LABINFO=await J('/api/lab_list');if(gen!=DUELGEN){wrap.remove();return}if(info.error){P(body,info.error,'warn');return}
+ P(body,'Forge spielt jede Variante gleich oft gegen dieselben Gegner, mit gleichem Zufallsstart. Ergebnis: Siegquote mit 90-%-Bereich und ein Urteil, ob die Änderung messbar hilft.','hint');
+ const mode=$('select');mode.id='labmode';[['swap','Kartentausch messen'],['pilot','Bestes KI-Profil für dein Deck finden']].forEach(([v,t])=>mode.append(new Option(t,v)));
+ const vbox=$('div');vbox.id='labvars';const pbox=$('div');pbox.id='labprof';
+ body.append($('b','Was messen? '),mode,vbox,pbox);
+ // Varianten
+ const vrows=$('div');const addVar=(out,inn)=>{if(vrows.children.length>=6)return;const r=$('div');r.className='labvar';
+  const o1=$('input');o1.className='labout';o1.placeholder='raus (Karte im Deck)';o1.size=26;o1.value=out||'';o1.setAttribute('list','labdeckcards');
+  const i1=$('input');i1.className='labin';i1.placeholder='rein (neue Karte)';i1.size=26;i1.value=inn||'';
+  const x=$('button','✕');x.type='button';x.title='Variante entfernen';x.onclick=()=>{r.remove();est()};
+  const iw=$('span');iw.className='ac';iw.append(i1);r.append(o1,' → ',iw,' ',x);vrows.append(r);try{ac(i1,{get:names(false),pick:v=>{i1.value=v;est()}})}catch(e){}o1.oninput=i1.oninput=est;est()};
+ const dl=$('datalist');dl.id='labdeckcards';deckCardNames().forEach(n=>dl.append(new Option(n)));
+ const av=$('button','+ Variante');av.type='button';av.id='labaddvar';av.onclick=()=>addVar();
+ const sg=$('button','💡 Vorschläge übernehmen');sg.type='button';sg.id='labsugg';sg.title='Je eine Ergänzung aus den Empfehlungen gegen einen Streichkandidaten';
+ sg.onclick=async()=>{sg.disabled=true;const r=await J('/api/recommend',{list:deck.export,commander:deck.commander||'',extra:JSON.stringify(deckExtra())});sg.disabled=false;
+  if(r.error){P(vbox,r.error,'warn');return}vrows.innerHTML='';const k=Math.min(3,(r.add||[]).length,(r.cut||[]).length);
+  for(let i=0;i<k;i++)addVar(r.cut[i].name,r.add[i].name);if(!k)P(vbox,'Keine passenden Vorschläge gefunden.','hint')};
+ vbox.append(dl,vrows,av,' ',sg);P(vbox,'Je Zeile eine Variante. Mehrere Karten mit Komma trennen (z. B. „Shock, Opt → Lightning Bolt, Ponder“).','hint');addVar();
+ // KI-Profile
+ const base=$('select');base.id='labbase';info.profiles.forEach(x=>base.append(new Option(x,x)));
+ const cks=$('span');info.profiles.forEach(x=>{const l=$('label');const c=$('input');c.type='checkbox';c.value=x;c.className='labpf';c.checked=['Cautious','Reckless','Experimental'].includes(x);c.onchange=est;l.append(c,' '+x+' ');cks.append(l)});
+ pbox.append('Ausgangsprofil: ',base,$('br'),'Vergleichen mit: ',cks);P(pbox,'Die Gegner spielen immer mit „Default“. Das beste Profil kannst du danach für Duelle mit diesem Deck übernehmen.','hint');
+ mode.onchange=()=>{vbox.hidden=mode.value!='swap';pbox.hidden=mode.value!='pilot';est()};pbox.hidden=true;
+ // Gegner
+ const [pl,dl2,all]=await Promise.all([J('/api/precons?ci='+encodeURIComponent(deck.ci||'')),J('/api/decks'),preconsAll()]);if(gen!=DUELGEN){wrap.remove();return}
+ const decks=Array.isArray(dl2)?dl2:(dl2.decks||[]);const obox=$('div');obox.id='labopps';
+ const addOpp=first=>{if(obox.querySelectorAll('select').length>=4)return;const s=$('select');s.className='labopp';
+  fillPreconSelect(s,all,{match:pl.slice(0,8),prefix:'precon:',decks:decks});
+  if(first){const c=new Option('Aktueller Gegner: '+opp.name,'cur');s.prepend(c);s.value='cur'}else if(s.options.length>obox.children.length)s.selectedIndex=obox.children.length;
+  const r=$('div');r.append(s);if(!first){const x=$('button','✕');x.type='button';x.onclick=()=>{r.remove();est()};r.append(' ',x)}obox.append(r);s.onchange=est;est()};
+ const ao=$('button','+ Gegner');ao.type='button';ao.id='labaddopp';ao.onclick=()=>addOpp(false);
+ body.append($('h4','Gegnerfeld'),obox,ao);
+ // Umfang
+ const n=$('input');n.type='number';n.id='labn';n.min=2;n.max=100;n.value=10;n.size=4;n.oninput=est;
+ const mc=$('select');mc.id='labmc';[['off','aus (schnell)'],['on','an'],['max','maximal (wie Forge am PC)']].forEach(([v,t])=>mc.append(new Option(t,v)));mc.onchange=est;
+ const es=$('p');es.id='labest';es.className='hint';
+ const go=$('button','▶ Messung starten');go.type='button';go.className='primary';go.id='labgo';
+ const stop=$('button','Abbrechen');stop.type='button';stop.id='labstop';stop.hidden=true;
+ body.append($('h4','Umfang'),'Partien je Variante und Gegner: ',n,'  KI-Vorausschau: ',mc,es,go,' ',stop);
+ const out=$('div');out.id='labout';body.append(out);if(LABLAST&&LABLAST.result)labShow(out,LABLAST);
+ const arch=$('details');arch.id='labarch';arch.append($('summary','📁 Frühere Messungen ('+info.runs.length+')'));body.append(arch);labArchive(arch,info.runs,out);
+ function variants(){return [...vrows.children].map(r=>({out:r.querySelector('.labout').value.split(',').map(x=>x.trim()).filter(Boolean),in:r.querySelector('.labin').value.split(',').map(x=>x.trim()).filter(Boolean)})).filter(v=>v.out.length||v.in.length)}
+ function profs(){return [...pbox.querySelectorAll('.labpf:checked')].map(c=>c.value).filter(x=>x!=base.value)}
+ function est(){if(!ready)return;const nv=Math.max(2,+n.value||2),nvar=1+(mode.value=='swap'?variants().length:profs().length),nop=obox.children.length||1;
+  const tot=nv*nvar*nop,per={off:15,on:35,max:60}[mc.value]||15;
+  es.textContent=nvar<2?'Bitte mindestens eine Variante angeben.':tot+' Partien ('+nvar+' Varianten × '+nop+' Gegner × '+nv+') · voraussichtlich '+fmtDur((tot*per+nvar*nop*15)/Math.max(1,info.workers||1))+(tot>info.max?' – mehr als erlaubt ('+info.max+')':'');
+  go.disabled=nvar<2||tot>info.max}
+ ready=true;addOpp(true);est();
+ go.onclick=async()=>{const specs=[...obox.querySelectorAll('select')].map(s=>s.value);
+  const prm=Object.assign(mineP(),oppP(),{mode:mode.value,games:n.value,mc:mc.value,opps:specs.join(','),deck_name:deck&&deck.name||'',
+   variants:JSON.stringify(variants()),ai:mode.value=='pilot'?base.value:(labPilot()||'Default'),profiles:profs().join(',')});
+  go.disabled=true;out.innerHTML='';const j=await J('/api/lab_start',prm);if(j.error){P(out,j.error,'warn');go.disabled=false;return}
+  stop.hidden=false;stop.onclick=()=>J('/api/lab_cancel',{job:j.job});
+  clearInterval(LABT);const poll=async()=>{const s=await J('/api/lab_status?job='+j.job);labShow(E('labout'),s);if(s.done||s.error&&!s.result){clearInterval(LABT);go.disabled=false;stop.hidden=true;
+   if(s.done){const r=await J('/api/lab_list');arch.querySelector('summary').textContent='📁 Frühere Messungen ('+r.runs.length+')';labArchive(arch,r.runs,out)}}};
+  LABT=setInterval(poll,4000);labShow(E('labout'),j)}}
+function labPilot(){try{return localStorage.getItem('aipilot:'+((deck&&deck.name)||deck.commander||''))||''}catch(e){return ''}}
+function labShow(o,s){if(!o)return;LABLAST=s;o.innerHTML='';if(s.error&&!s.result){P(o,s.error,'warn');return}
+ const pr=$('div');pr.className='labprog';const bar=$('progress');bar.max=s.total;bar.value=s.played;bar.id='labbar';
+ const txt=s.done?(s.cancelled?'Abgebrochen nach '+s.played+' von '+s.total+' Partien.':'Fertig: '+s.played+' Partien in '+fmtDur(s.elapsed).replace('ca. ','')+'.')
+  :(s.queued?'Wartet auf einen freien Forge-Platz'+(s.waiting>1?' ('+s.waiting+' Aufträge in der Warteschlange)':'')+' …':s.played+' von '+s.total+' Partien · noch '+fmtDur(s.eta)+(s.eta_kind=='geschätzt'?' (grob geschätzt)':''));
+ const tx=$('span',' '+txt);tx.id='labeta';pr.append(bar,tx);o.append(pr);if(s.error)P(o,s.error,'warn');
+ if(s.result)labTable(o,s.result)}
+function labTable(o,r){const t=$('table');t.className='duel';t.id='labres';o.append(t);
+ const h=t.insertRow();['Variante','Siege','Siegquote (90-%-Bereich)','Unterschied','Urteil',''].forEach(x=>h.append($('th',x)));
+ r.rows.forEach((x,i)=>{const tr=t.insertRow();tr.dataset.key=x.key;tr.insertCell().textContent=x.label;tr.insertCell().textContent=x.wins+' von '+x.games+(x.draws?' ('+x.draws+' unentsch.)':'');
+  tr.insertCell().textContent=x.rate==null?'–':x.rate+' % ('+x.ci[0]+'–'+x.ci[1]+' %)';
+  tr.insertCell().textContent=i==0?'Basis':(x.delta==null?'–':(x.delta>0?'+':'')+x.delta+' Pkt.');
+  const v=tr.insertCell();v.textContent=i==0?'':x.verdict||'';if(/besser/.test(x.verdict||''))v.className='w';else if(/schlechter/.test(x.verdict||''))v.className='l';
+  const c=tr.insertCell();if(i>0&&/besser/.test(x.verdict||'')){const b=$('button',x.applied?'✔ übernommen':r.mode=='swap'?'Ins Deck übernehmen':'Als KI-Pilot merken');b.type='button';b.className='labapply';b.disabled=!!x.applied;
+   b.onclick=async()=>{x.applied=true;if(r.mode=='swap'){for(const n of x.out){const gi=deck.groups.findIndex(g=>g.cards.some(c=>c.name.toLowerCase()==n.toLowerCase()||c.name.split(' // ')[0].toLowerCase()==n.toLowerCase()));
+      if(gi>=0)removeCard(gi,deck.groups[gi].cards.findIndex(c=>c.name.toLowerCase()==n.toLowerCase()||c.name.split(' // ')[0].toLowerCase()==n.toLowerCase()))}
+     for(const n of x.in)await addCardToDeck(n);b.textContent='✔ übernommen – Deck speichern nicht vergessen';b.disabled=true}
+    else{try{localStorage.setItem('aipilot:'+((deck&&deck.name)||deck.commander||''),x.ai)}catch(e){}const sel=E('duelai');if(sel)sel.value=x.ai;b.textContent='✔ gemerkt';b.disabled=true}};c.append(b)}});
+ if(r.tip)P(o,r.tip,'tag');
+ if(r.opps.length>1||r.rows.some(x=>x.turn)){const d=$('details');d.id='labper';d.append($('summary','Je Gegner und Siegrunde'));o.append(d);keepOpen(d);
+  const t2=$('table');t2.className='duel';d.append(t2);const h2=t2.insertRow();['Variante',...r.opps.map(x=>x.opp||x.name),'Ø Siegzug'].forEach(x=>h2.append($('th',x)));
+  r.rows.forEach(x=>{const tr=t2.insertRow();tr.insertCell().textContent=x.label;x.per.forEach(p=>tr.insertCell().textContent=p.games?p.wins+'/'+p.games+' ('+p.rate+' %)':'–');tr.insertCell().textContent=x.turn==null?'–':String(x.turn).replace('.',',')})}
+ P(o,'Urteil: „deutlich“ heißt 90 % Sicherheit, „eher“ 80 %. Unter 8 Partien je Variante gibt es kein Urteil. Forge spielt nicht wie Menschen – das Ergebnis zeigt, wie die Änderung in KI-Partien wirkt.','hint')}
+function labArchive(d,runs,out){[...d.querySelectorAll('.labrun')].forEach(x=>x.remove());
+ runs.forEach(r=>{const row=$('div');row.className='labrun';const a=$('a',r.created+' · '+r.deck+' · '+(r.mode=='swap'?'Kartentausch':'KI-Profile')+' · '+r.played+' Partien');a.href='#';
+  a.onclick=async e=>{e.preventDefault();const x=await J('/api/lab_get',{id:r.id});out.innerHTML='';if(x.error){P(out,x.error,'warn');return}out.append($('h4','Messung vom '+r.created));labTable(out,x)};
+  const del=$('button','✕');del.type='button';del.title='Messung löschen';del.onclick=async()=>{await J('/api/lab_delete',{id:r.id});row.remove()};
+  row.append(a,' ',del);if(r.tip)row.append($('div',r.tip));d.append(row)})}
 const DOPEN={};
 function keepOpen(d){if(DOPEN[d.id])d.open=true;d.addEventListener('toggle',()=>{DOPEN[d.id]=d.open})}
 function duelStats(o,st,PL,s){const d=$('details');d.id='duelstats';d.className='subbox';o.append(d);keepOpen(d);
@@ -8708,6 +9180,8 @@ class H(BaseHTTPRequestHandler):
         con = db()
         con.row_factory = sqlite3.Row
         try:
+            if path.startswith("/api/lab_"):
+                return lab_api(path, p, uid)
             if path.startswith("/api/gn_"):
                 if path in ("/api/gn_view",) or (path == "/api/gn_report" and g("code")):
                     return gn_api(path, p, uid)

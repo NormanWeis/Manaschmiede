@@ -6,9 +6,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Pr
 timeout /t 1 /nobreak >nul
 where py >nul 2>nul
 if %errorlevel%==0 (
-  py -3 commander_db_v53.py serve 
+  py -3 commander_db_v54.py serve 
 ) else (
-  python commander_db_v53.py serve 
+  python commander_db_v54.py serve 
 )
 echo.
 echo Das Programm wurde beendet. Zum Schliessen eine beliebige Taste druecken.
