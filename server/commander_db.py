@@ -27,6 +27,9 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 57: Proxy-Druck erweitert: beliebige Kartenlisten (Sammlung, Deck, Kaufplan), bestimmter Druck per „(SET) Nr“,
+            Rückseiten doppelseitiger Karten, Textfassung ohne Kartenbild, Schnittlinien, Abstand, Graustufen, A4/Letter;
+            fester Vermerk „PROXY – keine echte Karte“ und Hinweis, dass es nur Kopien zum privaten Testen sind.
 Version 56: Kaufassistent (Sammlung, auch „Kauf planen“ im Deck): fehlende Karten für ein Deck, alle Decks oder die Wunschliste;
             Budget mit Vorrang für mehrfach genutzte Karten, Druck und Foil je Karte, Aufteilung Cardmarket/Trader-online,
             Cardmarket-Wants für beliebige Drucke, Precon-Check, CSV, „gekauft“ übernimmt Karten mit Druck in die Sammlung.
@@ -130,7 +133,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "56"
+APP_VERSION = "57"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -5164,6 +5167,75 @@ def duel_status(p, uid=0):
     return out
 
 
+# ---------------------------------------------------------------- Proxy-Druck: Kopien beliebiger Karten (Bild oder Text), Rückseiten, Tokens
+PROXY_LINE = re.compile(r"^\s*(?:(\d+)\s*x?\s+)?(.+?)(?:\s+\(([A-Za-z0-9]{2,6})\)(?:\s+([^\s*]+))?)?(?:\s+\*[FE]\*)?\s*$")
+
+
+def proxy_back(row):
+    """Rückseite doppelseitiger Karten (Transform, MDFC): Scryfall legt sie unter /back/ ab. Split- und Abenteuerkarten haben nur ein Bild."""
+    img = row["image"] or ""
+    if " // " not in row["name"] or " // " in (row["mana_cost"] or "") or "/front/" not in img:
+        return None
+    tl = row["type_line"] or ""
+    if "Adventure" in tl or "Omen" in tl:
+        return None
+    return img.replace("/front/", "/back/")
+
+
+def proxy_list(p, uid=0):
+    """Kartenliste („2 Sol Ring“, optional „(C21) 263“ für einen bestimmten Druck) -> Kartenbilder und Texte für den Druck."""
+    g = lambda k: (p.get(k) or [""])[0]
+    con = db()
+    con.row_factory = sqlite3.Row
+    con.execute("CREATE TABLE IF NOT EXISTS card_stats(name TEXT PRIMARY KEY, pt TEXT, loyalty TEXT)")
+    inv_tables(con)
+    items, missing, total = [], [], 0
+    for line in (g("list") or "").splitlines()[:400]:
+        line = line.strip()
+        if not line or line.startswith(("#", "//")) or line.lower() in ("deck", "commander", "sideboard", "maybeboard"):
+            continue
+        m = PROXY_LINE.match(line)
+        if not m:
+            continue
+        q = max(1, min(int(m.group(1) or 1), 99))
+        want = m.group(2).strip()
+        hit, note = lookup(con, want)
+        if hit and note and "nicht exakt" in note:  # nur Tippfehler und Vorderseiten zulassen, keine beliebigen Treffer
+            nm = hit["name"].casefold()
+            if not (nm.split(" // ")[0] == want.casefold() or difflib.SequenceMatcher(None, nm.split(" // ")[0], want.casefold()).ratio() >= 0.85):
+                hit = None
+        if not hit:
+            missing.append(want)
+            continue
+        r = con.execute("SELECT * FROM cards WHERE name = ?", (hit["name"],)).fetchone() or hit
+        st = con.execute("SELECT pt, loyalty FROM card_stats WHERE name = ?", (r["name"],)).fetchone()
+        front, label = r["image"], None
+        if m.group(3):
+            pr = con.execute("SELECT * FROM prints WHERE name = ? AND set_code = ? AND (? = '' OR number = ?)",
+                             (r["name"], m.group(3).upper(), m.group(4) or "", m.group(4) or "")).fetchone()
+            if pr is None:
+                try:
+                    prints_of(con, r["name"])
+                except Exception:
+                    pass
+                pr = con.execute("SELECT * FROM prints WHERE name = ? AND set_code = ? AND (? = '' OR number = ?)",
+                                 (r["name"], m.group(3).upper(), m.group(4) or "", m.group(4) or "")).fetchone()
+            if pr is not None and pr["image"]:
+                front, label = pr["image"], f"{pr['set_code']} #{pr['number']}"
+        back = proxy_back({"name": r["name"], "mana_cost": r["mana_cost"], "type_line": r["type_line"], "image": front}) if front else None
+        items.append({"name": r["name"], "qty": q, "front": front, "back": back if g("backs") != "0" else None, "print": label,
+                      "mana": r["mana_cost"] or "", "type": r["type_line"] or "", "text": r["oracle_text"] or "",
+                      "pt": (st["pt"] if st else "") or "", "loy": (st["loyalty"] if st else "") or ""})
+        total += q * (2 if back and g("backs") != "0" else 1)
+    if g("tokens") == "1" and items:
+        tk = deck_tokens({"list": ["\n".join(f"{x['qty']} {x['name']}" for x in items)], "commander": [""]})
+        for t in tk.get("tokens") or []:
+            items.append({"name": t["name"], "qty": 1, "front": t.get("image"), "back": None, "print": None, "token": True,
+                          "mana": "", "type": t.get("type") or "Token", "text": "", "pt": "", "loy": ""})
+            total += 1
+    return {"items": items, "missing": missing, "cards": total, "pages": -(-total // 9)}
+
+
 # ---------------------------------------------------------------- Kaufassistent: fehlende Karten planen, je Händler aufteilen, Budget, Precon-Check
 BUY_SHOPS = ("cm", "to")
 
@@ -5745,7 +5817,7 @@ def lab_api(path, p, uid=0):
     return {"error": "Unbekannte Aktion."}
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 56)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 57)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -5862,7 +5934,11 @@ body.mtg .cicon{border-color:#c79a37;background:linear-gradient(135deg,#7a4a1c 0
 #printarea .noprint{padding:8px;background:#eee;margin-bottom:8px}
 .ppage{display:grid;grid-template-columns:repeat(3,63mm);grid-auto-rows:88mm;gap:0;justify-content:center;page-break-after:always;margin-bottom:10mm}
 .pcard{position:relative;width:63mm;height:88mm;overflow:hidden;outline:0.2mm dashed #999}.pcard img{width:100%;height:100%;object-fit:cover}
-.pmark{position:absolute;bottom:2mm;left:50%;transform:translateX(-50%);font:bold 7pt sans-serif;color:#fff;background:#000a;padding:0 4px;border-radius:2px}
+.pmark{position:absolute;bottom:1.5mm;left:50%;transform:translateX(-50%);font:bold 6.5pt sans-serif;color:#fff;background:#000c;padding:0 4px;border-radius:2px;white-space:nowrap}
+#printarea:not(.pxcut) .pcard{outline:0}#printarea.pxgap .ppage{gap:2mm}#printarea.pxgray img{filter:grayscale(1)}
+.ptextcard{background:#fff;border:0.3mm solid #333;box-sizing:border-box}.ptext{padding:3mm;font:7.5pt/1.25 Georgia,serif;color:#000;height:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:1.5mm}
+.ptext .pth{display:flex;justify-content:space-between;align-items:center;border-bottom:0.3mm solid #333;padding-bottom:1mm;font-size:9pt}.ptext .ptx{white-space:pre-wrap;flex:1;overflow:hidden}
+.ptext .ptpt{align-self:flex-end;font-weight:bold;border:0.3mm solid #333;padding:0 2mm;margin-bottom:4mm}#pxstudio .pxnote{padding:8px;border-radius:6px;margin-bottom:8px}#pxstudio label{margin-right:6px}
 body.printing>*:not(#printarea){display:none!important}
 @media print{@page{size:A4;margin:8mm}#printarea .noprint{display:none}#printarea{position:static;padding:0}.ppage{margin:0}}
 #tgame .pl{display:inline-block;vertical-align:top;border:2px solid #999;border-radius:10px;padding:8px;margin:4px;min-width:220px;text-align:center}
@@ -6164,7 +6240,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>🏷 Tags:</b> eigene Kategorien je Karte (z. B. Ramp, Wincon). Sie erscheinen als Etiketten in der Liste und im Bereich „Nach Tags“ zusammengefasst.</li>
 <li><b>↓ Maybe / Maybeboard:</b> Kandidaten, die (noch) nicht ins Deck zählen. Mit „↑ ins Deck“ holst du sie zurück; das Feld darüber nimmt neue Kandidaten auf.</li>
 <li><b>Tokens und Spielmaterial:</b> listet alle Tokens, die Karten des Decks erzeugen, mit der erzeugenden Karte.</li>
-<li><b>🖨 Proxys drucken:</b> öffnet eine Druckansicht mit Kartenbildern in Originalgröße (9 je A4-Seite). Optional nur die Karten, die in deiner Sammlung fehlen, mit Tokens und „PROXY“-Vermerk. Mit „Drucken / als PDF speichern“ entsteht eine PDF-Datei. Beim Drucken „Tatsächliche Größe“ bzw. 100 % wählen. Nur zum privaten Testen.</li>
+<li><b>🖨 Proxys drucken:</b> Druckansicht in Originalgröße (63 × 88 mm, 9 je Seite, A4 oder Letter) – im Deck, in der Sammlung unter „Proxy-Druck“ für beliebige Kartenlisten und im Kaufassistenten. Wahlweise Kartenbild oder tintensparende Textfassung, Rückseiten doppelseitiger Karten, Tokens, nur fehlende Karten, ein bestimmter Druck per „(SET) Nr“. <b>Nur Kopien zum privaten Testen:</b> keine echten Karten, nicht verkaufen oder als echt ausgeben, in Turnieren nicht erlaubt; jede Kopie trägt fest den Vermerk „PROXY – keine echte Karte“. Mit „Drucken / als PDF speichern“ entsteht eine PDF-Datei; beim Drucken 100 % bzw. „Tatsächliche Größe“ wählen.</li>
 <li><b>💡 Empfehlungen – Lücken und Filter:</b> Unter „Lücken nach Funktion“ zählt das Programm Ramp, Kartenziehen, gezieltes Removal und Board-Wipes und vergleicht mit Richtwerten (etwa 10 / 10 / 8 / 3). Fehlt etwas, stehen je Funktion sechs passende, verbreitete Karten in deinen Farben darunter (➕ fügt sie ein). „nur aus meiner Sammlung“ zeigt nur Karten, die du besitzt; „höchstens … € je Karte“ setzt eine Preisgrenze (eigene Karten gelten als kostenlos). Im Server-Betrieb fließen auch die veröffentlichten Galerie-Decks der anderen Benutzer ein.</li>
 <li><b>💡 Empfehlungen:</b> sucht ähnliche Decks (Precons, deine gespeicherten Decks und im Server-Betrieb die Galerie mit mindestens drei gemeinsamen Karten) und schlägt Karten vor, die dort oft mit deinen Karten zusammen gespielt werden oder zum Commander-Text passen. „Streichen erwägen“ nennt Karten mit wenig Rückhalt; mit 🏷 „Wincon“ oder „Combo“ markierte Karten werden nie vorgeschlagen. Decks mit guter Siegquote im Spielprotokoll zählen stärker.</li>
 <li><b>Frust-Index:</b> eigene Schätzung aus dem Kartentext, wie sehr ein Deck Mitspieler ärgern kann (Massen-Landzerstörung, Extra-Züge, Stax, Diebstahl, Gegenzauber, Tutoren, Game Changer). Er ersetzt die Salt-Werte von EDHREC, für die es keine offizielle Schnittstelle gibt.</li>
@@ -6543,6 +6619,9 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <details class=subbox id=buybox><summary><b>🧭 Kaufassistent</b> <span class=hint>Budget, Druck &amp; Foil, Aufteilung auf Händler, Precon-Check</span></summary>
 <p class=hint>Plant den Kauf fehlender Karten: für ein Deck, alle Decks oder die Wunschliste. Je Karte Druck, Foil und Händler wählbar; gekaufte Karten landen mit dem gewählten Druck in der Sammlung.</p>
 <div id=buyctl></div><div id=buyres></div></details>
+<details class=subbox id=pxbox><summary><b>🖨 Proxy-Druck</b> <span class=hint>Kopien beliebiger Karten zum Testen</span></summary>
+<p class=hint>Druckt Kopien von Karten in Originalgröße – als Kartenbild oder tintensparend nur mit Text. <b>Nur Kopien zum privaten Testen, keine echten Karten:</b> jede Kopie trägt den Vermerk „PROXY – keine echte Karte“.</p>
+<button type=button class=primary id=pxopen>🖨 Proxys zusammenstellen</button></details>
 <details class=subbox id=wishbox><summary><b>⭐ Wunschliste &amp; Preisalarm</b> <span class=hint id=wishsum></span></summary>
 <p class=hint>Karten, die du kaufen möchtest. Mit Zielpreis erscheint auf der Startseite ein Hinweis, sobald der Preis darunter fällt (geprüft bei jeder Kartenaktualisierung).</p>
 <div class=wishadd><input id=wishname placeholder="Karte, z. B. Sol Ring" size=28><input id=wishqty size=3 value=1 inputmode=numeric title="Anzahl">
@@ -6622,7 +6701,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='56';
+const PAGE_VERSION='57';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -6811,27 +6890,60 @@ async function tokenBox(o){const r=await J('/api/tokens',{list:deck.export,comma
  const t=$('table');t.id='tokentab';o.append(t);const hr=t.insertRow();['Token','Typ','erzeugt von'].forEach(x=>hr.append($('th',x)));
  r.tokens.forEach(k=>{const tr=t.insertRow();const c=tr.insertCell();c.append(k.image?cardName(k.name,k.image,k.image):$('span',k.name));
   tr.insertCell().textContent=k.type||'–';tr.insertCell().textContent=k.from.join(', ')})}
-function proxyDialog(tokens){const b=dlgOpen('Proxys drucken');
- P(b,'Druckt Kartenbilder in Originalgröße (63 × 88 mm, 9 je A4-Seite) zum privaten Testen. Proxys sind keine echten Karten und nicht für Turniere oder den Verkauf.','hint');
- const opt=(id,txt,chk)=>{const l=$('label');const c=$('input');c.type='checkbox';c.id=id;c.checked=chk;l.append(c,' '+txt);b.append(l,$('br'));return c};
- const cMiss=opt('pxmiss','nur Karten, die in meiner Sammlung fehlen',false),cBasic=opt('pxbasic','Standardländer weglassen',true),
-  cTok=opt('pxtok','Tokens mitdrucken',true),cMark=opt('pxmark','„PROXY“-Vermerk aufdrucken',true);
- const go=$('button','Druckansicht öffnen');go.type='button';go.className='primary';go.id='pxgo';b.append(go);const info=$('div');b.append(info);
- go.onclick=async()=>{let cards=deck.groups.flatMap(g=>g.cards.flatMap(c=>Array(c.qty).fill(c)));
-  if(cBasic.checked)cards=cards.filter(c=>!c.basic);
-  if(cMiss.checked){const r=await J('/api/ownership',{list:deck.export,commander:deck.commander||'',deck_name:deck.name||''});
-   if(r.has_collection)cards=cards.filter(c=>{const x=r.cards[c.name];return x&&!x.basic&&!x.owned});else P(info,'Keine Sammlung importiert – es werden alle Karten gedruckt.','hint')}
-  let imgs=cards.map(c=>({name:c.name,src:c.image}));
-  if(cTok.checked)imgs=imgs.concat(tokens.filter(t=>t.image).map(t=>({name:t.name+' (Token)',src:t.image})));
-  const miss=imgs.filter(x=>!x.src).map(x=>x.name);imgs=imgs.filter(x=>x.src);
-  closeSwap();printProxies(imgs,cMark.checked,miss)}}
-function printProxies(imgs,mark,miss){let pa=E('printarea');if(!pa){pa=$('div');pa.id='printarea';document.body.append(pa)}pa.innerHTML='';
- const bar=$('div');bar.className='noprint';bar.append($('b',imgs.length+' Karten · '+Math.ceil(imgs.length/9)+' Seiten '),' ');
- const pr=$('button','Drucken / als PDF speichern');pr.type='button';pr.className='primary';pr.onclick=()=>window.print();
- const cl=$('button','Schließen');cl.type='button';cl.onclick=()=>{pa.remove();document.body.classList.remove('printing')};bar.append(pr,' ',cl);
- if(miss.length)bar.append($('div','Ohne Bild (nicht gedruckt): '+miss.join(', ')));pa.append(bar);
- for(let i=0;i<imgs.length;i+=9){const pg=$('div');pg.className='ppage';imgs.slice(i,i+9).forEach(x=>{const c=$('div');c.className='pcard';
-  const im=$('img');im.src=x.src;im.alt=x.name;c.append(im);if(mark){const m=$('span','PROXY');m.className='pmark';c.append(m)}pg.append(c)});pa.append(pg)}
+// ---------- Proxy-Druck: Kopien zum privaten Testen – Bild- oder Textfassung, Rückseiten, Tokens, Schnittlinien
+const PROXY_NOTE='Proxys sind Kopien bzw. Platzhalter zum privaten Testen – keine echten Karten. Nicht verkaufen, nicht tauschen und nicht als echte Karten ausgeben; in offiziellen Turnieren sind sie nicht erlaubt. Kartenbilder und -texte sind Eigentum von Wizards of the Coast (Bilder von Scryfall). Jede Kopie trägt deshalb fest den Vermerk „PROXY – keine echte Karte“, Kartenrückseiten werden nicht gedruckt.';
+let PXOPT={mode:'img',backs:true,cut:true,gap:false,gray:false,paper:'A4'};try{Object.assign(PXOPT,JSON.parse(localStorage.getItem('pxopt')||'{}'))}catch(e){}
+function proxyDialog(tokens){proxyStudio({deck:true})}
+async function proxyStudio(pre){pre=pre||{};const b=$('div');b.id='pxstudio';dlgOpen('🖨 Proxys drucken – Kopien zum Testen').append(b);
+ const note=$('div');note.className='warn pxnote';note.id='pxnote';note.append($('b','Nur Kopien: '),PROXY_NOTE);b.append(note);
+ const ta=$('textarea');ta.id='pxlist';ta.rows=8;ta.style.width='100%';ta.placeholder='Eine Karte je Zeile, z. B.\\n1 Sol Ring\\n2 Lightning Bolt\\n1 Counterspell (MH2) 267   ← bestimmter Druck';
+ const src=$('div');src.className='chips';const sb=(t,id,fn)=>{const x=$('button',t);x.type='button';x.id=id;x.onclick=fn;src.append(x)};
+ const hasDeck=typeof deck!='undefined'&&deck&&deck.groups&&deck.groups.length;
+ const deckText=(onlyMissing)=>deck.groups.flatMap(g=>g.cards).filter(c=>!c.basic).map(c=>c.qty+' '+c.name).join('\\n');
+ if(hasDeck){sb('📂 Deck im Editor','pxsrcdeck',()=>{ta.value=deckText()});
+  sb('📦 Nur fehlende Karten des Decks','pxsrcmiss',async()=>{const r=await J('/api/ownership',{list:deck.export,commander:deck.commander||'',deck_name:deck.name||''});
+   if(!r.has_collection){ta.value=deckText();P(src,'Keine Sammlung importiert – alle Karten übernommen.','hint');return}ta.value=r.missing.map(n=>'1 '+n).join('\\n')})}
+ if(BUY&&BUY.items&&BUY.items.length)sb('🧭 Aus dem Kaufplan','pxsrcbuy',()=>{ta.value=BUY.items.filter(x=>!x.skip).map(x=>x.qty+' '+x.name+(x.print?' ('+x.print.set_code+') '+x.print.number:'')).join('\\n')});
+ b.append($('h4','Karten'),src,ta);
+ const opts=$('div');opts.className='pxopts';b.append($('h4','Druck'),opts);
+ const rad=(name,val,txt)=>{const l=$('label');const r=$('input');r.type='radio';r.name=name;r.value=val;r.checked=PXOPT[name]==val;r.id='px'+name+val;l.append(r,' '+txt+' ');return l};
+ const ck=(k,txt)=>{const l=$('label');const c=$('input');c.type='checkbox';c.id='px'+k;c.checked=!!PXOPT[k];l.append(c,' '+txt+' ');return l};
+ opts.append($('b','Fassung: '),rad('mode','img','Kartenbild'),rad('mode','text','Nur Text (spart Tinte, ohne Kartenbild)'),$('br'),
+  ck('backs','Rückseiten doppelseitiger Karten mitdrucken'),ck('tokens','Tokens des Decks mitdrucken'),$('br'),
+  ck('cut','Schnittlinien'),ck('gap','2 mm Abstand zwischen den Karten'),ck('gray','Graustufen'),$('br'),
+  $('b','Papier: '),rad('paper','A4','A4'),rad('paper','Letter','US Letter'));
+ E('pxtokens').checked=!!pre.deck&&PXOPT.tokens!==false;if(!hasDeck)E('pxtokens').parentNode.hidden=true;
+ P(opts,'Originalgröße 63 × 88 mm, 9 Karten je Seite. Beim Drucken „Tatsächliche Größe“ bzw. 100 % wählen, nicht „An Seite anpassen“.','hint');
+ const ok=$('input');ok.type='checkbox';ok.id='pxok';try{ok.checked=localStorage.getItem('pxok')=='1'}catch(e){}
+ const okl=$('label');okl.id='pxokl';okl.append(ok,' Ich drucke nur Kopien für den privaten Gebrauch und gebe sie nicht als echte Karten aus.');
+ const go=$('button','Druckansicht öffnen');go.type='button';go.className='primary';go.id='pxgo';const info=$('div');info.id='pxinfo';
+ b.append(okl,$('br'),go,info);
+ if(pre.text)ta.value=pre.text;else if(pre.deck&&hasDeck)ta.value=deckText();
+ go.onclick=async()=>{if(!ok.checked){info.className='warn';info.textContent='Bitte zuerst bestätigen, dass du nur Kopien für den privaten Gebrauch druckst.';return}
+  try{localStorage.setItem('pxok','1')}catch(e){}
+  const o={mode:b.querySelector('input[name=mode]:checked').value,paper:b.querySelector('input[name=paper]:checked').value,backs:E('pxbacks').checked,
+   tokens:E('pxtokens').checked,cut:E('pxcut').checked,gap:E('pxgap').checked,gray:E('pxgray').checked};PXOPT=o;try{localStorage.setItem('pxopt',JSON.stringify(o))}catch(e){}
+  if(!ta.value.trim()){info.className='warn';info.textContent='Bitte Karten eintragen.';return}
+  go.disabled=true;info.className='hint';info.textContent='Lade Karten …';
+  const r=await J('/api/proxy_list',{list:ta.value,backs:o.backs?1:0,tokens:o.tokens&&hasDeck?1:0});go.disabled=false;
+  if(r.error){info.className='warn';info.textContent=r.error;return}
+  const cards=[];r.items.forEach(x=>{for(let i=0;i<x.qty;i++){cards.push(Object.assign({},x,{face:0}));if(x.back&&o.mode=='img')cards.push(Object.assign({},x,{face:1}))}});
+  closeSwap();printProxies(cards,o,r.missing)}}
+function pxText(x){const c=$('div');c.className='ptext';const h=$('div');h.className='pth';h.append($('b',x.name.split(' // ')[0]),manaEl((x.mana||'').split(' // ')[0]));c.append(h);
+ c.append($('div',x.type));const t=$('div');t.className='ptx';t.textContent=x.text||'';c.append(t);
+ if(x.pt||x.loy){const s=$('div',x.pt||('Loyalität '+x.loy));s.className='ptpt';c.append(s)}return c}
+function printProxies(cards,o,miss){o=Object.assign({mode:'img',cut:true,gap:false,gray:false,paper:'A4'},o||{});miss=miss||[];
+ let pa=E('printarea');if(!pa){pa=$('div');pa.id='printarea';document.body.append(pa)}pa.innerHTML='';
+ pa.className=(o.cut?'pxcut ':'')+(o.gap?'pxgap ':'')+(o.gray?'pxgray':'');
+ let ps=E('pxpage');if(!ps){ps=document.createElement('style');ps.id='pxpage';document.head.append(ps)}ps.textContent='@media print{@page{size:'+(o.paper=='Letter'?'letter':'A4')+';margin:8mm}}';
+ const bar=$('div');bar.className='noprint';bar.append($('b',cards.length+' Kopien · '+Math.ceil(cards.length/9)+' Seiten '),' ');
+ const pr=$('button','Drucken / als PDF speichern');pr.type='button';pr.className='primary';pr.id='pxprint';pr.onclick=()=>window.print();
+ const cl=$('button','Schließen');cl.type='button';cl.id='pxclose';cl.onclick=()=>{pa.remove();document.body.classList.remove('printing')};bar.append(pr,' ',cl);
+ bar.append($('div',PROXY_NOTE));if(miss.length)bar.append($('div','Nicht gefunden (nicht gedruckt): '+miss.join(', ')));pa.append(bar);
+ for(let i=0;i<cards.length;i+=9){const pg=$('div');pg.className='ppage';cards.slice(i,i+9).forEach(x=>{const c=$('div');c.className='pcard'+(o.mode=='text'||!x.front?' ptextcard':'');
+   const src=x.src||(x.face?x.back:x.front);
+   if(o.mode=='text'||!src)c.append(pxText(x));else{const im=$('img');im.src=src;im.alt=x.name+(x.face?' (Rückseite)':'');im.onerror=()=>{im.remove();c.classList.add('ptextcard');c.prepend(pxText(x))};c.append(im)}
+   const m=$('span','PROXY – keine echte Karte');m.className='pmark';c.append(m);pg.append(c)});pa.append(pg)}
  document.body.classList.add('printing');window.scrollTo(0,0)}
 function deckExtra(){const tags={},grp={};deck.groups.forEach(g=>g.cards.forEach(c=>{if(c.tags&&c.tags.length)tags[c.name]=c.tags;if(c.grp)grp[c.name]=c.grp}));
  (deck.maybe||[]).forEach(c=>{if(c.tags&&c.tags.length)tags[c.name]=c.tags});
@@ -7196,6 +7308,7 @@ async function budgetBox(o){const h=$('h4','💸 Budget-Tausch');o.append(h);
     bt.onclick=()=>{for(const g of deck.groups){const ci=g.cards.findIndex(c=>c.name==x.name);if(ci>=0){markOut(x.name);g.cards[ci]=Object.assign({},a,{qty:g.cards[ci].qty,swapped:true});recalc();return}}};d.append(bt,' ')});
    const w=$('div',x.reason);w.className='hint';d.append(w);res.append(d)});P(res,r.hint,'hint')}}
 E('shopgo').onclick=shopCalc;
+E('pxopen').onclick=()=>proxyStudio({});
 E('buybox').addEventListener('toggle',()=>{if(E('buybox').open&&!E('buyctl').firstChild)buyInit()});
 
 E('wishgo').onclick=async()=>{const r=await J('/api/wish_add',{text:(E('wishqty').value||'1')+' '+E('wishname').value,target:E('wishtarget').value});if(!r.error){E('wishname').value='';E('wishtarget').value=''}wishShow(r)};
@@ -8148,7 +8261,8 @@ function buyRender(r){const o=E('buyres');o.innerHTML='';if(r.error){P(o,r.error
    return {name:x.name,qty:x.qty,set_code:x.print?x.print.set_code:'',number:x.print?x.print.number:'',foil:x.foil}});
   if(!sel.length){alert('Bitte zuerst gekaufte Karten ankreuzen.');return}buyLoad({items:JSON.stringify(sel)},'/api/buy_done')};
  const cs=$('button','CSV herunterladen');cs.type='button';cs.id='buycsv';cs.onclick=async()=>{const x=await J('/api/buy_csv',buyParams());if(x.csv)download(x.file,x.csv)};
- f.append(done,' ',cs);o.append(f);
+ const px=$('button','🖨 Als Proxy drucken');px.type='button';px.id='buyproxy';px.title='Kopien zum Testen, bis die echten Karten da sind';px.onclick=()=>proxyStudio({text:act.map(x=>x.qty+' '+x.name+(x.print?' ('+x.print.set_code+') '+x.print.number:'')).join('\\n')});
+ f.append(done,' ',cs,' ',px);o.append(f);
  P(o,'Preise: Cardmarket-Preisliste (Trend) bzw. Scryfall; * = Preis der günstigsten Druckversion, weil für den gewählten Druck keiner vorliegt. Trader-online liefert keine Preisliste – dort gilt der Preis im Shop. Anmeldung und Kauf laufen direkt beim Händler.','hint')}
 async function buyPrint(x){const b=dlgOpen('Druck für '+x.name);const any=$('button','Beliebiger Druck (günstigster)');any.type='button';any.id='buyany';
  any.onclick=()=>{closeSwap();buyLoad({name:x.name,set_code:'',number:'',foil:0},'/api/buy_set')};b.append(any);
@@ -9503,6 +9617,8 @@ class H(BaseHTTPRequestHandler):
         con = db()
         con.row_factory = sqlite3.Row
         try:
+            if path == "/api/proxy_list":
+                return proxy_list(p, uid)
             if path == "/api/buy_plan":
                 return buy_plan(p, uid)
             if path == "/api/buy_set":
