@@ -27,6 +27,8 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 52: Händler-Links: je Karte Cardmarket und Trader-online, bei Precons zusätzlich cardcosmos; Einkaufs- und
+            Wunschliste mit „Bei Cardmarket kaufen“ (Liste kopieren, Wants öffnen); Händler einzeln abschaltbar.
 Version 51: Neuer Spieltisch (allein und zu zweit) nach dem Vorbild digitaler Kartenspiele: Gegner oben, Spielfeld in der Mitte,
             Hand als Fächer, Leben und Stapel als Symbole, ein großer Zug-Knopf, Phasenleiste, Karten ziehen per Drag & Drop,
             Aktionen beim Antippen, alles Weitere hinter ⚙; Protokoll und Statistik im Seitenmenü.
@@ -117,7 +119,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "51"
+APP_VERSION = "52"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -4775,7 +4777,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 51)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 52)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -4811,6 +4813,7 @@ body.mtg #pv{background:#140f0b}body.mtg .pvmenu{background:#221811;border-color
 @media(max-width:700px){.pvc,.pvc img,.pvc>span{width:62px}.pvc img,.pvc>span{height:86px}}
 .invimg{width:34px;height:47px;object-fit:cover;border-radius:3px}#invtab select{max-width:150px}.printrow img{width:73px;height:102px}
 
+.shops{display:inline-flex;gap:3px;vertical-align:middle}.shoplnk{display:inline-block;font-size:10px;font-weight:bold;line-height:1;padding:3px 5px;border-radius:9px;text-decoration:none;border:1px solid currentColor}.shoplnk.scm{color:#1f6fb2}.shoplnk.sto{color:#b0401f}.shoplnk.scc{color:#6b3fb0}body.mtg .shoplnk.scm{color:#7fb6ea}body.mtg .shoplnk.sto{color:#f09a7a}body.mtg .shoplnk.scc{color:#c3a4f0}.shopset{font-size:13px;margin:6px 0}.shopset label{margin-right:8px}
 #cmpbox{display:none}section.page>details.tabbox>summary{display:none}
 .sw{border:1px solid #888;background:#fff;border-radius:4px;cursor:pointer;padding:0 6px;margin-left:6px;font-size:13px}
 .grid .sw{position:absolute;bottom:6px;right:4px;margin:0;background:#fffe}
@@ -5248,6 +5251,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>📷 Karten scannen:</b> im Tab „Sammlung“ (oder in der Deckansicht neben „Hinzufügen“). Drei Wege: <b>Foto aufnehmen</b> (geht überall; am Handy öffnet sich die Kamera), <b>Live-Kamera</b> (im Browser nur über HTTPS bzw. am PC) und in der Android-App <b>„Mit der Handykamera scannen“</b> (Erkennung direkt auf dem Gerät, besonders schnell). Kartensprache einstellen, Karte formatfüllend und gerade aufnehmen. Erkannt wird der Name; bei Unsicherheit werden Alternativen angeboten. <b>Dauerscan:</b> in der Live-Kamera „🔁 Dauerscan starten“ (bzw. in der Android-App „Dauerscan mit der Handykamera“) – dann Karten nacheinander in den Rahmen legen; jede sicher erkannte Karte wird mit Ton automatisch in die Scanliste übernommen. Dieselbe Karte zählt erst wieder, wenn sie kurz aus dem Bild war; für mehrere gleiche Exemplare „+1“ tippen. Beim Einzelscan jede Karte mit „✓ Übernehmen“ in die Scanliste, Mengen mit + / − anpassen, am Ende „Zur Sammlung hinzufügen“ oder „Ins aktuelle Deck“. Beim allerersten Scan wird die Texterkennung einmalig geladen (rund 30 MB, Internet nötig), danach geht es ohne. Für sehr große Sammlungen sind spezialisierte Scanner-Apps (ManaBox, Delver Lens) schneller – deren CSV lässt sich weiterhin importieren.</li><li><b>🛒 Einkaufsliste:</b> zählt alle Karten, die dir für deine gespeicherten Decks fehlen, mit Preis und Deckzuordnung. „Karten wandern zwischen Decks“ (Standard) rechnet mit der größten Menge in einem Deck, sonst bekommt jedes Deck eigene Exemplare. Die Liste lässt sich kopieren – das Format „1 Kartenname“ je Zeile versteht auch die Wunschliste auf Cardmarket – oder komplett auf die eigene Wunschliste setzen.</li>
 <li><b>⭐ Wunschliste und Preisalarm:</b> Karten mit Anzahl und optionalem Zielpreis. Liegt der aktuelle Preis darunter, steht die Karte grün markiert in der Liste und als „🔔 Preisalarm“ auf der Startseite. Dort erscheinen auch Karten deiner Sammlung, deren Preis sich in etwa sieben Tagen um mindestens 20 % und 1 € verändert hat. Neue Preise kommen mit jeder Kartenaktualisierung.</li>
 <li><b>📁 Ordner:</b> Teile der Sammlung ordnen (z. B. Tauschordner, Binder). Ein Ordner enthält nur Karten, die du besitzt, und höchstens so viele, wie du hast; die Karten bleiben dabei Teil der Sammlung.</li>
+<li><b>🛒 Händler-Links:</b> Bei jeder Karte führen kleine Links direkt zum Händler: <b>CM</b> Cardmarket (günstigste Druckversion) und <b>TO</b> Trader-online (Suche nach der Karte). Bei Precons kommt <b>CC</b> cardcosmos dazu – dort gibt es nur versiegelte Ware, keine Einzelkarten. „🛒 Bei Cardmarket kaufen“ in Einkaufs- und Wunschliste kopiert die ganze Liste und öffnet die Wants-Seite von Cardmarket: neue Liste anlegen, „Decklist hinzufügen“, einfügen – der Shopping Wizard sucht dann die günstigste Händlerkombination. Anmeldung und Kauf laufen immer direkt beim Händler; die Manaschmiede überträgt keine Daten. Unter der Einkaufsliste lässt sich jeder Händler abschalten.</li>
 <li><b>📚 Bestand nach Druck:</b> jede Zeile ist ein Druck deiner Karte mit Set, Sammlernummer, Foil (normal, Foil, Etched), Zustand (Cardmarket-Stufen MT, NM, EX, GD, LP, PL, PO), Sprache und Anzahl. Alles lässt sich direkt in der Tabelle ändern; ✎ öffnet die Liste aller Drucke der Karte mit Bild und Preis (normal und Foil). Einträge mit gleichen Angaben werden zusammengelegt, Anzahl 0 entfernt den Eintrag. Oben über der Tabelle: „Druck wählen …“ fügt eine Karte in einem bestimmten Druck hinzu. Beim <b>Import</b> werden Set, Nummer, Foil, Zustand und Sprache aus ManaBox, Moxfield, Deckbox, Archidekt und Dragon Shield übernommen, aus Textlisten „2 Counterspell (MH2) 267 *F*“. Die Druckdaten (Set-Name, Bild, Cardmarket-Nummer) holt das Programm von Scryfall; ist Scryfall gerade nicht erreichbar, bleiben die Angaben erhalten und lassen sich später mit „Druckdaten nachladen“ ergänzen. <b>Wert:</b> der Cardmarket-Preis genau dieses Drucks (Foil mit Foil-Preis), sonst der Scryfall-Preis des Drucks; ohne bekannten Druck gilt der günstigste Druck der Karte. Zustand und Sprache ändern den Wert nicht, weil die Cardmarket-Preisliste sie nicht unterscheidet. Für Deckbau, Besitzanteil, Einkaufsliste und Ordner zählt die Summe je Karte. Der Export „Als CSV herunterladen“ enthält alle Druckangaben und lässt sich wieder einlesen (auch von Moxfield, ManaBox, Archidekt).</li>
 <li><b>📈 Wertverlauf:</b> der Wert der Sammlung je Stichtag (bei jeder Kartenaktualisierung) und zum Vergleich in Dollar.</li>
 <li><b>Preisquellen und Budget-Tausch:</b> Euro-Preise kommen direkt aus der öffentlichen <b>Cardmarket-Preisliste</b>, die jeden Tag neu geladen wird. Als Preis einer Karte gilt der Trendpreis ihrer <b>günstigsten Druckversion</b> – so viel kostet die Karte etwa, wenn man sie fürs Deck kauft. Ein Klick auf den Preis in der Kartensuche zeigt dazu Tiefstpreis, Durchschnitt über 1, 7 und 30 Tage, Foil-Preis und Zahl der Drucke; 🛒 öffnet die günstigste Druckversion auf Cardmarket. Ist die Preisliste einmal nicht erreichbar, gelten die zuletzt geladenen Cardmarket-Preise, ganz ohne Preisliste die Euro-Preise von Scryfall. Dollar-Preise (TCGplayer) liefert Scryfall. In der Deckansicht sucht „💸 Budget-Tausch“ für teure Karten (ab einstellbarem Preis, ohne eigene Karten) Ersatz mit gleicher Aufgabe für höchstens 30 % des Preises; ein Klick tauscht die Karte.</li></ul>
@@ -5645,7 +5649,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='51';
+const PAGE_VERSION='52';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -6149,19 +6153,21 @@ async function shopCalc(){const o=E('shopres');o.innerHTML='';P(o,'rechne …','
  P(o,r.items.length?r.cards+' fehlende Karten ('+r.items.length+' verschiedene) für '+r.decks+' Decks · zusammen ca. '+fe(r.total)+(r.noprice?' · '+r.noprice+' ohne Preis':''):'Dir fehlt keine Karte – alle Decks sind komplett.','big');
  if(CMAT&&r.items.length)P(o,'Preise: Cardmarket (Preisliste vom '+CMAT+', günstigste Druckversion). 🛒 öffnet die Karte auf Cardmarket.','hint');
  if(!r.items.length)return;
- const bar=$('p');const cp=$('button','📋 Liste kopieren (für die Cardmarket-Wunschliste)');cp.type='button';cp.id='shopcopy';cp.onclick=async()=>{await copyText(r.text);cp.textContent='✓ kopiert'};
+ const bar=$('p');const cp=$('button','📋 Liste kopieren');cp.type='button';cp.id='shopcopy';cp.onclick=async()=>{await copyText(r.text);cp.textContent='✓ kopiert'};
+ const cmb=$('button','🛒 Bei Cardmarket kaufen');cmb.type='button';cmb.className='primary';cmb.id='shopcm';cmb.title='Liste kopieren und die Cardmarket-Wants öffnen';cmb.onclick=()=>cmWants(r.text,cmb);
  const wl=$('button','⭐ Alle auf die Wunschliste');wl.type='button';wl.id='shopwish';wl.onclick=async()=>{const x=await J('/api/wish_add',{text:r.text});wl.textContent='✓ '+x.added+' Karten auf der Wunschliste';wishShow(x)};
- bar.append(cp,' ',wl);o.append(bar);
+ bar.append(cmb,' ',cp,' ',wl);o.append(bar);o.append(shopSettings());
  const t=$('table');t.className='ftable';t.id='shoptable';o.append(t);const hr=t.insertRow();['Karte','fehlt','hast','Preis','zusammen','in Decks'].forEach((x,i)=>{const th=$('th',x);if(i>0&&i<5)th.className='r';hr.append(th)});
- r.items.slice(0,300).forEach(x=>{const tr=t.insertRow();const c0=tr.insertCell();c0.append(cardName(x.name),' ',cmA(x.cm));if(x.wish)c0.append(' ⭐');
+ r.items.slice(0,300).forEach(x=>{const tr=t.insertRow();const c0=tr.insertCell();c0.append(cardName(x.name),' ',cmA(x.cm,x.name));if(x.wish)c0.append(' ⭐');
   [x.missing,x.have,fe(x.eur),fe(x.total)].forEach(v=>{const c=tr.insertCell();c.className='r';c.textContent=v});tr.insertCell().textContent=x.decks.join(', ')});
  if(r.items.length>300)P(o,'… und '+(r.items.length-300)+' weitere (vollständig in der kopierten Liste).','hint')}
 function wishShow(r){const o=E('wishres');o.innerHTML='';if(r.error){P(o,r.error,'warn');return}
  E('wishsum').textContent=r.items.length?'('+r.items.length+' Karten, ca. '+fe(r.total)+(r.hits?', '+r.hits+' unter Zielpreis':'')+')':'';
  if(r.unknown&&r.unknown.length)P(o,'Nicht gefunden: '+r.unknown.join(', '),'warn');
  if(!r.items.length){P(o,'Die Wunschliste ist leer.','hint');return}
+ const wb=$('p');const wcm=$('button','🛒 Wunschliste bei Cardmarket kaufen');wcm.type='button';wcm.id='wishcm';wcm.onclick=()=>cmWants(r.items.map(x=>x.qty+' '+x.name).join('\\n'),wcm);wb.append(wcm);o.append(wb);
  const t=$('table');t.className='ftable';t.id='wishtable';o.append(t);const hr=t.insertRow();['Karte','Anzahl','Preis','Dollar','Zielpreis','',''].forEach((x,i)=>{const th=$('th',x);if(i>0&&i<5)th.className='r';hr.append(th)});
- r.items.forEach(x=>{const tr=t.insertRow();tr.dataset.name=x.name;const c0=tr.insertCell();c0.append(cardName(x.name),' ',cmA(x.cm));if(x.have)c0.append($('span',' (hast '+x.have+')'));
+ r.items.forEach(x=>{const tr=t.insertRow();tr.dataset.name=x.name;const c0=tr.insertCell();c0.append(cardName(x.name),' ',cmA(x.cm,x.name));if(x.have)c0.append($('span',' (hast '+x.have+')'));
   const cq=tr.insertCell();cq.className='r';cq.textContent=x.qty;
   const ce=tr.insertCell();ce.className='r'+(x.hit?' hit':'');ce.textContent=fe(x.eur);
   const cu=tr.insertCell();cu.className='r';cu.textContent=fu(x.usd);
@@ -6376,6 +6382,7 @@ async function pcOpen(id){const d=await J('/api/precon?id='+id);const meta=(PC.d
   const x=await J('/api/precon_to_collection',{id:id});msg.textContent=x.error?'⚠ '+x.error:'✓ '+x.imported+' Karten in die Sammlung übernommen ('+x.imp_unique+' verschiedene).';msg.className=x.error?'warn':'ok';co.disabled=true;co.textContent='✓ übernommen';
   const r2=await J('/api/precon_catalog');PC.data=r2;pcRender()};
  bar.append(ed,' ',sv,' ',op,' ',cp,' ',co);b.append(bar,msg);
+ {const sp=$('p');sp.id='pcshops';sp.append('🛒 Kaufen bei: ',sealedLinks(d.name));b.append(sp)}
  if(d.missing&&d.missing.length)P(b,'Nicht in der Kartendatenbank gefunden: '+d.missing.join(', '),'warn');
  const w=$('div');w.className='pclist';w.id='pclist';b.append(w);
  d.groups.forEach(g=>{const s=$('div');s.className='pcg';s.append($('h4',g.name+' ('+g.cards.reduce((a,c)=>a+c.qty,0)+')'));
@@ -6390,8 +6397,27 @@ async function cmShow(name){const d=await J('/api/cm',{name:name});const b=dlgOp
  const tr=t.insertRow();tr.insertCell().textContent='Druckversionen bei Cardmarket';const c=tr.insertCell();c.className='r';c.textContent=d.prints;
  if(d.avg30&&d.trend){const ch=Math.round((d.trend-d.avg30)/d.avg30*100);P(b,'Trend gegenüber dem 30-Tage-Durchschnitt: '+(ch>0?'+':'')+ch+' %','hint')}
  const a=$('a','🛒 Günstigste Druckversion auf Cardmarket ansehen',d.url);a.target='_blank';a.rel='noopener';a.id='cmlink';b.append($('p'));b.lastChild.append(a);
+ if(SHOPON.to){const tp=$('p');tp.append('Auch bei: ',cmA('',name));tp.querySelector('.scm')&&tp.querySelector('.scm').remove();b.append(tp)}
  P(b,'Preise: Cardmarket, Preisliste vom '+d.at+'. Durchschnitte und Trend beziehen sich auf die günstigste Druckversion; Tiefst- und Foil-Preis auf alle Drucke.','hint')}
-function cmA(url){if(!url)return '';const a=$('a','🛒',url);a.target='_blank';a.rel='noopener';a.title='Auf Cardmarket ansehen';a.className='cmlnk';return a}
+// ---- Händler-Links: Nutzer kaufen direkt beim Händler (eigene Anmeldung dort); es werden keine Daten übertragen
+const SHOPS={cm:{name:'Cardmarket',short:'CM',search:q=>'https://www.cardmarket.com/de/Magic/Products/Search?searchString='+encodeURIComponent(q)},
+ to:{name:'Trader-online',short:'TO',search:q=>'https://www.trader-online.de/index.php?cl=search&searchparam='+encodeURIComponent(q)},
+ cc:{name:'cardcosmos',short:'CC',sealed:true,search:q=>'https://cardcosmos.de/search?q='+encodeURIComponent(q)+'&type=product'}};
+let SHOPON={cm:true,to:true,cc:true};try{Object.assign(SHOPON,JSON.parse(localStorage.getItem('shops')||'{}'))}catch(e){}
+function shopA(k,url,title){const s=SHOPS[k];const a=$('a',s.short,url);a.target='_blank';a.rel='noopener';a.className='shoplnk s'+k;a.title=title||('Bei '+s.name+' ansehen – Anmeldung und Kauf direkt beim Händler');return a}
+function cmA(url,name){const w=$('span');w.className='shops';
+ if(SHOPON.cm&&(url||name)){const a=shopA('cm',url||SHOPS.cm.search(name),'Auf Cardmarket ansehen (günstigste Druckversion)');a.classList.add('cmlnk');w.append(a)}
+ if(name)Object.keys(SHOPS).filter(k=>k!='cm'&&SHOPON[k]&&!SHOPS[k].sealed).forEach(k=>w.append(shopA(k,SHOPS[k].search(name))));
+ return w.childElementCount?w:''}
+function sealedLinks(q){const w=$('span');w.className='shops';Object.keys(SHOPS).filter(k=>SHOPON[k]).forEach(k=>w.append(shopA(k,SHOPS[k].search(q),'„'+q+'“ bei '+SHOPS[k].name+' suchen')));return w}
+function shopSettings(){const w=$('div');w.className='shopset';w.append($('span','Händler-Links: '));
+ Object.entries(SHOPS).forEach(([k,s])=>{const l=$('label');const c=$('input');c.type='checkbox';c.checked=!!SHOPON[k];c.id='shopon-'+k;
+  c.onchange=()=>{SHOPON[k]=c.checked;try{localStorage.setItem('shops',JSON.stringify(SHOPON))}catch(e){}document.querySelectorAll('.shopset input#shopon-'+k).forEach(x=>x.checked=c.checked)};
+  l.append(c,' '+s.name+(s.sealed?' (nur versiegelte Ware, z. B. Precons)':''));w.append(l,' ')});return w}
+async function cmWants(text,btn){await copyText(text);window.open('https://www.cardmarket.com/de/Magic/Wants','_blank','noopener');
+ if(btn)btn.textContent='✓ Liste kopiert – Cardmarket geöffnet';
+ const n=$('div','Bei Cardmarket: neue Wants-Liste anlegen → „Decklist hinzufügen“ → Liste einfügen (Strg+V) → „Hinzufügen“. Danach findet der Shopping Wizard die günstigste Händlerkombination.');n.className='hint cmhow';
+ if(btn&&!btn.parentNode.querySelector('.cmhow'))btn.parentNode.append(n)}
 
 // Probehand und Starthand-Statistik (London-Mulligan)
 function libraryCards(){return deck.groups.filter(g=>g.name!='Commander').flatMap(g=>g.cards.flatMap(c=>Array(c.qty).fill(c)))}
@@ -6719,7 +6745,7 @@ function invRender(r){const o=E('invres');o.innerHTML='';
   const pc=tr.insertCell();pc.textContent=eur2(it.price);pc.title={cm:'Cardmarket-Preis dieses Drucks',scryfall:'Scryfall-Preis dieses Drucks',cheapest:'günstigster Druck der Karte (Druck unbekannt oder ohne Preis)'}[it.src]||'';
   if(it.src=='cheapest')pc.className='hint';
   tr.insertCell().textContent=eur2(it.value);
-  const ac_=tr.insertCell();if(it.cm)ac_.append(cmA(it.cm),' ');const del=$('button','✕');del.type='button';del.className='sw';del.title='Eintrag entfernen';
+  const ac_=tr.insertCell();{const sl=cmA(it.cm,it.name);if(sl)ac_.append(sl,' ')}const del=$('button','✕');del.type='button';del.className='sw';del.title='Eintrag entfernen';
   del.onclick=()=>{if(del.textContent!='sicher?'){del.textContent='sicher?';return}invSet(it,{},0)};ac_.append(del)});
  if(r.count>r.per){const pg=$('p');o.append(pg);pg.append('Einträge '+(r.page*r.per+1)+'–'+Math.min(r.count,(r.page+1)*r.per)+' von '+r.count+' ');
   if(r.page>0)pg.append(Object.assign($('button','◀'),{type:'button',onclick:()=>{INV.page--;invLoad()}}));
@@ -7669,7 +7695,7 @@ async function go(e){e&&e.preventDefault();
   tr.insertCell().append(manaEl(c.mana));
   for(const v of [c.type,c.ci,c.rank??''])tr.insertCell().textContent=v;
   const pc=tr.insertCell();if(c.eur!=null){const pb=$('a',c.eur.toFixed(2).replace('.',','));pb.href='#';pb.className='cmprice';pb.title='Cardmarket-Preise anzeigen';pb.onclick=e=>{e.preventDefault();cmShow(c.name)};pc.append(pb)}
-  const l=tr.insertCell();l.append($('a','Scryfall',c.scryfall));if(c.cardmarket){l.append(' · ',$('a','Cardmarket',c.cardmarket))}}}
+  const l=tr.insertCell();l.append($('a','Scryfall',c.scryfall));if(c.cardmarket&&SHOPON.cm){l.append(' · ',$('a','Cardmarket',c.cardmarket))}if(SHOPON.to){const a=$('a','Trader-online',SHOPS.to.search(c.name));a.target='_blank';a.rel='noopener';a.className='tolnk';l.append(' · ',a)}}}
 // ---- Benutzer (Server), App-Installation
 let installEv=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEv=e;userBar()});
