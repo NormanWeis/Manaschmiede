@@ -203,6 +203,38 @@ Bewertet wurden 16 Funktionsbereiche mit 0 bis 3 Punkten: **0** = fehlt, **1** =
 - **Archidekt (26), Playgroup.gg (26), Moxfield (25):** Archidekt und Moxfield führen bei Editor, Testspiel, Teilen und Community. Playgroup wertet erfasste Partien aus und empfiehlt Karten nach Siegquote.
 - **EDHREC (15) und Commander Spellbook (9):** Spezialisten für Empfehlungen bzw. Combos. Sie sind keine Allrounder, aber in ihrem Bereich führend; die Commander-DB nutzt Spellbook direkt.
 
+## Neubewertung Version 52 mit Zielerreichung (Stand 23.11.2026)
+
+Zwei Maßstäbe nebeneinander: **Punkte** (0–3, wie im Punktevergleich oben, gleiche Werte der anderen Anbieter; Playgroup bei Combos/Brackets von 1 auf 2 angehoben, weil es inzwischen einen Bracket-Rechner mit Combo-Erkennung anbietet) und **Zielerreichung** – wie weit die Manaschmiede das erfüllt, was Spieler in Foren und Testberichten von der jeweiligen Funktion erwarten. Die Prozentwerte sind eine begründete Einschätzung aus der Recherche, keine Messung.
+
+| Funktion | Manaschmiede 52 | Moxfield | Archidekt | EDHREC | ManaBox | Playgroup | TopDecked | Spellbook | Zielerreichung | Erwartung laut Foren · was noch fehlt |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Deck-Editor | 3 | 3 | 3 | 0 | 2 | 2 | 2 | 0 | 85 % | Erwartet: schnell, Autovervollständigen, Scryfall-Suche, Kategorien, Primer. Fehlt: Primer mit formatiertem Text und Bildern, wie sie die Moxfield-Gemeinde schätzt. |
+| Deck automatisch bauen | 3 | 0 | 0 | 2 | 1 | 2 | 1 | 0 | 70 % | KI-Decks werden in Foren oft als zusammenhanglos kritisiert (falsche Kartenzahl, fremde Farben, kein Plan). Die Manaschmiede baut regelkonform mit Rollen und Thema; echte Synergie-Tiefe bleibt begrenzt. |
+| Kartenempfehlungen | 2 | 1 | 2 | 3 | 2 | 3 | 2 | 0 | 60 % | EDHREC ist Maßstab, wird aber für Einheitsdecks kritisiert. Eigene Datenbasis (Precons, Galerie, Spielprotokoll) ist viel kleiner. |
+| Sammlung und Besitzanteil | 3 | 3 | 3 | 0 | 3 | 1 | 3 | 0 | 90 % | Erwartet: Set, Sprache, Zustand, Foil je Karte (wie ManaBox). Seit V48 vorhanden. Fehlt: Kaufpreis je Eintrag, Wert nach Zustand. |
+| Kartenscanner | 3 | 0 | 0 | 0 | 3 | 1 | 2 | 0 | 70 % | ManaBox gilt als schnellster Scanner, auch dort gibt es Fehlerkennungen. Die Manaschmiede ist langsamer und erkennt Set/Foil nicht automatisch. |
+| Preise und Preisverlauf | 3 | 2 | 2 | 1 | 3 | 1 | 3 | 0 | 90 % | Europäer wollen Cardmarket-Trendpreise statt Dollar oder Tiefstpreis. Seit V47/48 Trend je Druckversion, Verlauf, Alarm. Fehlt: Preis nach Zustand und Sprache (liefert Cardmarket nicht). |
+| Manabasis und Deck-Statistik | 3 | 2 | 2 | 1 | 2 | 2 | 2 | 0 | 90 % | Kurve, Farbquellen, Probehände – vorhanden. |
+| Testspiel / Probehand | 3 | 3 | 3 | 0 | 2 | 3 | 3 | 0 | 85 % | Erwartet: Ziehen per Drag & Drop, ein Klick zum Spielen/Tappen, Zonen frei bedienbar, Tasten, Tokens, Kommandozone, am Handy bedienbar. Seit V51 vorhanden. Fehlt: Mehrfachauswahl, freie Platzierung, Online-Partie über das Netz. |
+| Komplette KI-Partien nach allen Regeln | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 70 % | Alleinstellungsmerkmal. Die Forge-KI spielt regelkonform, aber schwächer als Menschen; Ergebnisse sind ein Richtwert. |
+| Combos und Bracket-Einstufung | 3 | 2 | 2 | 2 | 1 | 2 | 1 | 3 | 85 % | Rechner werden an Game Changern, Zwei-Karten-Combos, Massen-Landzerstörung und Extrazügen gemessen – alles vorhanden. Fehlt: Zusatzsignale wie Anzahl schneller Mana-Quellen und freier Gegenzauber für Bracket 4. |
+| Spieltisch, Spielprotokoll, Siegquoten | 3 | 0 | 0 | 0 | 0 | 3 | 2 | 0 | 75 % | Playgroup setzt den Maßstab: ELO, Ranglisten, Erzfeinde, Zugdauer, vorsichtig berechnete Siegquoten. Fehlt: ELO, Rangliste, Spaß-Bewertung. |
+| Import und Export | 3 | 3 | 3 | 1 | 2 | 2 | 2 | 1 | 95 % | Alle gängigen Formate inklusive Druckangaben. |
+| Teilen und Community | 3 | 3 | 3 | 2 | 2 | 2 | 2 | 2 | 60 % | Funktionen wie Moxfield/Archidekt, aber Reichweite nur auf dem eigenen Server; keine öffentliche Primer-Kultur. |
+| Deutsche Oberfläche, Hilfe, Regeln | 3 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 95 % | Vollständig deutsch inklusive Kartennamen; Regeltexte der Karten teils englisch. |
+| Selbst betreiben, Datenschutz, offline | 3 | 0 | 0 | 0 | 2 | 0 | 1 | 0 | 95 % | Docker, Windows, offline nutzbar. |
+| Plattformen (PC, Handy, Web) | 3 | 2 | 2 | 2 | 3 | 2 | 3 | 2 | 85 % | Fehlt: eigene iOS-App (Web-App funktioniert). |
+| **Summe Punktevergleich (max. 48)** | **47** | **25** | **26** | **15** | **29** | **27** | **30** | **9** | **81 %** | Durchschnitt der Zielerreichung über die 16 Kriterien |
+| Einstieg und Commander-Findung | 3 | 1 | 1 | 3 | 1 | 1 | 1 | 0 | 90 % | Einsteigerbereich, Commander nach Farbe und Thema. |
+| Kaufen und Händleranbindung | 2 | 3 | 3 | 2 | 2 | 1 | 2 | 1 | 55 % | Seit V52 Links zu Cardmarket und Trader-online, Wants-Übergabe an Cardmarket. Fehlt: echter Warenkorb oder Kaufknopf wie bei Moxfield/Archidekt (braucht Händlervereinbarungen). |
+| Turniere und Spielabende organisieren | 1 | 0 | 0 | 0 | 0 | 3 | 3 | 0 | 25 % | Playgroup und TopDecked bieten Paarungen und Ranglisten; in der Manaschmiede nur der gemeinsame Tisch. |
+| **Summe mit Zusatzkategorien (max. 57)** | **53 (93 %)** | **29** | **30** | **20** | **32** | **32** | **36** | **10** | **77 %** | Durchschnitt der Zielerreichung über alle 19 Bereiche |
+
+**Einordnung:** Im Funktionsumfang liegt die Manaschmiede weit vorn (47 von 48 Punkten, mit Zusatzkategorien 53 von 57). Die Zielerreichung ist mit 77–81 % niedriger, weil sie misst, wie gut eine Funktion die Erwartungen erfüllt – nicht nur, ob es sie gibt. Am stärksten: Sammlung, Preise, Import/Export, deutsche Oberfläche und Selbstbetrieb (90–95 %). Die größten Lücken mit dem meisten Nutzen für Spieler: **Turniere und Spielabende (25 %)** – Paarungen, Rangliste und ELO aus dem vorhandenen Spielprotokoll; **Kaufen (55 %)** – ohne Händlervereinbarung nicht weiter ausbaubar; **Empfehlungen und Community (je 60 %)** – beides hängt an der Zahl der Nutzer und Decks.
+
+**Quellen der Neubewertung (23.11.2026):** Forenbeiträge und Testberichte zu Moxfield und Archidekt (r/EDH, Lemmy/Feddit, MTG Nexus, Draftsim), Archidekt „Playtester 2.0“, TappedOut-Playtester-Rückmeldungen, Forge-Wiki und Forge-Forum (Slightly Magic), ManaBox-Anleitung und App-Bewertungen, Forendiskussionen zu EDHREC (MTG Salvation, TappedOut, MTG Nexus), Bracket-Rechner von Playgroup, Draftsim, ScrollVault, TableCommander und Nerd Leagues, Deckbox- und Deckstats-Forum zu Cardmarket-Preisen, Moxfield-Feedback zur Cardmarket-Preisgenauigkeit, StarCityGames und TappedOut zu KI-Deckbau, Playgroup-Übersicht zu Spielverfolgung und Spielabenden.
+
 ## Cardmarket-Anbindung: Möglichkeiten und Vorgehen (Stand 18.11.2026)
 
 | Weg | Was er liefert | Zugang heute | Eignung für die Manaschmiede |
