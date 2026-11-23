@@ -133,6 +133,7 @@ Neue **Programmversionen** holt der Server nicht von selbst: nach einer neuen Ve
 | `CDB_ADMIN_USER`, `CDB_ADMIN_PASSWORD` | Admin wird bei jedem Start angelegt/gesetzt | – |
 | `CDB_MAX_DUELS` | gleichzeitige Forge-Duelle (weitere warten in einer Schlange) | 1 |
 | `CDB_MAX_GAMES` | höchstens so viele Partien je Duell | 20 |
+| `CDB_MAX_LAB_GAMES` | höchstens so viele Partien je Messung im Messlabor | 200 |
 | `CDB_FORGE_XMX` | Java-Speicher je Duell | 2048m |
 | `CDB_MEM_LIMIT` | Speichergrenze des Containers | 4g |
 | `CDB_SESSION_DAYS` | Anmeldung bleibt so viele Tage gültig | 30 |
