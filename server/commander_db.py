@@ -27,6 +27,9 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 53: Spielabend-Modus (Spieltisch-Tab): Spieler eintragen, gemischte Vierer-Tische auslosen (wiederholte Paarungen werden
+            vermieden), Sieger per Antippen, Rangliste nach Siegen, Saison optional; Mitspieler tragen Ergebnisse über Link/QR-Code ohne Konto
+            ein (/n/CODE); Tisch direkt im Lebenszähler starten. Impressum und Datenschutzerklärung (/impressum, /datenschutz), vom Admin pflegbar.
 Version 52: Händler-Links: je Karte Cardmarket und Trader-online, bei Precons zusätzlich cardcosmos; Einkaufs- und
             Wunschliste mit „Bei Cardmarket kaufen“ (Liste kopieren, Wants öffnen); Händler einzeln abschaltbar.
 Version 51: Neuer Spieltisch (allein und zu zweit) nach dem Vorbild digitaler Kartenspiele: Gegner oben, Spielfeld in der Mitte,
@@ -119,7 +122,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "52"
+APP_VERSION = "53"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -3202,6 +3205,374 @@ def ensure_admin():
         print(f"{n} Decks aus dem lokalen Betrieb dem Administrator zugeordnet.")
 
 
+# ---------------------------------------------------------------- Spielabende: gemischte Gruppen, Siege, Rangliste, Saisons
+GN_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def gn_tables(con):
+    con.execute("CREATE TABLE IF NOT EXISTS gn_nights(id INTEGER PRIMARY KEY, owner INTEGER, name TEXT, season TEXT DEFAULT '', "
+                "code TEXT UNIQUE, created TEXT, closed INTEGER DEFAULT 0, log INTEGER DEFAULT 1)")
+    con.execute("CREATE TABLE IF NOT EXISTS gn_players(night INTEGER, idx INTEGER, name TEXT, deck TEXT DEFAULT '', active INTEGER DEFAULT 1, "
+                "PRIMARY KEY(night, idx))")
+    con.execute("CREATE TABLE IF NOT EXISTS gn_pods(id INTEGER PRIMARY KEY, night INTEGER, round INTEGER, tab INTEGER, seats TEXT, "
+                "winner INTEGER, reported TEXT, game_id INTEGER)")
+
+
+def gn_pod_sizes(n):
+    """Tischgrößen: möglichst Vierer, sonst Dreier; ein Fünfer nur, wenn es nicht anders geht (5 Spieler)."""
+    if n < 3:
+        return []
+    k = -(-n // 4)
+    while k > 1 and n // k < 3:
+        k -= 1
+    base, extra = divmod(n, k)
+    return [base + 1] * extra + [base] * (k - extra)
+
+
+def gn_pair(active, met, tries=400, rnd=None):
+    """Gemischte Gruppen: viele zufällige Aufteilungen, gewählt wird die mit den wenigsten Wiederholungen bereits erlebter Paarungen."""
+    import random
+    rnd = rnd or random.Random()
+    sizes = gn_pod_sizes(len(active))
+    best, best_cost = None, None
+    for _ in range(tries):
+        order = active[:]
+        rnd.shuffle(order)
+        pods, i = [], 0
+        for s in sizes:
+            pods.append(sorted(order[i:i + s]))
+            i += s
+        cost = sum(met.get((a, b), 0) ** 2 for pod in pods for x, a in enumerate(pod) for b in pod[x + 1:])
+        if best_cost is None or cost < best_cost:
+            best, best_cost = pods, cost
+            if cost == 0:
+                break
+    return best or [], best_cost or 0
+
+
+def gn_get_night(con, nid=None, uid=0, code=None):
+    gn_tables(con)
+    if code:
+        r = con.execute("SELECT id, owner, name, season, code, created, closed, log FROM gn_nights WHERE code = ?", (code.upper(),)).fetchone()
+    else:
+        r = con.execute("SELECT id, owner, name, season, code, created, closed, log FROM gn_nights WHERE id = ? AND owner = ?", (nid, uid)).fetchone()
+    return dict(zip(("id", "owner", "name", "season", "code", "created", "closed", "log"), r)) if r else None
+
+
+def gn_standings(con, night_ids):
+    """Rangliste nach Siegen (danach Siegquote, dann weniger Partien)."""
+    if not night_ids:
+        return []
+    q = ",".join("?" * len(night_ids))
+    names = {(n, i): nm for n, i, nm in con.execute(f"SELECT night, idx, name FROM gn_players WHERE night IN ({q})", night_ids)}
+    tab = {}
+    for night, seats, w in con.execute(f"SELECT night, seats, winner FROM gn_pods WHERE night IN ({q}) AND winner IS NOT NULL", night_ids):
+        for s in json.loads(seats):
+            nm = names.get((night, s), f"Spieler {s + 1}")
+            e = tab.setdefault(nm.casefold(), {"name": nm, "wins": 0, "games": 0, "draws": 0})
+            e["games"] += 1
+            e["wins"] += int(w == s)
+            e["draws"] += int(w == -1)
+    out = sorted(tab.values(), key=lambda e: (-e["wins"], -(e["wins"] / e["games"]), e["games"], e["name"].casefold()))
+    rank, prev = 0, None
+    for i, e in enumerate(out):
+        e["rate"] = round(100 * e["wins"] / e["games"])
+        key = (e["wins"], e["rate"])
+        if key != prev:
+            rank, prev = i + 1, key
+        e["rank"] = rank
+    return out
+
+
+def gn_view(con, night, full=True):
+    players = [dict(zip(("idx", "name", "deck", "active"), r)) for r in
+               con.execute("SELECT idx, name, deck, active FROM gn_players WHERE night = ? ORDER BY idx", (night["id"],))]
+    pods = [dict(zip(("id", "round", "tab", "seats", "winner", "reported"), r)) for r in
+            con.execute("SELECT id, round, tab, seats, winner, reported FROM gn_pods WHERE night = ? ORDER BY round, tab", (night["id"],))]
+    for p in pods:
+        p["seats"] = json.loads(p["seats"])
+    rounds = {}
+    for p in pods:
+        rounds.setdefault(p["round"], []).append(p)
+    out = {"night": {k: night[k] for k in ("id", "name", "season", "code", "created", "closed", "log")}, "players": players,
+           "rounds": [{"round": r, "pods": ps} for r, ps in sorted(rounds.items())], "standings": gn_standings(con, [night["id"]])}
+    if night["season"]:
+        ids = [i for (i,) in con.execute("SELECT id FROM gn_nights WHERE owner = ? AND season = ?", (night["owner"], night["season"]))]
+        out["season"] = {"name": night["season"], "nights": len(ids), "standings": gn_standings(con, ids)}
+    if not full:
+        out["night"].pop("log", None)
+    return out
+
+
+def gn_sync_game(con, night, pod_id):
+    """Ergebnis eines Tisches ins Spielprotokoll übernehmen (oder dort zurücknehmen)."""
+    games_table(con)
+    pod = con.execute("SELECT round, tab, seats, winner, game_id FROM gn_pods WHERE id = ?", (pod_id,)).fetchone()
+    if not pod:
+        return
+    rnd, tab, seats, w, gid = pod
+    if gid:
+        con.execute("DELETE FROM games WHERE id = ? AND owner = ?", (gid, night["owner"]))
+        con.execute("UPDATE gn_pods SET game_id = NULL WHERE id = ?", (pod_id,))
+    if w is None or not night["log"]:
+        return
+    seats = json.loads(seats)
+    pl = {i: (n, d) for i, n, d in con.execute("SELECT idx, name, deck FROM gn_players WHERE night = ?", (night["id"],))}
+    players = [{"name": pl.get(s, (f"Spieler {s + 1}", ""))[0], "deck": pl.get(s, ("", ""))[1]} for s in seats]
+    winner = seats.index(w) if w in seats else -1
+    now = datetime.datetime.now().isoformat(sep=" ", timespec="minutes")
+    cur = con.execute("INSERT INTO games(owner, played_at, players, winner, turns, note, source) VALUES(?,?,?,?,?,?,?)",
+                      (night["owner"], now, json.dumps(players, ensure_ascii=False), winner, 0,
+                       f"Spielabend {night['name']}, Runde {rnd}, Tisch {tab}", "spielabend"))
+    con.execute("UPDATE gn_pods SET game_id = ? WHERE id = ?", (cur.lastrowid, pod_id))
+
+
+def gn_api(path, p, uid=0):
+    """Alle Spielabend-Aufrufe. Über den Code (gn_view/gn_report) auch ohne Anmeldung – für Mitspieler am Tisch."""
+    import secrets as _sec
+    g = lambda k: (p.get(k) or [""])[0].strip()
+    con = db()
+    gn_tables(con)
+    now = datetime.datetime.now().isoformat(sep=" ", timespec="minutes")
+    if path == "/api/gn_view":
+        night = gn_get_night(con, code=g("code"))
+        if not night:
+            return {"error": "Unbekannter Spielabend – bitte den Link prüfen."}
+        out = gn_view(con, night, full=False)
+        out["night"].pop("id", None)
+        return out
+    if path == "/api/gn_report":
+        night = gn_get_night(con, code=g("code")) if g("code") else gn_get_night(con, int(g("id") or 0), uid)
+        if not night:
+            return {"error": "Unbekannter Spielabend."}
+        if night["closed"]:
+            return {"error": "Dieser Spielabend ist abgeschlossen."}
+        pod = con.execute("SELECT id, seats FROM gn_pods WHERE id = ? AND night = ?", (int(g("pod") or 0), night["id"])).fetchone()
+        if not pod:
+            return {"error": "Unbekannter Tisch."}
+        w = g("winner")
+        win = None if w in ("", "none") else int(w)
+        if win is not None and win != -1 and win not in json.loads(pod[1]):
+            return {"error": "Dieser Spieler sitzt nicht an dem Tisch."}
+        con.execute("UPDATE gn_pods SET winner = ?, reported = ? WHERE id = ?", (win, now if win is not None else None, pod[0]))
+        if g("fromtable") == "1":  # vom Lebenszähler gemeldet: die Partie steht dort schon im Spielprotokoll
+            con.execute("UPDATE gn_pods SET game_id = NULL WHERE id = ?", (pod[0],))
+        else:
+            gn_sync_game(con, night, pod[0])
+        con.commit()
+        out = gn_view(con, night, full=not g("code"))
+        if g("code"):
+            out["night"].pop("id", None)
+        return out
+    if path == "/api/gn_list":
+        nights = [dict(zip(("id", "name", "season", "code", "created", "closed"), r)) for r in
+                  con.execute("SELECT id, name, season, code, created, closed FROM gn_nights WHERE owner = ? ORDER BY id DESC", (uid,))]
+        for n in nights:
+            n["players"] = con.execute("SELECT count(*) FROM gn_players WHERE night = ? AND active = 1", (n["id"],)).fetchone()[0]
+            n["rounds"] = con.execute("SELECT count(DISTINCT round) FROM gn_pods WHERE night = ?", (n["id"],)).fetchone()[0]
+        seasons = sorted({n["season"] for n in nights if n["season"]})
+        known = [r[0] for r in con.execute("SELECT DISTINCT p.name FROM gn_players p JOIN gn_nights n ON n.id = p.night WHERE n.owner = ? "
+                                            "ORDER BY p.name COLLATE NOCASE", (uid,))]
+        out = {"nights": nights, "seasons": seasons, "known": known}
+        if g("season"):
+            ids = [n["id"] for n in nights if n["season"] == g("season")]
+            out["season"] = {"name": g("season"), "nights": len(ids), "standings": gn_standings(con, ids)}
+        out["all"] = gn_standings(con, [n["id"] for n in nights])
+        return out
+    if path == "/api/gn_create":
+        try:
+            names = [str(x).strip()[:40] for x in json.loads(g("players") or "[]") if str(x).strip()]
+        except ValueError:
+            return {"error": "Ungültige Spielerliste."}
+        seen, uniq = set(), []
+        for n in names:
+            if n.casefold() not in seen:
+                seen.add(n.casefold())
+                uniq.append(n)
+        if len(uniq) < 3:
+            return {"error": "Für einen Spielabend braucht es mindestens 3 Spieler."}
+        code = "".join(_sec.choice(GN_CODE_CHARS) for _ in range(6))
+        cur = con.execute("INSERT INTO gn_nights(owner, name, season, code, created, log) VALUES(?,?,?,?,?,?)",
+                          (uid, (g("name") or f"Spielabend {now[:10]}")[:60], g("season")[:40], code, now, 0 if g("log") == "0" else 1))
+        con.executemany("INSERT INTO gn_players(night, idx, name) VALUES(?,?,?)", [(cur.lastrowid, i, n) for i, n in enumerate(uniq[:64])])
+        con.commit()
+        return gn_view(con, gn_get_night(con, cur.lastrowid, uid))
+    night = gn_get_night(con, int(g("id") or 0), uid)
+    if not night:
+        return {"error": "Unbekannter Spielabend."}
+    if path == "/api/gn_get":
+        return gn_view(con, night)
+    if path == "/api/gn_player":
+        idx = g("idx")
+        if idx == "":
+            name = g("name")[:40]
+            if not name:
+                return {"error": "Name fehlt."}
+            if con.execute("SELECT 1 FROM gn_players WHERE night = ? AND name = ? COLLATE NOCASE", (night["id"], name)).fetchone():
+                con.execute("UPDATE gn_players SET active = 1 WHERE night = ? AND name = ? COLLATE NOCASE", (night["id"], name))
+            else:
+                nxt = con.execute("SELECT coalesce(max(idx), -1) + 1 FROM gn_players WHERE night = ?", (night["id"],)).fetchone()[0]
+                con.execute("INSERT INTO gn_players(night, idx, name) VALUES(?,?,?)", (night["id"], nxt, name))
+        else:
+            sets, args = [], []
+            if "active" in p:
+                sets.append("active = ?"); args.append(1 if g("active") == "1" else 0)
+            if "deck" in p:
+                sets.append("deck = ?"); args.append(g("deck")[:80])
+            if "name" in p and g("name"):
+                sets.append("name = ?"); args.append(g("name")[:40])
+            if sets:
+                con.execute(f"UPDATE gn_players SET {', '.join(sets)} WHERE night = ? AND idx = ?", (*args, night["id"], int(idx)))
+        con.commit()
+        return gn_view(con, night)
+    if path == "/api/gn_round":
+        last = con.execute("SELECT max(round) FROM gn_pods WHERE night = ?", (night["id"],)).fetchone()[0] or 0
+        if last and con.execute("SELECT 1 FROM gn_pods WHERE night = ? AND round = ? AND winner IS NULL", (night["id"], last)).fetchone() \
+                and g("force") != "1":
+            return dict(gn_view(con, night), warn="In Runde %d sind noch Tische offen. Trotzdem neu auslosen?" % last)
+        active = [i for (i,) in con.execute("SELECT idx FROM gn_players WHERE night = ? AND active = 1 ORDER BY idx", (night["id"],))]
+        if len(active) < 3:
+            return {"error": "Es braucht mindestens 3 anwesende Spieler."}
+        met = {}
+        for (seats,) in con.execute("SELECT seats FROM gn_pods WHERE night = ?", (night["id"],)):
+            s = sorted(json.loads(seats))
+            for x, a in enumerate(s):
+                for b in s[x + 1:]:
+                    met[(a, b)] = met.get((a, b), 0) + 1
+        pods, cost = gn_pair(active, met)
+        for t, pod in enumerate(pods, 1):
+            con.execute("INSERT INTO gn_pods(night, round, tab, seats) VALUES(?,?,?,?)", (night["id"], last + 1, t, json.dumps(pod)))
+        con.commit()
+        out = gn_view(con, night)
+        out["repeats"] = cost
+        return out
+    if path == "/api/gn_round_delete":
+        last = con.execute("SELECT max(round) FROM gn_pods WHERE night = ?", (night["id"],)).fetchone()[0]
+        if last:
+            for (pid,) in con.execute("SELECT id FROM gn_pods WHERE night = ? AND round = ?", (night["id"], last)).fetchall():
+                con.execute("UPDATE gn_pods SET winner = NULL WHERE id = ?", (pid,))
+                gn_sync_game(con, night, pid)
+            con.execute("DELETE FROM gn_pods WHERE night = ? AND round = ?", (night["id"], last))
+            con.commit()
+        return gn_view(con, night)
+    if path == "/api/gn_set":
+        if "name" in p and g("name"):
+            con.execute("UPDATE gn_nights SET name = ? WHERE id = ?", (g("name")[:60], night["id"]))
+        if "season" in p:
+            con.execute("UPDATE gn_nights SET season = ? WHERE id = ?", (g("season")[:40], night["id"]))
+        if "closed" in p:
+            con.execute("UPDATE gn_nights SET closed = ? WHERE id = ?", (1 if g("closed") == "1" else 0, night["id"]))
+        con.commit()
+        return gn_view(con, gn_get_night(con, night["id"], uid))
+    if path == "/api/gn_delete":
+        for (pid,) in con.execute("SELECT id FROM gn_pods WHERE night = ?", (night["id"],)).fetchall():
+            con.execute("UPDATE gn_pods SET winner = NULL WHERE id = ?", (pid,))
+            gn_sync_game(con, night, pid)
+        for t in ("gn_pods", "gn_players"):
+            con.execute(f"DELETE FROM {t} WHERE night = ?", (night["id"],))
+        con.execute("DELETE FROM gn_nights WHERE id = ?", (night["id"],))
+        con.commit()
+        return {"ok": True}
+    return {"error": "Unbekannte Aktion."}
+
+
+GN_PAGE = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width, initial-scale=1">
+<title>Spielabend – Manaschmiede</title><meta name=robots content=noindex><link rel=icon href=/icon-192.png>
+<style>body{margin:0;background:#140f0b radial-gradient(ellipse at top,#3a2a1c,#0e0a07) fixed;color:#eadfc8;font-family:Georgia,serif;padding:12px}
+h1{color:#e2bd5b;font-size:22px;margin:4px 0}h2{font-size:17px;color:#e2bd5b;margin:18px 0 6px}.pod{background:#221811;border:1px solid #7a5c2e;border-radius:10px;padding:10px;margin:8px 0}
+.pod b{color:#e2bd5b}button{font:inherit;font-size:16px;padding:10px 12px;margin:4px 4px 0 0;border-radius:8px;border:1px solid #a8843a;background:#2a2018;color:#eadfc8;min-width:44px}
+button.win{background:linear-gradient(#f1d27a,#b8891f);color:#1b140e;font-weight:bold}table{border-collapse:collapse;width:100%;max-width:520px}td,th{padding:6px 8px;border-bottom:1px solid #fff2;text-align:left}
+td.r,th.r{text-align:right}.hint{opacity:.75;font-size:14px}.err{color:#ff8a72}footer{margin-top:30px;font-size:13px;opacity:.7}a{color:#e2bd5b}#gnwrap{margin-top:14px;border:1px solid #a8843a77;border-radius:10px;padding:8px 12px}#gnwrap>summary{cursor:pointer;font-size:1.1em}
+#gnbox .gnst{border-collapse:collapse;margin:6px 0}#gnbox .gnst td,#gnbox .gnst th{padding:4px 10px;border-bottom:1px solid #fff2;text-align:left}
+#gnbox .gnpod{margin:6px 0;padding:8px;border:1px solid #7a5c2e55;border-radius:8px}#gnbox .gnpod button{margin:3px}#gnbox button.gnwin{background:linear-gradient(#f1d27a,#b8891f);color:#1b140e;font-weight:bold}
+#gnbox .gnqr{width:180px;background:#fff;border-radius:6px;margin:6px 0}#gnbox .gnp{margin:3px 0}#gnbox .gnhead{font-size:1.15em;margin:6px 0}
+</style>
+<h1 id=t>Spielabend</h1><div class=hint id=s></div><div id=m class=err></div><div id=r></div><h2>Rangliste</h2><table id=st></table><div id=se></div>
+<footer>Manaschmiede · <a href=/impressum>Impressum</a> · <a href=/datenschutz>Datenschutz</a></footer>
+<script>const code=location.pathname.split('/').pop();let D=null;
+const E=(t,x)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;return e};
+async function J(u,b){const r=await fetch(u,b?{method:'POST',body:new URLSearchParams(b)}:{});return r.json()}
+function stand(tab,rows){tab.innerHTML='';const h=tab.insertRow();['Platz','Spieler','Siege','Partien'].forEach((x,i)=>{const th=E('th',x);if(i>1)th.className='r';h.append(th)});
+ rows.forEach(e=>{const tr=tab.insertRow();[e.rank+'.',e.name,e.wins,e.games].forEach((v,i)=>{const c=tr.insertCell();c.textContent=v;if(i>1)c.className='r'})})}
+function draw(d){if(d.error){document.getElementById('m').textContent=d.error;return}D=d;document.getElementById('m').textContent='';
+ document.getElementById('t').textContent='🏆 '+d.night.name;document.getElementById('s').textContent=(d.night.season?'Saison '+d.night.season+' · ':'')+d.players.filter(p=>p.active).length+' Spieler'+(d.night.closed?' · abgeschlossen':'');
+ const nm={};d.players.forEach(p=>nm[p.idx]=p.name);const r=document.getElementById('r');r.innerHTML='';
+ const last=d.rounds[d.rounds.length-1];if(!last){r.append(E('p','Noch keine Runde ausgelost.'));}
+ else{r.append(E('h2','Runde '+last.round));last.pods.forEach(p=>{const box=E('div');box.className='pod';box.append(E('b','Tisch '+p.tab+' '),E('span',p.winner==null?'– Sieger antippen':(p.winner==-1?'– Unentschieden':'– Sieg: '+nm[p.winner])));box.append(E('br'));
+  p.seats.forEach(s=>{const b=E('button',(p.winner==s?'👑 ':'')+nm[s]);if(p.winner==s)b.className='win';b.disabled=!!d.night.closed;b.onclick=()=>rep(p.id,p.winner==s?'none':s);box.append(b)});
+  const dr=E('button','Unentschieden');if(p.winner==-1)dr.className='win';dr.disabled=!!d.night.closed;dr.onclick=()=>rep(p.id,p.winner==-1?'none':-1);box.append(dr);r.append(box)})}
+ stand(document.getElementById('st'),d.standings);const se=document.getElementById('se');se.innerHTML='';
+ if(d.season){se.append(E('h2','Saison '+d.season.name+' ('+d.season.nights+' Abende)'));const t=E('table');se.append(t);stand(t,d.season.standings)}}
+async function rep(pod,w){draw(await J('/api/gn_report',{code,pod,winner:w}))}
+async function load(){draw(await J('/api/gn_view?code='+encodeURIComponent(code)))}load();setInterval(load,10000);</script>"""
+
+
+# ---------------------------------------------------------------- Impressum und Datenschutzerklärung (Server-Betrieb)
+LEGAL_KEYS = ("legal_name", "legal_addr", "legal_mail", "legal_phone", "legal_extra", "legal_host")
+
+
+def legal_get():
+    return {k: setting(k) or "" for k in LEGAL_KEYS}
+
+
+def legal_save(p):
+    for k in LEGAL_KEYS:
+        if k in p:
+            setting(k, (p.get(k) or [""])[0].strip()[:2000])
+    return legal_get()
+
+
+def legal_page(kind):
+    import html as _h
+    L = legal_get()
+    e = lambda s: _h.escape(s or "").replace("\n", "<br>")
+    missing = not (L["legal_name"] and L["legal_addr"] and L["legal_mail"])
+    who = (f"<p>{e(L['legal_name'])}<br>{e(L['legal_addr'])}</p><p>E-Mail: <a href='mailto:{e(L['legal_mail'])}'>{e(L['legal_mail'])}</a>"
+           + (f"<br>Telefon: {e(L['legal_phone'])}" if L["legal_phone"] else "") + "</p>")
+    warn = ("<p style='color:#ff8a72'><b>Hinweis an den Betreiber:</b> Name, Anschrift und E-Mail fehlen noch. "
+            "Bitte als Administrator unter „Impressum &amp; Datenschutz“ eintragen.</p>") if missing else ""
+    if kind == "impressum":
+        body = (f"<h1>Impressum</h1>{warn}<h2>Angaben gemäß § 5 DDG</h2>{who}"
+                + (f"<p>{e(L['legal_extra'])}</p>" if L["legal_extra"] else "")
+                + "<h2>Verantwortlich für den Inhalt</h2><p>Siehe oben.</p>"
+                "<h2>Hinweis</h2><p>Die Manaschmiede ist ein privates, nicht kommerzielles Fan-Projekt und steht in keiner Verbindung zu Wizards of the Coast. "
+                "Magic: The Gathering, Kartennamen, Kartenbilder und Symbole sind Eigentum von Wizards of the Coast LLC.</p>")
+    else:
+        host = e(L["legal_host"]) or "dem Server des Betreibers"
+        body = (f"<h1>Datenschutzerklärung</h1>{warn}"
+                f"<h2>1. Verantwortlicher</h2>{who}"
+                "<h2>2. Welche Daten verarbeitet werden</h2><ul>"
+                "<li><b>Benutzerkonto:</b> Benutzername und Passwort (nur als Prüfwert mit Salt gespeichert, nie im Klartext), Rolle, Datum der Anlage.</li>"
+                "<li><b>Inhalte, die du anlegst:</b> Decks, Sammlung, Wunschliste, Ordner, Spielprotokoll, Spielabende mit den Namen der Mitspieler, "
+                "Kommentare und Bewertungen in der Deck-Galerie, Einstellungen.</li>"
+                "<li><b>Anmeldung:</b> ein Sitzungs-Cookie (cdbsess), technisch notwendig, um angemeldet zu bleiben (§ 25 Abs. 2 Nr. 2 TDDDG). "
+                "Zum Schutz vor dem Erraten von Passwörtern wird die IP-Adresse bei fehlgeschlagenen Anmeldungen kurzzeitig im Arbeitsspeicher gehalten.</li>"
+                "<li><b>Lokale Speicherung im Browser:</b> Ansichtseinstellungen und laufende Testpartien (localStorage); diese verlassen dein Gerät nicht.</li>"
+                "<li><b>Spielabend-Links:</b> Wer den Link oder QR-Code eines Spielabends hat, sieht die Namen der Mitspieler, die Tische und die Rangliste "
+                "und kann Ergebnisse eintragen.</li></ul>"
+                "<h2>3. Zweck und Rechtsgrundlage</h2><p>Bereitstellung der Funktionen, die du nutzt (Art. 6 Abs. 1 lit. b DSGVO), "
+                "Sicherheit des Dienstes (Art. 6 Abs. 1 lit. f DSGVO). Namen von Mitspielern werden nur für den Spielabend und das Spielprotokoll verwendet "
+                "(Art. 6 Abs. 1 lit. f DSGVO; berechtigtes Interesse an der Organisation gemeinsamer Spielabende).</p>"
+                f"<h2>4. Hosting</h2><p>Die Daten liegen auf {host}. Es werden keine Analyse- oder Werbedienste eingesetzt.</p>"
+                "<h2>5. Dienste Dritter</h2><ul>"
+                "<li><b>Scryfall (Scryfall, LLC, USA):</b> Kartenbilder werden direkt von den Servern von Scryfall geladen; dabei erhält Scryfall deine IP-Adresse "
+                "und Browserdaten. Kartendaten ruft der Server ohne personenbezogene Daten ab.</li>"
+                "<li><b>Commander Spellbook, Cardmarket, MTGJSON:</b> Abrufe erfolgen durch den Server ohne personenbezogene Daten.</li>"
+                "<li><b>Links zu Händlern</b> (Cardmarket, Trader-online, cardcosmos): erst beim Anklicken werden Daten an den Händler übertragen; "
+                "es gelten dessen Datenschutzbestimmungen.</li></ul>"
+                "<h2>6. Speicherdauer</h2><p>Solange dein Konto besteht. Beim Löschen des Kontos werden Decks, Sammlung, Spielprotokoll und "
+                "Spielabende mitgelöscht. Sitzungen laufen nach Ablauf der Gültigkeit oder beim Abmelden ab.</p>"
+                "<h2>7. Deine Rechte</h2><p>Auskunft (Art. 15), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung (Art. 18), "
+                "Datenübertragbarkeit (Art. 20) und Widerspruch (Art. 21 DSGVO). Wende dich dafür an die oben genannte Adresse. "
+                "Du hast außerdem das Recht auf Beschwerde bei einer Datenschutz-Aufsichtsbehörde.</p>"
+                + (f"<h2>8. Weitere Angaben</h2><p>{e(L['legal_extra'])}</p>" if L["legal_extra"] else ""))
+    return ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width, initial-scale=1'>"
+            f"<title>{'Impressum' if kind == 'impressum' else 'Datenschutz'} – Manaschmiede</title>"
+            "<style>body{margin:0 auto;max-width:760px;padding:16px;background:#140f0b;color:#eadfc8;font-family:Georgia,serif;line-height:1.5}"
+            "h1,h2{color:#e2bd5b}a{color:#e2bd5b}li{margin:4px 0}</style>" + body +
+            "<p style='margin-top:30px;opacity:.7'><a href='/'>Zur Manaschmiede</a> · <a href='/impressum'>Impressum</a> · <a href='/datenschutz'>Datenschutz</a></p>")
+
+
 LOGIN_PAGE = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width, initial-scale=1">
 <title>Anmelden – Manaschmiede</title><link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
@@ -3212,7 +3583,8 @@ background:#140f0b;color:#f3e8cf;border:1px solid #7a5c2e;border-radius:5px;font
 button{width:100%;padding:10px;background:linear-gradient(#f1d27a,#b8891f);border:0;border-radius:5px;font-weight:bold;font-size:16px;cursor:pointer}
 #m{color:#ff8a72;min-height:20px;font-size:14px}</style>
 <form id=f><h1>✦ Manaschmiede ✦</h1><p style="text-align:center;margin-top:-8px;opacity:.8">Commander-Deckbau</p><label>Benutzername<input name=name autocomplete=username required autofocus></label>
-<label>Passwort<input name=pw type=password autocomplete=current-password required></label><div id=m></div><button>Anmelden</button></form>
+<label>Passwort<input name=pw type=password autocomplete=current-password required></label><div id=m></div><button>Anmelden</button>
+<p style="text-align:center;font-size:13px;opacity:.75;margin:14px 0 0"><a href=/impressum style="color:#e2bd5b">Impressum</a> · <a href=/datenschutz style="color:#e2bd5b">Datenschutz</a></p></form>
 <script>f.onsubmit=async e=>{e.preventDefault();m.textContent='';const r=await fetch('/api/login',{method:'POST',body:new URLSearchParams(new FormData(f))});
 const j=await r.json();if(j.ok)location.href='/';else m.textContent=j.error||'Anmeldung fehlgeschlagen.'};
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>"""
@@ -4777,7 +5149,7 @@ def duel_status(p, uid=0):
     return out
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 52)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 53)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -5589,6 +5961,8 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <section id=v-spieltisch class=page hidden><h3>Spieltisch: Lebenszähler &amp; Spielprotokoll <button type=button class=qh data-h=spieltisch>?</button></h3>
 <details open class=tabbox id=tablebox><summary><b>🎲 Spieltisch: Lebenszähler &amp; Spielprotokoll</b> <span class=hint id=gamecount></span> <button type=button class=qh data-h=spieltisch>?</button></summary>
 <div id=tsetup></div><div id=tgame></div><h4>Statistik</h4><div id=tstats></div></details>
+<details class=gnwrap id=gnwrap><summary><b>🏆 Spielabend: gemischte Vierer-Tische &amp; Siege</b> <span class=hint>Mitspieler per Link/QR-Code, Rangliste, Saison optional</span></summary>
+<div id=gnbox></div></details>
 </section>
 <section id=v-regeln class=page hidden>
 <h3>Offizielle Regeln <button type=button class=qh data-h=regeln>?</button></h3>
@@ -5638,7 +6012,7 @@ Comprehensive Rules) sind Eigentum von Wizards of the Coast. ©Wizards of the Co
 Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.</i></p>
 <p>Kartendaten und Bilder: <a href="https://scryfall.com" target=_blank rel=noopener>Scryfall</a> · Euro-Preise: <a href="https://www.cardmarket.com" target=_blank rel=noopener>Cardmarket</a> (Preisliste) · Precons: MTGJSON / mtg.wtf ·
 Combos: <a href="https://commanderspellbook.com" target=_blank rel=noopener>Commander Spellbook</a> · Regel-Engine: Forge ·
-<a href="#regeln">Offizielle Regeln</a> · <a href="#willkommen">Startseite</a></p></footer>
+<a href="#regeln">Offizielle Regeln</a> · <a href="#willkommen">Startseite</a> · <a href="/impressum" target=_blank>Impressum</a> · <a href="/datenschutz" target=_blank>Datenschutz</a></p></footer>
 <script>
 const $=(t,x,h)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(h){e.href=h;e.target='_blank'}return e};
 const J=async(u,body)=>{try{const r=await fetch(u,body?{method:'POST',body:new URLSearchParams(body)}:undefined);
@@ -5649,7 +6023,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='52';
+const PAGE_VERSION='53';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -7563,9 +7937,95 @@ function tableEnd(o){if(tg.room&&!tg.room.host)return;if(tview!='tisch'||(tg.roo
  if(alive.length==1)ws.value=alive[0][1];const nt=$('input');nt.size=30;nt.placeholder='Notiz (optional)';nt.id='tnote';
  const sv=$('button','Speichern');sv.type='button';sv.className='primary';sv.id='tsave';
  sv.onclick=async()=>{const r=await J('/api/game_save',{games:JSON.stringify([{players:tg.players.map(p=>({name:p.name,deck:p.deck})),winner:+ws.value,turns:tg.turn,note:nt.value}])});
-  if(r.error){P(end,r.error,'warn');return}if(tg.room){roomLoopId++;J('/api/room_close',{code:tg.room.code,client:tClient(),result:'Partie beendet'+(+ws.value>=0?' – Sieger: '+tg.players[+ws.value].name:'')+'.'})}tg=null;tgSave();tableSetup();tableGame();tableStats(r)};
+  if(r.error){P(end,r.error,'warn');return}gnFromTable(+ws.value>=0?tg.players[+ws.value].name:'');if(tg.room){roomLoopId++;J('/api/room_close',{code:tg.room.code,client:tClient(),result:'Partie beendet'+(+ws.value>=0?' – Sieger: '+tg.players[+ws.value].name:'')+'.'})}tg=null;tgSave();tableSetup();tableGame();tableStats(r)};
  const ab=$('button','Abbrechen ohne Speichern');ab.type='button';ab.onclick=()=>{if(ab.textContent!='Wirklich abbrechen?'){ab.textContent='Wirklich abbrechen?';return}if(tg.room){roomLoopId++;J('/api/room_close',{code:tg.room.code,client:tClient(),result:'Partie abgebrochen.'})}tg=null;tgSave();tableSetup();tableGame()};
  end.append(ws,' ',nt,' ',sv,' ',ab);o.append(end)}
+// ---------- Spielabend: Spieler, gemischte Vierer-Tische, Siege, Rangliste, optionale Saison
+let GN=null,GNL=null;
+async function gnInit(){const box=E('gnbox');if(!box)return;GNL=await J('/api/gn_list');gnHome()}
+function gnStand(rows){const t=$('table');t.className='gnst';const h=t.insertRow();['Platz','Spieler','Siege','Partien','Quote'].forEach(x=>h.append($('th',x)));
+ rows.forEach(e=>{const tr=t.insertRow();[e.rank+'.',e.name,e.wins,e.games,e.rate+' %'].forEach(v=>tr.insertCell().textContent=v)});
+ if(!rows.length){const tr=t.insertRow();const c=tr.insertCell();c.colSpan=5;c.textContent='Noch keine Ergebnisse.'}return t}
+function gnHome(){const box=E('gnbox');box.innerHTML='';GN=null;const L=GNL||{nights:[],seasons:[],known:[]};
+ const nb=$('button','➕ Neuer Spielabend');nb.type='button';nb.className='primary';nb.id='gnnew';nb.onclick=gnNewForm;box.append(nb);
+ if(L.nights.length){const t=$('table');t.id='gnlist';box.append($('h4','Bisherige Spielabende'),t);
+  L.nights.forEach(n=>{const tr=t.insertRow();const a=$('a',n.name);a.href='#';a.onclick=async e=>{e.preventDefault();gnShow(await J('/api/gn_get',{id:n.id}))};
+   tr.insertCell().append(a);[n.created.slice(0,10),n.season?'Saison '+n.season:'',n.players+' Spieler',n.rounds+' Runden',n.closed?'abgeschlossen':'läuft'].forEach(x=>tr.insertCell().textContent=x)})}
+ if(L.seasons.length){const sel=$('select');sel.id='gnseason';sel.append(new Option('Gesamtwertung aller Abende',''));L.seasons.forEach(x=>sel.append(new Option('Saison '+x,x)));
+  const out=$('div');sel.onchange=async()=>{const r=await J('/api/gn_list',{season:sel.value});out.innerHTML='';out.append(gnStand(sel.value?r.season.standings:r.all))};
+  box.append($('h4','Rangliste'),sel,out);out.append(gnStand(L.all||[]))}
+ else if((L.all||[]).length){box.append($('h4','Gesamtwertung'),gnStand(L.all))}}
+function gnNewForm(){const box=E('gnbox');box.innerHTML='';const L=GNL||{known:[],seasons:[]};
+ box.append($('h4','Neuer Spielabend'));
+ const nm=$('input');nm.id='gnname';nm.placeholder='Name, z. B. Commander-Freitag';nm.size=30;
+ const se=$('input');se.id='gnseas';se.placeholder='Saison (optional)';se.size=16;se.setAttribute('list','gnseasl');
+ const dl=$('datalist');dl.id='gnseasl';L.seasons.forEach(x=>dl.append(new Option(x)));
+ const ta=$('textarea');ta.id='gnplayers';ta.rows=6;ta.cols=30;ta.placeholder='Mitspieler, einer pro Zeile';
+ const chips=$('p');chips.className='chips';L.known.forEach(k=>{const c=$('button',k);c.type='button';c.onclick=()=>{const v=ta.value.split('\\n').map(x=>x.trim()).filter(Boolean);if(!v.some(x=>x.toLowerCase()==k.toLowerCase())){v.push(k);ta.value=v.join('\\n')}};chips.append(c)});
+ const lg=$('input');lg.type='checkbox';lg.id='gnlog';lg.checked=true;const ll=$('label');ll.append(lg,' Ergebnisse auch ins Spielprotokoll übernehmen');
+ const ok=$('button','Anlegen');ok.type='button';ok.className='primary';ok.id='gncreate';const back=$('button','Zurück');back.type='button';back.onclick=gnHome;const m=$('p');
+ box.append(nm,' ',se,dl,$('br'),ta,$('br'));if(L.known.length)box.append($('span','Bekannte Spieler: '),chips);box.append(ll,$('br'),ok,' ',back,m);
+ ok.onclick=async()=>{const r=await J('/api/gn_create',{name:nm.value,season:se.value,log:lg.checked?1:0,players:JSON.stringify(ta.value.split('\\n'))});
+  if(r.error){m.className='warn';m.textContent=r.error;return}GNL=null;gnShow(r)}}
+function gnUrl(){return location.origin+'/n/'+GN.night.code}
+function gnShow(d){if(d.error){P(E('gnbox'),d.error,'warn');return}GN=d;const box=E('gnbox');box.innerHTML='';const n=d.night;
+ const nm={};d.players.forEach(p=>nm[p.idx]=p.name);
+ const head=$('div');head.className='gnhead';head.append($('b','🏆 '+n.name),' ',$('span',(n.season?'Saison '+n.season+' · ':'')+n.created.slice(0,10)+(n.closed?' · abgeschlossen':'')));box.append(head);
+ // Teilen: QR-Code + Link für Mitspieler (ohne Anmeldung)
+ const sh=$('details');sh.id='gnshare';sh.append($('summary','📱 Mitspieler-Link & QR-Code'));const q=$('div');q.className='gnqr';const u=$('code',gnUrl());
+ const cp=$('button','Link kopieren');cp.type='button';cp.onclick=()=>copyText(gnUrl(),cp);sh.append(q,u,' ',cp,
+  $('p','Wer den Link hat, sieht Tische und Rangliste und kann Sieger eintragen – ohne Konto. Ergebnisse erscheinen hier automatisch.'));
+ sh.ontoggle=()=>{if(sh.open&&!q.firstChild)roomQR(q,gnUrl())};box.append(sh);
+ // Spieler
+ const pl=$('details');pl.id='gnpl';pl.append($('summary','👥 Spieler ('+d.players.filter(p=>p.active).length+' anwesend)'));
+ d.players.forEach(p=>{const row=$('div');row.className='gnp';const cb=$('input');cb.type='checkbox';cb.checked=!!p.active;cb.disabled=!!n.closed;
+  cb.onchange=async()=>gnShow(await J('/api/gn_player',{id:n.id,idx:p.idx,active:cb.checked?1:0}));
+  const dk=$('input');dk.placeholder='Deck (optional)';dk.value=p.deck||'';dk.size=22;dk.disabled=!!n.closed;
+  dk.onchange=async()=>{GN=await J('/api/gn_player',{id:n.id,idx:p.idx,deck:dk.value})};
+  const lb=$('label');lb.append(cb,' '+p.name);row.append(lb,' ',dk);pl.append(row)});
+ if(!n.closed){const ad=$('input');ad.placeholder='Spieler hinzufügen';ad.id='gnadd';const ab=$('button','+');ab.type='button';
+  const add=async()=>{if(ad.value.trim())gnShow(await J('/api/gn_player',{id:n.id,name:ad.value.trim()}))};ab.onclick=add;ad.onkeydown=e=>{if(e.key=='Enter')add()};pl.append(ad,ab)}
+ box.append(pl);
+ // Runden
+ const acts=$('p');if(!n.closed){const rb=$('button',d.rounds.length?'🎲 Nächste Runde auslosen':'🎲 Erste Runde auslosen');rb.type='button';rb.className='primary';rb.id='gnround';
+  rb.onclick=async()=>{let r=await J('/api/gn_round',{id:n.id});if(r.warn){if(!confirm(r.warn))return;r=await J('/api/gn_round',{id:n.id,force:1})}gnShow(r);
+   if(r.repeats)arToastMsg('Nicht alle Paarungen ließen sich vermeiden – einige treffen sich erneut.')};acts.append(rb);
+  if(d.rounds.length){const ud=$('button','Letzte Runde verwerfen');ud.type='button';ud.id='gnundo';ud.onclick=async()=>{if(confirm('Letzte Runde samt Ergebnissen verwerfen?'))gnShow(await J('/api/gn_round_delete',{id:n.id}))};acts.append(' ',ud)}}
+ box.append(acts);
+ d.rounds.slice().reverse().forEach((r,ri)=>{const det=$('details');det.className='gnround';det.open=ri==0;det.append($('summary','Runde '+r.round+' – '+r.pods.filter(p=>p.winner!=null).length+'/'+r.pods.length+' Tische fertig'));
+  r.pods.forEach(p=>{const pd=$('div');pd.className='gnpod';pd.append($('b','Tisch '+p.tab+': '));
+   p.seats.forEach(s=>{const b=$('button',(p.winner==s?'👑 ':'')+nm[s]);b.type='button';b.className=p.winner==s?'gnwin':'';b.disabled=!!n.closed;b.dataset.pod=p.id;b.dataset.seat=s;
+    b.onclick=async()=>gnShow(await J('/api/gn_report',{id:n.id,pod:p.id,winner:p.winner==s?'none':s}));pd.append(b)});
+   const dr=$('button','Unentschieden');dr.type='button';dr.className=p.winner==-1?'gnwin':'';dr.disabled=!!n.closed;dr.onclick=async()=>gnShow(await J('/api/gn_report',{id:n.id,pod:p.id,winner:p.winner==-1?'none':-1}));pd.append(dr);
+   const pt=$('button','▶ Am Handy-Tisch spielen');pt.type='button';pt.title='Öffnet den Testtisch mit diesen Spielern';pt.disabled=!!n.closed;pt.onclick=()=>gnPlay(p,nm);pd.append(pt);det.append(pd)});box.append(det)});
+ box.append($('h4','Rangliste dieses Abends'),gnStand(d.standings));
+ if(d.season)box.append($('h4','Saison '+d.season.name+' ('+d.season.nights+' Abende)'),gnStand(d.season.standings));
+ const ft=$('p');const cl=$('button',n.closed?'Wieder öffnen':'✔ Abend abschließen');cl.type='button';cl.id='gnclose';cl.onclick=async()=>gnShow(await J('/api/gn_set',{id:n.id,closed:n.closed?0:1}));
+ const del=$('button','Löschen');del.type='button';del.onclick=async()=>{if(!confirm('Spielabend samt Ergebnissen löschen?'))return;await J('/api/gn_delete',{id:n.id});GNL=null;gnInit()};
+ const bk=$('button','← Übersicht');bk.type='button';bk.onclick=gnInit;ft.append(cl,' ',del,' ',bk);box.append(ft);gnPoll()}
+let GNT=null;function gnPoll(){clearTimeout(GNT);GNT=setTimeout(async()=>{if(!GN||!E('gnbox')||!E('gnbox').offsetParent)return;if(document.activeElement&&E('gnbox').contains(document.activeElement)&&document.activeElement.tagName=='INPUT'){gnPoll();return}
+ const r=await J('/api/gn_get',{id:GN.night.id});if(!r.error&&JSON.stringify(r.rounds)!=JSON.stringify(GN.rounds))gnShow(r);else gnPoll()},15000)}
+function arToastMsg(t){if(typeof arToast=='function'&&E('pv')&&!E('pv').hidden)arToast(t);else alert(t)}
+function gnPlay(pod,nm){const names=pod.seats.map(s=>nm[s]);const dk={};GN.players.forEach(p=>dk[p.idx]=p.deck||'');const decks=pod.seats.map(s=>dk[s]);
+ try{localStorage.setItem('gnpod',JSON.stringify({night:GN.night.id,pod:pod.id,names}))}catch(e){}
+ const tg=E('tsetup');if(tg&&typeof tableSetupNames=='function'){tableSetupNames(names,decks)}else{copyText(names.join(', '))}
+ const tb=E('tablebox');if(tb){tb.open=true;tb.scrollIntoView({behavior:'smooth'})}}
+// Ergebnis vom Lebenszähler-Tisch an den Spielabend melden (wenn der Tisch aus einem Spielabend gestartet wurde)
+async function gnFromTable(winnerName){let g=null;try{g=JSON.parse(localStorage.getItem('gnpod')||'null')}catch(e){}
+ if(!g||!winnerName)return false;const d=await J('/api/gn_get',{id:g.night});if(d.error)return false;
+ const p=d.players.find(x=>x.name==winnerName);const pod=d.rounds.flatMap(r=>r.pods).find(x=>x.id==g.pod);if(!p||!pod||pod.winner!=null)return false;
+ await J('/api/gn_report',{id:g.night,pod:g.pod,winner:p.idx,fromtable:1});try{localStorage.removeItem('gnpod')}catch(e){}if(GN&&GN.night.id==g.night)gnShow(await J('/api/gn_get',{id:g.night}));return true}
+// ---------- Impressum & Datenschutz (Administrator)
+async function legalDialog(){const b=dlgOpen('Impressum & Datenschutz');const L=await J('/api/legal');if(L.error){P(b,L.error,'warn');return}
+ P(b,'Diese Angaben erscheinen auf /impressum und /datenschutz. Pflicht für einen aus dem Internet erreichbaren Server: Name, ladungsfähige Anschrift, E-Mail.','hint');
+ const f=[['legal_name','Name (Vor- und Nachname)'],['legal_addr','Anschrift (Straße, PLZ Ort)',1],['legal_mail','E-Mail'],['legal_phone','Telefon (optional)'],['legal_host','Hosting (z. B. „einem eigenen Server in Deutschland“)'],['legal_extra','Weitere Angaben (optional)',1]];
+ const ins={};f.forEach(([k,l,ml])=>{const i=$(ml?'textarea':'input');i.id='lg-'+k;i.value=L[k]||'';if(ml){i.rows=2}i.style.width='100%';ins[k]=i;const lb=$('label');lb.append($('span',l),$('br'),i);b.append(lb,$('br'))});
+ const sv=$('button','Speichern');sv.type='button';sv.className='primary';sv.id='lgsave';const m=$('p');b.append(sv,' ',$('a','Impressum ansehen','/impressum'),' · ',$('a','Datenschutz ansehen','/datenschutz'),m);
+ b.querySelectorAll('a').forEach(a=>a.target='_blank');
+ sv.onclick=async()=>{const o={};for(const k in ins)o[k]=ins[k].value;const r=await J('/api/legal',o);m.className=r.error?'warn':'tag';m.textContent=r.error||'Gespeichert.'}}
+function tableSetupNames(names,decks){const n=E('tn');if(!n){setTimeout(()=>tableSetupNames(names,decks),300);return}n.value=Math.min(6,Math.max(2,names.length));n.onchange();
+ [...document.querySelectorAll('#tsetup .tpname')].forEach((x,i)=>x.value=names[i]||'');[...document.querySelectorAll('#tsetup .tpdeck')].forEach((x,i)=>x.value=(decks||[])[i]||'');
+ const h=E('tsetup');let b=E('gnhint');if(!b){b=$('p');b.id='gnhint';b.className='hint';h.prepend(b)}b.textContent='🏆 Tisch aus dem Spielabend – der Sieger wird beim Speichern automatisch eingetragen.'}
 // Tischansicht: ein großes Feld je Spieler; links tippen −1, rechts +1, halten ±10 (wiederholt)
 function tableTisch(o){const n=tg.players.length;if(tg.active==null)tg.active=0;if(tg.rot==null)tg.rot=true;
  const f=$('div');f.id='tfield';const bot=Math.ceil(n/2),top=n-bot;
@@ -7706,7 +8166,8 @@ function dlgOpen(title){const box=E('dlgin');E('dlg').style.display='block';box.
 async function userBar(){await MEP;const o=E('userbar');o.innerHTML='';
  if(ME.server&&ME.name){o.append('Angemeldet als ',$('b',ME.name),' · ');
   const pw=$('a','Passwort ändern');pw.href='#';pw.onclick=e=>{e.preventDefault();pwDialog()};o.append(pw);
-  if(ME.admin){o.append(' · ');const um=$('a','Benutzer verwalten');um.href='#';um.onclick=e=>{e.preventDefault();usersDialog()};o.append(um)}
+  if(ME.admin){o.append(' · ');const um=$('a','Benutzer verwalten');um.href='#';um.onclick=e=>{e.preventDefault();usersDialog()};o.append(um);
+   o.append(' · ');const lg=$('a','Impressum & Datenschutz');lg.href='#';lg.id='legallink';lg.onclick=e=>{e.preventDefault();legalDialog()};o.append(lg)}
   o.append(' · ');const lo=$('a','Abmelden');lo.href='#';lo.onclick=async e=>{e.preventDefault();await J('/api/logout',{});location.href='/login'};o.append(lo)}
  if(window.AndroidBridge&&AndroidBridge.changeServer){if(o.childNodes.length)o.append(' · ');const cs=$('a','Server ändern');cs.href='#';
   cs.onclick=e=>{e.preventDefault();AndroidBridge.changeServer()};o.append(cs)}
@@ -7732,6 +8193,7 @@ async function usersDialog(){const b=dlgOpen('Benutzer verwalten');const list=$(
  sv.onclick=async()=>{const r=await J('/api/user_save',{name:nm.value,pw:pw.value,admin:ad.checked?1:0});
   if(r.error){m.className='warn';m.textContent=r.error;return}m.className='tag';m.textContent='Gespeichert.';pw.value='';render(r)}}
 userBar();
+E('gnwrap').addEventListener('toggle',()=>{if(E('gnwrap').open&&!E('gnbox').firstChild)gnInit()});
 
 // ---- Hilfe
 function openHelp(k){E('help').style.display='block';const el=E('h-'+(k||'top'));if(el)el.scrollIntoView();}
@@ -8246,6 +8708,16 @@ class H(BaseHTTPRequestHandler):
         con = db()
         con.row_factory = sqlite3.Row
         try:
+            if path.startswith("/api/gn_"):
+                if path in ("/api/gn_view",) or (path == "/api/gn_report" and g("code")):
+                    return gn_api(path, p, uid)
+                if SERVER and not self.user:
+                    return {"error": "Bitte anmelden.", "login": True}
+                return gn_api(path, p, uid)
+            if path == "/api/legal":
+                if not admin:
+                    return {"error": "Nur für Administratoren."}
+                return legal_save(p) if any(k in p for k in LEGAL_KEYS) else legal_get()
             if path == "/api/room_create":
                 return room_create(g("state"), g("client"), uid)
             if path == "/api/room_get":
@@ -8568,7 +9040,7 @@ class H(BaseHTTPRequestHandler):
         finally:
             con.close()
 
-    PUBLIC = {"/login", "/api/login", "/api/version", "/manifest.webmanifest", "/sw.js", "/offline",
+    PUBLIC = {"/login", "/api/login", "/api/version", "/manifest.webmanifest", "/sw.js", "/offline", "/api/gn_view", "/api/gn_report",
               "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/favicon.ico"}
 
     def client_ip(self):
@@ -8606,6 +9078,10 @@ class H(BaseHTTPRequestHandler):
             if t is None:
                 return self.send(b"not found", "text/plain", 404)
             return self.send(t.encode(), "text/plain; charset=utf-8", extra=[("X-Robots-Tag", "noindex"), ("Access-Control-Allow-Origin", "*")])
+        if path in ("/impressum", "/datenschutz"):
+            return self.send(legal_page(path[1:]).encode(), "text/html; charset=utf-8")
+        if path.startswith("/n/") and len(path) <= 12:  # Spielabend für Mitspieler: ohne Anmeldung, über den Code
+            return self.send(GN_PAGE.encode(), "text/html; charset=utf-8", extra=[("X-Robots-Tag", "noindex")])
         if path == "/qr.js":
             return self.send(zlib.decompress(base64.b64decode(QR_JS_Z)), "text/javascript")
         if path.startswith("/d/"):  # geteilte Decks: öffentlich lesbar, ohne Anmeldung und ohne Zugangscode
@@ -8614,7 +9090,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send("<!doctype html><meta charset=utf-8><h3>Dieser Link ist ungültig oder wurde widerrufen.</h3>".encode(),
                                  "text/html; charset=utf-8", 404)
             return self.send(page.encode(), "text/html; charset=utf-8", extra=[("X-Robots-Tag", "noindex")])
-        if LAN_KEY:
+        if LAN_KEY and not (path == "/api/gn_view" or (path == "/api/gn_report" and (p.get("code") or [""])[0])):
             ok = self.cookie("cdbkey") == LAN_KEY or (p.get("key") or [""])[0] == LAN_KEY
             if not ok:
                 body = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
