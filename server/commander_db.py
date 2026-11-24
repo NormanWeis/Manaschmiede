@@ -27,6 +27,9 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 58: Commander-Vorschläge nach Thema erkennen Verzauberungs- und Artefakttypen (Sagen, Auren, Klassen, Räume, Fälle,
+            Schreine, Flüche, Hintergründe, Rollen, Ausrüstungen, Fahrzeuge – deutsch und englisch); Erinnerungstext in Klammern
+            zählt nicht mehr als Treffer; Deckbau-Synergie für Sagen.
 Version 57: Proxy-Druck erweitert: beliebige Kartenlisten (Sammlung, Deck, Kaufplan), bestimmter Druck per „(SET) Nr“,
             Rückseiten doppelseitiger Karten, Textfassung ohne Kartenbild, Schnittlinien, Abstand, Graustufen, A4/Letter;
             fester Vermerk „PROXY – keine echte Karte“ und Hinweis, dass es nur Kopien zum privaten Testen sind.
@@ -133,7 +136,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "57"
+APP_VERSION = "58"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -458,6 +461,31 @@ TRIBES_DE = {"drache": "Dragon", "drachen": "Dragon", "elf": "Elf", "elfen": "El
              "vögel": "Bird", "vogel": "Bird", "dämmerung": "Horror", "slivers": "Sliver", "sliver": "Sliver",
              "eldrazi": "Eldrazi", "faerie": "Faerie", "feen": "Faerie", "riesen": "Giant", "riese": "Giant",
              "zwerge": "Dwarf", "zwerg": "Dwarf", "hunde": "Dog", "hund": "Dog", "frösche": "Frog", "frosch": "Frog"}
+# Verzauberungs- und Artefakttypen als Thema: Typ -> (deutsche Bezeichnung, starke Hinweise im Commander-Text)
+CARD_SUBTYPES = {
+    "Saga": ("Sagen", ["lore counter", "chapter", "saga"]),
+    "Aura": ("Auren", ["aura", "enchanted creature", "enchanted permanent", "bestow", "enchant creature"]),
+    "Class": ("Klassen", ["class", "class level"]),
+    "Room": ("Räume", ["room", "unlock"]),
+    "Case": ("Fälle", ["case", "solved"]),
+    "Shrine": ("Schreine", ["shrine"]),
+    "Curse": ("Flüche", ["curse", "enchanted player"]),
+    "Background": ("Hintergründe", ["background"]),
+    "Role": ("Rollen", ["role token", "role"]),
+    "Equipment": ("Ausrüstungen", ["equipment", "equipped creature", "equip"]),
+    "Vehicle": ("Fahrzeuge", ["vehicle", "crew"]),
+}
+SUBTYPE_DE = {"saga": "Saga", "sagas": "Saga", "sage": "Saga", "sagen": "Saga", "aura": "Aura", "auras": "Aura", "auren": "Aura",
+              "class": "Class", "classes": "Class", "klasse": "Class", "klassen": "Class", "room": "Room", "rooms": "Room",
+              "raum": "Room", "räume": "Room", "case": "Case", "cases": "Case", "fälle": "Case", "shrine": "Shrine",
+              "shrines": "Shrine", "schrein": "Shrine", "schreine": "Shrine", "curse": "Curse", "curses": "Curse", "fluch": "Curse",
+              "flüche": "Curse", "background": "Background", "backgrounds": "Background", "hintergrund": "Background",
+              "hintergründe": "Background", "role": "Role", "roles": "Role", "rolle": "Role", "rollen": "Role",
+              "equipment": "Equipment", "ausrüstung": "Equipment", "ausrüstungen": "Equipment", "vehicle": "Vehicle",
+              "vehicles": "Vehicle", "fahrzeug": "Vehicle", "fahrzeuge": "Vehicle"}
+REMINDER_RE = re.compile(r"\([^)]*\)")
+
+
 def theme_terms(theme):
     """Liefert [(Beschreibung, SQL-Bedingung, Parameter)] für ein frei eingegebenes Thema (deutsch oder englisch)."""
     out, t = [], theme.lower().strip()
@@ -466,12 +494,21 @@ def theme_terms(theme):
     key = ALIAS.get(t, t)
     if key in THEMES:
         words, typ = THEMES[key]
-        out.append((key.capitalize(), "(" + " OR ".join("lower(oracle_text) LIKE ?" for _ in words) + ")", [f"%{w.lower()}%" for w in words]))
+        out.append(({"enchantress": "Verzauberungen"}.get(key, key.capitalize()), "(" + " OR ".join("lower(oracle_text) LIKE ?" for _ in words) + ")",
+                    [f"%{w.lower()}%" for w in words]))
     for _rx, words, label in SYNERGY:
+        if key in THEMES or t in SUBTYPE_DE:  # eigenes Thema oder Verzauberungs-/Artefakttyp: nicht doppelt zählen
+            break
         if label.lower() == t or label.lower().startswith(t) and len(t) >= 4:
             out.append((label, "(" + " OR ".join("lower(oracle_text) LIKE ?" for _ in words) + ")", [f"%{w.lower()}%" for w in words]))
     for w in re.split(r"[,\s]+", t):
         if not w:
+            continue
+        st = SUBTYPE_DE.get(w)
+        if st:  # Verzauberungs-/Artefakttyp: Commander mit diesem Typ oder Text dazu (ohne Erinnerungstext, siehe suggest_commanders)
+            words = CARD_SUBTYPES[st][1]
+            out.append((f"{CARD_SUBTYPES[st][0]} ({st})", "(" + " OR ".join(["type_line LIKE ?"] + ["lower(oracle_text) LIKE ?" for _ in words]) + ")",
+                        [f"%{st}%"] + [f"%{x}%" for x in words]))
             continue
         sub = SUBTYPES or set()
         eng = {st.lower(): st for st in sub}
@@ -497,10 +534,13 @@ def pick_varied(rows, n, seed="", vary_colors=False, hits=None, bonus=None):
     best = len(hits.get(rows[0]["name"], [])) if rows else 0
     # Kandidaten: nur gut passende (gleiche Trefferzahl wie die besten), höchstens 80
     pool = [r for r in rows if len(hits.get(r["name"], [])) >= best][:80] or rows[:80]
-    if bonus:  # Stammes-Thema: Commander, deren Text den Typ unterstützt, zuerst
-        strong = [r for r in pool if bonus.get(r["name"])]
+    first = []
+    if bonus:  # Stammes- oder Typ-Thema: Commander, deren Text den Typ unterstützt, zuerst
+        strong = [r for r in pool if bonus.get(r["name"], 0) >= 2]
         if len(strong) >= n * 2:
             pool = strong
+        elif strong:  # wenige echte Unterstützer: die stehen vorne, der Rest füllt auf
+            first = sorted(strong, key=lambda r: (-bonus[r["name"]], r["edhrec_rank"] or 10 ** 7))[:max(1, (2 * n) // 3)]
     if len(pool) < n * 2:
         pool = rows[:max(n * 3, 36)]
     by_rank = sorted(pool, key=lambda r: r["edhrec_rank"] or 10 ** 7)
@@ -518,10 +558,13 @@ def pick_varied(rows, n, seed="", vary_colors=False, hits=None, bonus=None):
         cands = [r for r in cands if ok(r)]
         rnd.shuffle(cands)
         for r in cands:
-            if k <= 0:
+            if k <= 0 or len(chosen) >= n:
                 break
             if ok(r):
                 take(r, tag); k -= 1
+    for r in first:
+        if ok(r) and len(chosen) < n:
+            take(r, "passt genau")
     q = max(1, n // 3)
     take_some(by_rank[:max(q * 2, 8)], q, "beliebt")                       # bekannte, oft gespielte
     third = len(by_rank) // 3
@@ -540,7 +583,7 @@ def pick_varied(rows, n, seed="", vary_colors=False, hits=None, bonus=None):
                 break
             if r["name"] not in names:
                 take(r, "")
-    order = {"beliebt": 0, "": 1, "günstig": 2, "Geheimtipp": 3}
+    order = {"passt genau": -1, "beliebt": 0, "": 1, "günstig": 2, "Geheimtipp": 3}
     chosen.sort(key=lambda x: (order.get(x[1], 1), x[0]["edhrec_rank"] or 10 ** 7))
     return chosen
 
@@ -577,11 +620,22 @@ def suggest_commanders(p):
         for label, cond, a in terms:
             if label.startswith("Kreaturtyp "):  # Commander, deren Text den Typ nennt, sind die eigentlichen Stammes-Commander
                 for (nm,) in con.execute("SELECT name FROM cards WHERE can_be_commander = 1 AND oracle_text LIKE ?", (a[0],)):
-                    bonus[nm] = bonus.get(nm, 0) + 1
+                    bonus[nm] = bonus.get(nm, 0) + 2
             names = {x[0] for x in con.execute(f"SELECT name FROM cards WHERE can_be_commander = 1 AND {cond}", a)}
+            words = [x.strip("%").lower() for x in a]
+            need_all = " AND " in cond
             for r in rows:
-                if r["name"] in names:
-                    hits.setdefault(r["name"], []).append(label)
+                if r["name"] not in names:
+                    continue
+                txt = REMINDER_RE.sub("", (r["oracle_text"] or "")).lower()  # Erinnerungstext zählt nicht
+                tl = (r["type_line"] or "").lower()
+                found = [w for w in words if w and (w in txt or w in tl)]
+                if not found or (need_all and len(set(found)) < len(set(words)) // (2 if label == theme.strip() else 1)):
+                    continue
+                hits.setdefault(r["name"], []).append(label)
+                if "(" in label and label.endswith(")"):  # Verzauberungs-/Artefakttyp: je weiterem starkem Hinweis höher
+                    sup = {w for w in found[0:] if w in txt and w != words[0]} | ({words[0]} if words[0] in txt else set())
+                    bonus[r["name"]] = bonus.get(r["name"], 0) + 2 * len(sup) + (1 if words[0] in tl else 0)
         if theme:
             rows = [r for r in rows if r["name"] in hits]
         big = 10 ** 7
@@ -669,8 +723,11 @@ THEMES = {
     "aristocrats": (["sacrifice", "dies"], None),
     "spellslinger": (["instant or sorcery"], None),
     "voltron": (["equipped", "aura", "equipment"], None),
+    "enchantress": (["enchantment spell", "enchantments you control", "enchantment you control", "constellation",
+                     "enchantment enters", "enchantment card", "enchanted creature"], None),
 }
-ALIAS = {"lebensgewinn": "lifegain", "opfer": "aristocrats", "marken": "counters", "zauber": "spellslinger"}
+ALIAS = {"lebensgewinn": "lifegain", "opfer": "aristocrats", "marken": "counters", "zauber": "spellslinger",
+         "verzauberung": "enchantress", "verzauberungen": "enchantress", "enchantment": "enchantress", "enchantments": "enchantress"}
 FIXED = [  # Name, Ziel-Anzahl, SQL-Bedingung (Nicht-Länder)
     ("Ramp", 10, "(oracle_text LIKE '%Add {%' OR oracle_text LIKE '%Add one mana%' OR oracle_text LIKE '%Add two mana%' OR oracle_text LIKE '%basic land card%') AND cmc <= 3"),
     ("Kartenvorteil", 9, "(oracle_text LIKE '%draw a card%' OR oracle_text LIKE '%draw two%' OR oracle_text LIKE '%draw three%')"),
@@ -689,6 +746,7 @@ SYNERGY = [
     (r"\benchantments?\b", ["enchantment"], "Verzauberungen"),
     (r"\bequip", ["equip"], "Ausrüstungen"),
     (r"\bauras?\b", ["aura"], "Auren"),
+    (r"\bsagas?\b|lore counter", ["saga", "lore counter"], "Sagen"),
     (r"instant or sorcery|noncreature spell", ["instant or sorcery", "noncreature spell"], "Spontanzauber/Hexereien"),
     (r"landfall|land enters|lands? you control|additional land", ["landfall", "land enters", "additional land"], "Länder"),
     (r"gains? (\d+ |x |that much )?life|lifelink", ["gain life", "gains life", "you gain", "lifelink"], "Lebensgewinn"),
@@ -716,6 +774,7 @@ def creature_subtypes(con):
             for part in t.split(" // "):
                 if "Creature" in part and "—" in part:
                     SUBTYPES.update(w for w in part.split("—", 1)[1].split() if re.fullmatch(r"[A-Z][a-z'-]{2,}", w))
+        SUBTYPES -= set(CARD_SUBTYPES)  # z. B. „Enchantment Creature — Saga …“: Saga ist ein Verzauberungstyp, kein Kreaturtyp
     return SUBTYPES
 
 
@@ -5817,7 +5876,7 @@ def lab_api(path, p, uid=0):
     return {"error": "Unbekannte Aktion."}
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 57)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 58)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -6701,7 +6760,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='57';
+const PAGE_VERSION='58';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
