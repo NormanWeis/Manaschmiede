@@ -27,6 +27,10 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 60: Sprachliche Überarbeitung aller Texte (Hilfe, Hinweise, Meldungen, Rechtstexte, Anleitungen): Gedankenstriche
+            durch passende Satzzeichen ersetzt, aufgesetzte Gegenüberstellungen und Füllwörter entfernt, Beschriftungen
+            vereinheitlicht; Hilfe um Spielabend, Messlabor, KI-Einstellungen, Kaufassistent und Impressum ergänzt,
+            veraltete Angaben korrigiert.
 Version 59: Proxy-Druck: Hinweis, die Kopie mit einer echten, wertlosen Karte in eine Hülle zu stecken (einheitliche Rückseite,
             auch in durchsichtigen Hüllen) – im Dialog, in der Druckansicht, in der Sammlung und in der Hilfe.
 Version 58: Commander-Vorschläge nach Thema erkennen Verzauberungs- und Artefakttypen (Sagen, Auren, Klassen, Räume, Fälle,
@@ -138,7 +142,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "59"
+APP_VERSION = "60"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -305,7 +309,7 @@ def price_history(p):
         hist.setdefault(r["name"], []).append((r["day"], r["eur"]))
     days = sorted({d for h in hist.values() for d, _ in h})
     if not days:
-        return {"days": [], "hint": "Noch kein Preisverlauf – er entsteht ab jetzt mit jeder Kartenaktualisierung (einmal täglich beim Start)."}
+        return {"days": [], "hint": "Noch kein Preisverlauf. Er entsteht ab jetzt mit jeder Kartenaktualisierung (einmal täglich beim Start)."}
     def at(n, day):
         v = None
         for d, e in hist.get(n, []):
@@ -447,7 +451,7 @@ def lookup(con, name, commander=False):
     if not hits:
         return None, None
     r = con.execute(f"SELECT * FROM cards WHERE name = ? {pref}", (hits[0],)).fetchone()
-    return r, f"„{name}“ nicht exakt gefunden – verwendet: {r['name']}."
+    return r, f"„{name}“ nicht exakt gefunden, verwendet: {r['name']}."
 
 
 # Commander-Vorschläge ohne festen Commander: nach Farbidentität und/oder Thema (Text, Schlüsselwort, Kreaturtyp)
@@ -608,7 +612,7 @@ def suggest_commanders(p):
             where.append("(eur IS NULL OR eur <= ?)"); args.append(maxeur)
         terms = theme_terms(theme)
         if theme and not terms:
-            return {"error": "Zum Thema wurde nichts gefunden – andere Begriffe probieren (z. B. Tokens, Drachen, Friedhof).", "cards": []}
+            return {"error": "Zum Thema wurde nichts gefunden. Andere Begriffe probieren (z. B. Tokens, Drachen, Friedhof).", "cards": []}
         rows = con.execute("SELECT * FROM cards WHERE " + " AND ".join(where), args).fetchall()
         def ci_ok(r):
             c = r["color_identity"] or ""
@@ -846,13 +850,13 @@ def build(p, uid=0):
             notes.append(f"Commander „{cn}“ nicht gefunden.")
             continue
         if not r["can_be_commander"]:
-            notes.append(f"{r['name']} gilt nach meiner Näherung nicht als Commander – bitte prüfen.")
+            notes.append(f"{r['name']} gilt nach meiner Näherung nicht als Commander, bitte prüfen.")
         if not r["commander_legal"]:
             notes.append(f"{r['name']} ist im Commander-Format nicht legal (gebannt).")
         if r["name"] not in [c["name"] for c in cmds]:
             cmds.append(r)
     if g("commander") and not cmds:
-        notes.append("Kein Commander gefunden – Deck wird ohne Commander vorgeschlagen.")
+        notes.append("Kein Commander gefunden. Das Deck wird ohne Commander vorgeschlagen.")
     if len(cmds) == 2:
         err = partner_problem(cmds)
         if err:
@@ -892,7 +896,7 @@ def build(p, uid=0):
         return {"error": "Bitte mindestens eine Angabe machen: Commander, Thema, Farbidentität oder Karten.",
                 "notes": notes}
     if nogc and any(r["game_changer"] for r in own):
-        notes.append("Deine eigenen Karten enthalten Game Changer – diese wurden trotz Filter übernommen.")
+        notes.append("Deine eigenen Karten enthalten Game Changer. Sie wurden trotz Filter übernommen.")
     if excluded:
         notes.append(f"{len(excluded)} als nicht verfügbar markierte Karten wurden ausgeschlossen.")
     for r in own:
@@ -951,12 +955,12 @@ def build(p, uid=0):
                        pick(f"{NL} AND ({cond})", likes, 15 if g("theme") else 25,
                             order=f"({score}) DESC, edhrec_rank IS NULL, edhrec_rank", order_args=likes)))
     elif cmds:
-        notes.append("Im Text des Commanders wurden keine typischen Mechaniken erkannt – Auswahl nach allgemeiner Beliebtheit.")
+        notes.append("Im Text des Commanders wurden keine typischen Mechaniken erkannt, deshalb Auswahl nach allgemeiner Beliebtheit.")
     tsql, targs = theme_sql(g("theme"))
     if tsql:
         groups.append((f"Thema: {g('theme')}", pick(f"{NL} AND {tsql}", targs, size - 42 - nonland())))
     elif not syn_terms:
-        notes.append("Kein Thema angegeben – es wurden allgemein beliebte Karten gewählt.")
+        notes.append("Kein Thema angegeben, deshalb wurden allgemein beliebte Karten gewählt.")
     groups.append(("Weitere beliebte Karten", pick(NL, [], size - 36 - nonland())))
 
     own_l = sum(1 for r in own if island(r))
@@ -995,7 +999,7 @@ def build(p, uid=0):
     if total < 100 - max(1, len(cmds)):
         notes.append(f"Es konnten nur {total} von {100 - max(1, len(cmds))} Karten gefunden werden.")
     if coll and not has_coll:
-        notes.append("Du hast noch keine Sammlung importiert – das Deck wurde ohne Sammlung gebaut.")
+        notes.append("Du hast noch keine Sammlung importiert. Das Deck wurde ohne Sammlung gebaut.")
     elif has_coll:
         notes.append("Nur Karten aus deiner Sammlung (außer Standardländern)." if coll == "only" else
                      "Karten aus deiner Sammlung wurden bevorzugt.")
@@ -1006,9 +1010,9 @@ def build(p, uid=0):
     if maxprice:
         notes.append(f"Höchstpreis je Karte: {maxprice:.2f} €.")
     if syn_terms:
-        notes.append("Synergie-Karten wurden nach dem Text des Commanders gewählt, die übrigen nach allgemeiner EDHREC-Beliebtheit – bitte prüfen.")
+        notes.append("Synergie-Karten wurden nach dem Text des Commanders gewählt, die übrigen nach allgemeiner EDHREC-Beliebtheit. Bitte prüfen.")
     else:
-        notes.append("Die Auswahl folgt der allgemeinen EDHREC-Beliebtheit, nicht commanderspezifischen Daten – bitte prüfen.")
+        notes.append("Die Auswahl folgt der allgemeinen EDHREC-Beliebtheit, nicht commanderspezifischen Daten. Bitte prüfen.")
     lines = [f"{c['qty']} {c['name']}" for gr in out for c in gr["cards"]]
     return {"commander": " + ".join(c["name"] for c in cmds) or None, "ci": ci, "notes": notes, "groups": out, "curve": curve,
             "cost": {"total": sum(priced), "priced": len(priced), "missing": len(allr) + len(cmds) - len(priced)},
@@ -1331,7 +1335,7 @@ def ownership(p, uid=0):
 
 
 def collection_export(con, uid=0, fmt="prints"):
-    """CSV der Sammlung: je Druck (Count, Name, Edition, Collector Number, Foil, Condition, Language – lesbar für Moxfield,
+    """CSV der Sammlung: je Druck (Count, Name, Edition, Collector Number, Foil, Condition, Language), lesbar für Moxfield,
     ManaBox, Archidekt und die Manaschmiede) oder nur Name und Anzahl."""
     collection_table(con)
     qn = lambda n: '"' + n.replace(chr(34), chr(39)) + '"'
@@ -1464,7 +1468,7 @@ def prints_fetch(con, idents):
         try:
             r = scry_post("/cards/collection", {"identifiers": idents[i:i + 75]})
         except Exception as e:
-            err = f"Scryfall nicht erreichbar ({e.__class__.__name__}) – Druckdaten werden später nachgeladen."
+            err = f"Scryfall nicht erreichbar ({e.__class__.__name__}). Druckdaten werden später nachgeladen."
             break
         found += prints_store(con, r.get("data") or []) and (r.get("data") or [])
     return found, err
@@ -2165,7 +2169,7 @@ def shared_page(tok):
     btxt = (f"Bracket {H.escape(ex['bracket'])} ({BRACKETS[int(ex['bracket'])][0]}) laut Besitzer · Schätzung {bc['bracket']}" if ex.get("bracket")
             else f"Bracket-Schätzung {bc['bracket']} ({bc['name']}, ohne Combo-Prüfung)")
     e = H.escape
-    out = [f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>{e(d['name'])} – Commander-Deck</title>",
+    out = [f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>{e(d['name'])} · Commander-Deck</title>",
            "<style>body{font:15px system-ui,sans-serif;max-width:900px;margin:auto;padding:12px;background:#f7f4ee;color:#222}"
            "h1{margin:.2em 0}.g{columns:2 260px}.g div{break-inside:avoid;margin:2px 0}a{color:#0b5394;text-decoration:none}"
            ".t{font-size:.8em;padding:0 5px;border-radius:8px;background:#e7f1fb;border:1px solid #9bc;margin-left:4px}"
@@ -2355,7 +2359,7 @@ def partner_problem(cmds):
     pw = partner_with(a) or partner_with(b)
     if pw:
         return f"„Partner with“ erlaubt nur den genannten Partner ({pw})."
-    return (f"{a['name']} und {b['name']} dürfen nicht gemeinsam Commander sein – beide brauchen „Partner“ "
+    return (f"{a['name']} und {b['name']} dürfen nicht gemeinsam Commander sein. Beide brauchen „Partner“ "
             "(bzw. dieselbe Partner-Variante, „Friends forever“) oder es muss „Choose a Background“ mit einem Hintergrund "
             "bzw. „Doctor's companion“ mit einem Doktor sein.")
 
@@ -2839,7 +2843,7 @@ def parse_rules(text):
 def store_rules(raw, url):
     eff, rules, terms = parse_rules(decode_rules(raw))
     if len(rules) < 1000:
-        raise ValueError(f"Nur {len(rules)} Regeln erkannt – Datei unvollständig?")
+        raise ValueError(f"Nur {len(rules)} Regeln erkannt. Ist die Datei unvollständig?")
     con = db()
     con.execute("CREATE TABLE IF NOT EXISTS rules(idx INTEGER PRIMARY KEY, num TEXT, text TEXT)")
     con.execute("CREATE TABLE IF NOT EXISTS glossary(term TEXT, text TEXT)")
@@ -2865,7 +2869,7 @@ def rules_query(p):
     con = db()
     meta = {"version": setting("rules_version"), "url": setting("rules_url"), "source": RULES_PAGE}
     if not has_rules(con):
-        return dict(meta, error="Die Regeln sind noch nicht geladen – oben auf „Jetzt aktualisieren“ klicken.", rules=[], glossary=[])
+        return dict(meta, error="Die Regeln sind noch nicht geladen. Oben auf „Jetzt aktualisieren“ klicken.", rules=[], glossary=[])
     if not q:
         rows = con.execute("SELECT num, text FROM rules WHERE length(num) <= 3 ORDER BY idx").fetchall()
         return dict(meta, toc=True, rules=[{"num": n, "text": t} for n, t in rows], glossary=[])
@@ -3145,7 +3149,7 @@ def auto_update(force=False, parts=("rules", "precons", "cards", "cardmarket")):
         try:
             UPDATE["items"][k].update(status=fn(force), ok=True)
         except Exception as e:
-            UPDATE["items"][k].update(status=f"Prüfung fehlgeschlagen ({e}) – die vorhandenen Daten werden weiter genutzt.", ok=False)
+            UPDATE["items"][k].update(status=f"Prüfung fehlgeschlagen ({e}). Die vorhandenen Daten werden weiter genutzt.", ok=False)
         print(f"  {labels[k]}: {UPDATE['items'][k]['status']}")
     UPDATE.update(running=False, done=True, at=datetime.datetime.now().isoformat(sep=" ", timespec="minutes"))
     setting("updated_at", UPDATE["at"])
@@ -3235,7 +3239,7 @@ def login(p, ip):
     g = lambda k: (p.get(k) or [""])[0]
     n, until = LOGIN_FAILS.get(ip, (0, 0))
     if until > time.time():
-        return None, f"Zu viele Fehlversuche – bitte {int(until - time.time()) + 1} Sekunden warten."
+        return None, f"Zu viele Fehlversuche. Bitte {int(until - time.time()) + 1} Sekunden warten."
     con = db()
     users_tables(con)
     r = con.execute("SELECT id, pw FROM users WHERE name = ?", (g("name").strip(),)).fetchone()
@@ -3266,7 +3270,7 @@ def ensure_admin():
     elif not con.execute("SELECT 1 FROM users WHERE admin = 1").fetchone():
         pw = secrets.token_urlsafe(12)
         user_set("admin", pw, admin=True)
-        print("=" * 70 + f"\nKein Admin konfiguriert – erzeugt: Benutzer „admin“, Passwort: {pw}\n"
+        print("=" * 70 + f"\nKein Admin konfiguriert, neu angelegt: Benutzer „admin“, Passwort: {pw}\n"
               "Bitte nach der ersten Anmeldung ändern (oder CDB_ADMIN_USER/CDB_ADMIN_PASSWORD setzen).\n" + "=" * 70)
     # Decks aus dem lokalen Betrieb (owner 0) gehören auf dem Server dem ersten Administrator
     aid = con.execute("SELECT id FROM users WHERE admin = 1 ORDER BY id LIMIT 1").fetchone()
@@ -3409,7 +3413,7 @@ def gn_api(path, p, uid=0):
     if path == "/api/gn_view":
         night = gn_get_night(con, code=g("code"))
         if not night:
-            return {"error": "Unbekannter Spielabend – bitte den Link prüfen."}
+            return {"error": "Unbekannter Spielabend. Bitte den Link prüfen."}
         out = gn_view(con, night, full=False)
         out["night"].pop("id", None)
         return out
@@ -3549,7 +3553,7 @@ def gn_api(path, p, uid=0):
 
 
 GN_PAGE = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width, initial-scale=1">
-<title>Spielabend – Manaschmiede</title><meta name=robots content=noindex><link rel=icon href=/icon-192.png>
+<title>Spielabend · Manaschmiede</title><meta name=robots content=noindex><link rel=icon href=/icon-192.png>
 <style>body{margin:0;background:#140f0b radial-gradient(ellipse at top,#3a2a1c,#0e0a07) fixed;color:#eadfc8;font-family:Georgia,serif;padding:12px}
 h1{color:#e2bd5b;font-size:22px;margin:4px 0}h2{font-size:17px;color:#e2bd5b;margin:18px 0 6px}.pod{background:#221811;border:1px solid #7a5c2e;border-radius:10px;padding:10px;margin:8px 0}
 .pod b{color:#e2bd5b}button{font:inherit;font-size:16px;padding:10px 12px;margin:4px 4px 0 0;border-radius:8px;border:1px solid #a8843a;background:#2a2018;color:#eadfc8;min-width:44px}
@@ -3641,14 +3645,14 @@ def legal_page(kind):
                 "Du hast außerdem das Recht auf Beschwerde bei einer Datenschutz-Aufsichtsbehörde.</p>"
                 + (f"<h2>8. Weitere Angaben</h2><p>{e(L['legal_extra'])}</p>" if L["legal_extra"] else ""))
     return ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width, initial-scale=1'>"
-            f"<title>{'Impressum' if kind == 'impressum' else 'Datenschutz'} – Manaschmiede</title>"
+            f"<title>{'Impressum' if kind == 'impressum' else 'Datenschutz'} · Manaschmiede</title>"
             "<style>body{margin:0 auto;max-width:760px;padding:16px;background:#140f0b;color:#eadfc8;font-family:Georgia,serif;line-height:1.5}"
             "h1,h2{color:#e2bd5b}a{color:#e2bd5b}li{margin:4px 0}</style>" + body +
             "<p style='margin-top:30px;opacity:.7'><a href='/'>Zur Manaschmiede</a> · <a href='/impressum'>Impressum</a> · <a href='/datenschutz'>Datenschutz</a></p>")
 
 
 LOGIN_PAGE = """<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width, initial-scale=1">
-<title>Anmelden – Manaschmiede</title><link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
+<title>Anmelden · Manaschmiede</title><link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
 background:#140f0b radial-gradient(ellipse at top,#3a2a1c,#0e0a07);color:#eadfc8;font-family:Georgia,serif}
 form{background:#221811;border:1px solid #a8843a;border-radius:10px;padding:26px 30px;width:300px;box-shadow:0 0 24px #0009}
@@ -3676,7 +3680,7 @@ self.addEventListener('fetch',e=>{if(e.request.mode==='navigate')e.respondWith(f
 
 
 def manifest():
-    return {"name": "Manaschmiede – Commander-Deckbau", "short_name": "Manaschmiede", "start_url": "/", "scope": "/",
+    return {"name": "Manaschmiede: Commander-Deckbau", "short_name": "Manaschmiede", "start_url": "/", "scope": "/",
             "display": "standalone", "background_color": "#140f0b", "theme_color": "#1a130e", "lang": "de",
             "description": "Commander-Decks bauen, vergleichen, Combos finden und per Forge gegeneinander spielen lassen.",
             "icons": [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
@@ -4011,16 +4015,16 @@ def import_deck(p):
                 ns = list(dict.fromkeys(lookup(con, raw[i][1])[0]["name"] for i in blk if lookup(con, raw[i][1])[0]))
                 if 1 <= len(ns) <= 2 and all(can(n) for n in ns):
                     cmds = ns
-                    notes.append("Commander aus dem abgesetzten Block der Liste erkannt – bitte prüfen.")
+                    notes.append("Commander aus dem abgesetzten Block der Liste erkannt, bitte prüfen.")
                     break
     candidates = [n for n in rows if can(n)]
     if not cmds and candidates:
         first = lookup(con, raw[0][1])[0]
         if first and first["name"] in candidates:
             cmds = [first["name"]]
-            notes.append("Kein Commander markiert – die erste Karte wurde angenommen, bitte prüfen.")
+            notes.append("Kein Commander markiert. Die erste Karte wurde angenommen, bitte prüfen.")
         else:
-            notes.append("Kein Commander markiert – bitte unten auswählen.")
+            notes.append("Kein Commander markiert. Bitte unten auswählen.")
     total = sum(qty.values())
     if total != 100:
         notes.append(f"Die Liste hat {total} statt 100 Karten.")
@@ -4268,7 +4272,7 @@ def deck_export(p):
         w.writerows([[1, r["name"], "commander"] for r in cmds] + [[q, r["name"], "mainboard"] for r, q in main])
         text, ext = buf.getvalue(), "csv"
     elif fmt == "forge" and SERVER:
-        return {"error": "Auf dem Server nicht verfügbar – bitte als .dck herunterladen."}
+        return {"error": "Auf dem Server nicht verfügbar. Bitte als .dck herunterladen."}
     elif fmt in ("dck", "forge"):
         tmp = os.path.join(tempfile.gettempdir(), "export.dck")
         write_dck(tmp, name, cmds, ent)
@@ -4343,7 +4347,7 @@ def compare(p):
         return {"error": "Bitte ein Precon oder ein eigenes Deck als Gegner wählen."}
     mine, miss_a = entries_from_list(con, g("list"), g("commander").strip())
     if not mine:
-        return {"error": "Kein eigenes Deck zum Vergleichen – bitte zuerst ein Deck vorschlagen oder laden."}
+        return {"error": "Kein eigenes Deck zum Vergleichen. Bitte zuerst ein Deck vorschlagen oder laden."}
     theirs = opp["entries"]
     a, b = analyze(mine), analyze(theirs)
     rows, sa, sb = duel(a, b)
@@ -4355,9 +4359,9 @@ def compare(p):
                    key=lambda r: r["edhrec_rank"])[:12]
     nm = opp["name"]
     if sa > sb:
-        verdict = f"Dein Deck liegt in {sa} von {len(DUEL)} Kategorien vorn – auf dem Papier stärker als „{nm}“."
+        verdict = f"Dein Deck liegt in {sa} von {len(DUEL)} Kategorien vorn und ist auf dem Papier stärker als „{nm}“."
     elif sb > sa:
-        verdict = f"„{nm}“ liegt in {sb} von {len(DUEL)} Kategorien vorn – dein Deck hat dort Nachholbedarf."
+        verdict = f"„{nm}“ liegt in {sb} von {len(DUEL)} Kategorien vorn, dort hat dein Deck Nachholbedarf."
     else:
         verdict = f"Ausgeglichen: beide Decks gewinnen gleich viele Kategorien ({sa}:{sb})."
     if a["bracket"] != b["bracket"]:
@@ -4486,7 +4490,7 @@ def bracket_check(con, entries, commander_names, combos=None):
     else:
         label, val = "4–5", 4
         note = ("Mindestens eine Regel geht über Bracket 3 hinaus. Ob 4 (Optimized) oder 5 (cEDH), hängt davon ab, ob das Deck für "
-                "das kompetitive Turnier-Metagame gebaut ist – das kann kein Programm aus der Liste ablesen.")
+                "das kompetitive Turnier-Metagame gebaut ist. Das lässt sich aus der Liste allein nicht ablesen.")
     for r in rules:
         r["ok_up_to"] = {1: "1–5", 2: "2–5", 3: "3–5", 4: "4–5"}[r["min"]]
     out = {"bracket": label, "value": val, "name": BRACKETS[val][0] if low != 1 else "Exhibition oder Core",
@@ -4765,9 +4769,9 @@ def forge_status():
         jar = jars[-1] if jars else None
     msg = []
     if not java:
-        msg.append("Java nicht gefunden – bitte Java 17 oder neuer installieren.")
+        msg.append("Java nicht gefunden. Bitte Java 17 oder neuer installieren.")
     elif ver < 17:
-        msg.append(f"Java {ver} ist zu alt – Forge braucht Java 17 oder neuer.")
+        msg.append(f"Java {ver} ist zu alt, Forge braucht Java 17 oder neuer.")
     if not d:
         msg.append("Forge-Ordner noch nicht angegeben.")
     elif not jar:
@@ -5151,7 +5155,7 @@ def duel_start(p, uid=0):
         if j.get("finished") and j["finished"] < time.time() - 3600:
             JOBS.pop(k, None)
     if SERVER and any(j.get("owner") == uid and not j["done"] for j in JOBS.values()):
-        return {"error": "Du hast bereits ein laufendes Duell – bitte warten oder abbrechen."}
+        return {"error": "Du hast bereits ein laufendes Duell. Bitte warten oder abbrechen."}
     st = forge_status()
     if not st["ready"]:
         return {"error": st["message"]}
@@ -5607,7 +5611,7 @@ def lab_start(p, uid=0):
         if j.get("finished") and j["finished"] < time.time() - 3600:
             JOBS.pop(k, None)
     if SERVER and any(j.get("owner") == uid and not j["done"] for j in JOBS.values()):
-        return {"error": "Du hast bereits ein laufendes Duell oder eine Messung – bitte warten oder abbrechen."}
+        return {"error": "Du hast bereits ein laufendes Duell oder eine Messung. Bitte warten oder abbrechen."}
     st = forge_status()
     if not st["ready"]:
         return {"error": st["message"]}
@@ -5666,7 +5670,7 @@ def lab_start(p, uid=0):
     n = max(2, int(g("games") or 10))
     total = n * len(variants) * len(opps)
     if total > MAX_LAB_GAMES:
-        return {"error": f"Zu viele Partien ({total}). Erlaubt sind {MAX_LAB_GAMES} – weniger Partien, Varianten oder Gegner wählen."}
+        return {"error": f"Zu viele Partien ({total}). Erlaubt sind {MAX_LAB_GAMES}. Bitte weniger Partien, Varianten oder Gegner wählen."}
     ent0, missing0 = entries_from_list(con, g("list"), g("commander"))
     if not ent0:
         return {"error": "Leere Deckliste."}
@@ -5802,7 +5806,7 @@ def lab_results(job):
         r["z"], r["verdict"] = lab_verdict(r["wins"], r["games"], base["wins"], base["games"])
     best = max(rows[1:], key=lambda r: (r.get("z") or 0), default=None)
     if best and (best.get("z") or 0) >= 0.84:
-        tip = (f"Empfehlung: „{best['label']}“ – {best['verdict']} ({best['rate']} % statt {base['rate']} % Siege)."
+        tip = (f"Empfehlung: „{best['label']}“, {best['verdict']} ({best['rate']} % statt {base['rate']} % Siege)."
                if job["mode"] == "swap" else f"Empfehlung: Dein Deck mit KI-Profil „{best['ai']}“ testen ({best['rate']} % statt {base['rate']} %).")
     elif job["played"] >= job["total"]:
         tip = "Keine Variante ist messbar besser. Mehr Partien je Variante machen kleinere Unterschiede sichtbar."
@@ -5878,7 +5882,7 @@ def lab_api(path, p, uid=0):
     return {"error": "Unbekannte Aktion."}
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 59)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 60)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -6264,34 +6268,34 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <a data-h=begriffe>Begriffe</a> · <a data-h=probleme>Probleme lösen</a></nav>
 
 <h3 id=h-start>Erste Schritte</h3>
-<ol><li><b>Starten:</b> Doppelklick auf <code>Commander-DB starten.bat</code> (oder in der Eingabeaufforderung <code>python commander_db_v35.py serve</code>). Ein schwarzes Fenster öffnet sich – <b>dieses Fenster offen lassen</b>, solange du die Datenbank benutzt. Der Browser öffnet die Seite automatisch (sonst <code>http://localhost:8000</code> eingeben).</li>
-<li><b>Am Handy:</b> Die Manaschmiede erkennt Mobiltelefone und schaltet auf die Handyansicht um: Navigation als Leiste am unteren Rand (Start, Neu hier?, Deck, Duell, Tisch, ☰ Mehr), kompakter Kopf mit 📱 Ansicht, 🎨 Optik und ❓ Hilfe, Felder über die volle Breite. Mit dem Ansichts-Knopf (📱/🖥 oben rechts) wechselst du zwischen „automatisch“, „immer Handy“ und „immer PC“ – praktisch auf Tablets.</li>
+<ol><li><b>Starten:</b> Doppelklick auf <code>Commander-DB starten.bat</code> (oder in der Eingabeaufforderung <code>python commander_db_vNN.py serve</code>, NN ist die Versionsnummer). Es öffnet sich ein schwarzes Fenster. <b>Lass es offen</b>, solange du die Datenbank benutzt. Der Browser öffnet die Seite automatisch (sonst <code>http://localhost:8000</code> eingeben).</li>
+<li><b>Am Handy:</b> Die Manaschmiede erkennt Mobiltelefone und schaltet auf die Handyansicht um: Navigation als Leiste am unteren Rand (Start, Neu hier?, Deck, Duell, Tisch, ☰ Mehr), kompakter Kopf mit 📱 Ansicht, 🎨 Optik und ❓ Hilfe, Felder über die volle Breite. Mit dem Ansichts-Knopf (📱/🖥 oben rechts) wechselst du zwischen „automatisch“, „immer Handy“ und „immer PC“, was auf Tablets hilft.</li>
 <li><b>Beim Start</b> prüft das Programm im Hintergrund, ob es neue Regeln, Precons oder Kartendaten gibt. Den Fortschritt siehst du oben im Balken. Du kannst währenddessen schon arbeiten.</li>
 <li><b>Gespeichertes Deck weiterbearbeiten:</b> oben im Tab „Deck bauen“ bei „📂 Gespeichertes Deck öffnen“ auswählen, oder auf der Willkommen-Seite unter „Zuletzt gespeichert“ anklicken. Verwalten (Versionen, Teilen, Löschen) im Tab „Meine Decks“.</li>
-<li><b>Ein erstes Deck:</b> auf der Willkommen-Seite (oder im Tab „Deck bauen“ bei „Commander“) einen Namen eintippen (z. B. „Atraxa“), Vorschlag anklicken und <b>Deck vorschlagen</b> drücken. Fertig – darunter erscheint ein vollständiges Deck mit 100 Karten.</li>
+<li><b>Ein erstes Deck:</b> auf der Willkommen-Seite (oder im Tab „Deck bauen“ bei „Commander“) einen Namen eintippen (z. B. „Atraxa“), Vorschlag anklicken und <b>Deck vorschlagen</b> drücken. Darunter erscheint ein vollständiges Deck mit 100 Karten.</li>
 <li><b>Beenden:</b> das schwarze Fenster schließen (oder dort Strg+C drücken). Gespeicherte Decks bleiben erhalten.</li></ol>
 <p><b>Aufbau der Seite:</b> Die Seite beginnt mit der <b>Willkommen-Seite</b>: dort einen Commander eintippen und „Deck bauen“ drücken oder eine der Karten anklicken. Oben führen die <b>Tabs</b> zu allen Bereichen: <b>Deck bauen</b> (Assistent und Deckansicht), <b>Gegner &amp; Duell</b> (Vergleich, Combos, Forge), <b>Meine Decks</b> (Import, gespeicherte Decks), <b>Sammlung</b>, <b>Spieltisch</b>, <b>Kartensuche</b> und <b>Regeln</b>. Die Zurück-Taste des Browsers springt zum vorigen Tab.</p>
 <p>Überall auf der Seite findest du kleine <span class=qh>?</span>-Knöpfe. Ein Klick darauf öffnet die passende Stelle dieser Hilfe. Oben rechts lässt sich die Optik zwischen <b>Magic-Stil</b> und <b>neutral</b> umschalten.</p>
 
 <h3 id=h-commander>Was ist Commander? (in einer Minute)</h3>
-<ul><li>Jedes Deck hat <b>genau 100 Karten</b>, davon ist eine der <b>Commander</b> – meist eine legendäre Kreatur. Er liegt nicht im Stapel, sondern kann jederzeit aus der Kommandozone gespielt werden (jedes weitere Mal kostet er 2 Mana mehr).</li>
-<li>Jede Karte darf nur <b>einmal</b> vorkommen – außer Standardländern wie Wald oder Insel.</li>
+<ul><li>Jedes Deck hat <b>genau 100 Karten</b>, davon ist eine der <b>Commander</b>, meist eine legendäre Kreatur. Er liegt in der Kommandozone statt im Stapel und kann von dort jederzeit gespielt werden (jedes weitere Mal kostet er 2 Mana mehr).</li>
+<li>Jede Karte darf nur <b>einmal</b> vorkommen. Ausgenommen sind Standardländer wie Wald oder Insel.</li>
 <li>Die <b>Farbidentität</b> des Commanders bestimmt, welche Farben im Deck erlaubt sind. Ein grün-blauer Commander erlaubt nur grüne, blaue und farblose Karten.</li>
 <li>Jeder beginnt mit <b>40 Lebenspunkten</b>. Wer von einem einzelnen Commander insgesamt <b>21 Kampfschaden</b> erhält, verliert ebenfalls.</li>
-<li><b>Precons</b> sind die fertigen, offiziell verkauften Commander-Decks – gut als Vergleichsmaßstab.</li>
+<li><b>Precons</b> sind die fertigen, offiziell verkauften Commander-Decks und eignen sich gut als Vergleichsmaßstab.</li>
 <li><b>Brackets</b> (Stufen 1–5) beschreiben, wie stark ein Deck ist, damit am Tisch ähnlich starke Decks gegeneinander spielen.</li></ul>
 
 <h3 id=h-bauen>Deck bauen lassen (Deckbau-Assistent)</h3>
-<p>Alle Felder sind freiwillig – eine Angabe genügt.</p>
+<p>Alle Felder sind freiwillig, eine Angabe genügt.</p>
 <ul><li><b>Commander:</b> beim Tippen erscheinen Vorschläge; Tippfehler werden toleriert. Die Farbidentität wird automatisch übernommen. <b>Zwei Commander</b> (Partner, Hintergrund) mit „ + “ trennen, z. B. „Thrasios, Triton Hero + Tymna the Weaver“.</li>
-<li><b>Thema:</b> z. B. Mill, Lifegain, Tokens, Voltron – das Deck wird um dieses Thema herum gebaut.</li>
-<li><b>Noch kein Commander?</b> Lieblingsfarben über die Farbknöpfe (W U B R G ◇) anklicken und/oder ein Thema eintragen – deutsch oder englisch, z. B. „Drachen“, „Elfen“, „Tokens“, „Friedhof“, „Artefakte“, „Lebensgewinn“. „💡 Commander vorschlagen“ zeigt zwölf passende Commander mit Bild, Begründung und Regeltext – jedes Mal eine neue Mischung aus ⭐ beliebten Commandern, 💎 Geheimtipps (seltener gespielt) und 💶 günstigen Optionen, bei offenen Farben aus verschiedenen Farbkombinationen. „🔄 Andere Vorschläge“ zeigt weitere, noch nicht gezeigte Commander; „🔀 Neu mischen“ beginnt von vorn. Normalerweise müssen die Farben genau passen; „auch mit weniger Farben“ zeigt zusätzlich Commander mit einem Teil der Farben. „Keine Game Changer“ und „Höchstpreis je Karte“ gelten auch hier. Mit „✔ Diesen Commander nehmen“ wird er übernommen. Wird ein Deck ohne Commander vorgeschlagen, erscheinen die Vorschläge automatisch.</li>
+<li><b>Thema:</b> z. B. Mill, Lifegain, Tokens, Voltron. Das Deck wird um dieses Thema herum gebaut.</li>
+<li><b>Noch kein Commander?</b> Lieblingsfarben über die Farbknöpfe (W U B R G ◇) anklicken und/oder ein Thema eintragen, deutsch oder englisch, z. B. „Drachen“, „Elfen“, „Tokens“, „Friedhof“, „Artefakte“, „Lebensgewinn“, auch Verzauberungs- und Artefakttypen wie „Sagen“, „Auren“ oder „Ausrüstungen“. „💡 Commander vorschlagen“ zeigt zwölf passende Commander mit Bild, Begründung und Regeltext. Jedes Mal kommt eine neue Mischung aus ⭐ beliebten Commandern, 💎 Geheimtipps (seltener gespielt) und 💶 günstigen Optionen, bei offenen Farben aus verschiedenen Farbkombinationen. Commander, die das Thema in ihrem Text ausdrücklich unterstützen, stehen als „passt genau“ vorne. „🔄 Andere Vorschläge“ zeigt weitere, noch nicht gezeigte Commander; „🔀 Neu mischen“ beginnt von vorn. Normalerweise müssen die Farben genau passen; „auch mit weniger Farben“ zeigt zusätzlich Commander mit einem Teil der Farben. „Keine Game Changer“ und „Höchstpreis je Karte“ gelten auch hier. Mit „✔ Diesen Commander nehmen“ wird er übernommen. Wird ein Deck ohne Commander vorgeschlagen, erscheinen die Vorschläge automatisch.</li>
 <li><b>Farbidentität:</b> nur nötig, wenn du keinen Commander angibst (W = Weiß, U = Blau, B = Schwarz, R = Rot, G = Grün).</li>
-<li><b>Karten, die ins Deck sollen:</b> eigene Lieblingskarten, eine pro Zeile. Mit dem Feld darüber und Enter fügst du sie bequem hinzu.</li>
-<li><b>Keine Game Changer:</b> lässt besonders starke Karten weg – sinnvoll für entspannte Runden.</li>
+<li><b>Karten, die ins Deck sollen:</b> eigene Lieblingskarten, eine pro Zeile. Mit dem Feld darüber und Enter fügst du sie hinzu.</li>
+<li><b>Keine Game Changer:</b> lässt besonders starke Karten weg, sinnvoll für entspannte Runden.</li>
 <li><b>Höchstpreis je Karte / Budget gesamt:</b> keine Karte über dem Höchstpreis bzw. das ganze Deck (ohne Standardländer) bleibt unter dem Budget. Karten ohne bekannten Preis werden dann nicht vorgeschlagen.</li>
 <li><b>Nicht verfügbare Karten:</b> Karten, die du nicht besitzt oder nicht spielen willst. Sie werden nie vorgeschlagen; die Liste merkt sich der Browser.</li></ul>
-<p>Zuerst wählt der Assistent Karten, die zum <b>Text des Commanders</b> passen (z. B. Marken, Spielsteine, Lebensgewinn oder seine Kreaturentypen) – die Gruppe heißt „Synergie mit dem Commander“. Der Rest beruht auf der allgemeinen Beliebtheit (EDHREC). Bei mehreren Farben werden bevorzugt Länder genommen, die zwei oder mehr Deckfarben liefern. Ein guter Startpunkt, aber kein Ersatz für eigenes Feintuning.</p>
+<p>Zuerst wählt der Assistent Karten, die zum <b>Text des Commanders</b> passen (z. B. Marken, Spielsteine, Lebensgewinn oder seine Kreaturentypen). Diese Gruppe heißt „Synergie mit dem Commander“. Der Rest beruht auf der allgemeinen Beliebtheit (EDHREC). Bei mehreren Farben werden bevorzugt Länder genommen, die zwei oder mehr Deckfarben liefern. Das Ergebnis ist ein Startpunkt, das Feintuning bleibt bei dir.</p>
 
 <h3 id=h-anpassen>Deck ansehen und anpassen</h3>
 <ul><li><b>Ansicht:</b> „Liste“ (kompakt, mit Preisen und Links) oder „Kartenbilder“.</li>
@@ -6301,8 +6305,8 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>🏷 Tags:</b> eigene Kategorien je Karte (z. B. Ramp, Wincon). Sie erscheinen als Etiketten in der Liste und im Bereich „Nach Tags“ zusammengefasst.</li>
 <li><b>↓ Maybe / Maybeboard:</b> Kandidaten, die (noch) nicht ins Deck zählen. Mit „↑ ins Deck“ holst du sie zurück; das Feld darüber nimmt neue Kandidaten auf.</li>
 <li><b>Tokens und Spielmaterial:</b> listet alle Tokens, die Karten des Decks erzeugen, mit der erzeugenden Karte.</li>
-<li><b>🖨 Proxys drucken:</b> Druckansicht in Originalgröße (63 × 88 mm, 9 je Seite, A4 oder Letter) – im Deck, in der Sammlung unter „Proxy-Druck“ für beliebige Kartenlisten und im Kaufassistenten. Wahlweise Kartenbild oder tintensparende Textfassung, Rückseiten doppelseitiger Karten, Tokens, nur fehlende Karten, ein bestimmter Druck per „(SET) Nr“. <b>Nur Kopien zum privaten Testen:</b> keine echten Karten, nicht verkaufen oder als echt ausgeben, in Turnieren nicht erlaubt; jede Kopie trägt fest den Vermerk „PROXY – keine echte Karte“. Mit „Drucken / als PDF speichern“ entsteht eine PDF-Datei; beim Drucken 100 % bzw. „Tatsächliche Größe“ wählen. Kartenrückseiten werden nicht gedruckt: die ausgeschnittene Kopie zusammen mit einer echten, wertlosen Karte (z. B. Standardland) in eine Hülle stecken, Kopie nach vorne – dann sehen alle Karten von hinten gleich aus, auch in durchsichtigen Hüllen.</li>
-<li><b>💡 Empfehlungen – Lücken und Filter:</b> Unter „Lücken nach Funktion“ zählt das Programm Ramp, Kartenziehen, gezieltes Removal und Board-Wipes und vergleicht mit Richtwerten (etwa 10 / 10 / 8 / 3). Fehlt etwas, stehen je Funktion sechs passende, verbreitete Karten in deinen Farben darunter (➕ fügt sie ein). „nur aus meiner Sammlung“ zeigt nur Karten, die du besitzt; „höchstens … € je Karte“ setzt eine Preisgrenze (eigene Karten gelten als kostenlos). Im Server-Betrieb fließen auch die veröffentlichten Galerie-Decks der anderen Benutzer ein.</li>
+<li><b>🖨 Proxys drucken:</b> Druckansicht in Originalgröße (63 × 88 mm, 9 je Seite, A4 oder Letter). Du findest sie im Deck, in der Sammlung unter „Proxy-Druck“ für beliebige Kartenlisten und im Kaufassistenten. Wahlweise Kartenbild oder tintensparende Textfassung, Rückseiten doppelseitiger Karten, Tokens, nur fehlende Karten, ein bestimmter Druck per „(SET) Nr“. <b>Nur Kopien zum privaten Testen:</b> keine echten Karten, nicht verkaufen oder als echt ausgeben, in Turnieren nicht erlaubt; jede Kopie trägt fest den Vermerk „PROXY – keine echte Karte“. Mit „Drucken / als PDF speichern“ entsteht eine PDF-Datei; beim Drucken 100 % bzw. „Tatsächliche Größe“ wählen. Kartenrückseiten werden nicht gedruckt: die ausgeschnittene Kopie zusammen mit einer echten, wertlosen Karte (z. B. Standardland) in eine Hülle stecken, Kopie nach vorne. Dann sehen alle Karten von hinten gleich aus, auch in durchsichtigen Hüllen.</li>
+<li><b>💡 Empfehlungen, Lücken und Filter:</b> Unter „Lücken nach Funktion“ zählt das Programm Ramp, Kartenziehen, gezieltes Removal und Board-Wipes und vergleicht mit Richtwerten (etwa 10 / 10 / 8 / 3). Fehlt etwas, stehen je Funktion sechs passende, verbreitete Karten in deinen Farben darunter (➕ fügt sie ein). „nur aus meiner Sammlung“ zeigt nur Karten, die du besitzt; „höchstens … € je Karte“ setzt eine Preisgrenze (eigene Karten gelten als kostenlos). Im Server-Betrieb fließen auch die veröffentlichten Galerie-Decks der anderen Benutzer ein.</li>
 <li><b>💡 Empfehlungen:</b> sucht ähnliche Decks (Precons, deine gespeicherten Decks und im Server-Betrieb die Galerie mit mindestens drei gemeinsamen Karten) und schlägt Karten vor, die dort oft mit deinen Karten zusammen gespielt werden oder zum Commander-Text passen. „Streichen erwägen“ nennt Karten mit wenig Rückhalt; mit 🏷 „Wincon“ oder „Combo“ markierte Karten werden nie vorgeschlagen. Decks mit guter Siegquote im Spielprotokoll zählen stärker.</li>
 <li><b>Frust-Index:</b> eigene Schätzung aus dem Kartentext, wie sehr ein Deck Mitspieler ärgern kann (Massen-Landzerstörung, Extra-Züge, Stax, Diebstahl, Gegenzauber, Tutoren, Game Changer). Er ersetzt die Salt-Werte von EDHREC, für die es keine offizielle Schnittstelle gibt.</li>
 <li><b>Preisentwicklung:</b> bei jeder Kartenaktualisierung (einmal täglich beim Start) werden geänderte Preise gesichert. Das Deck zeigt seinen Wert über die Zeit und die Karten mit den größten Änderungen der letzten 30 Tage.</li>
@@ -6312,34 +6316,34 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>Preise</b> sind Euro-Richtwerte aus den Scryfall-Daten (Marktpreise von Cardmarket).</li>
 <li><b>Manabasis:</b> zählt je Farbe die Quellen (Länder einschließlich Fetch- und Suchländern, Mana-Artefakte/-Kreaturen bis Manawert 2; Ramp-Zauber bis Manawert 3, die ein Land suchen, zählen halb) und berechnet, wie wahrscheinlich du jede Karte rechtzeitig wirken kannst. „Zu wenig Quellen“ heißt: mehr Länder oder Mana dieser Farbe einplanen. Die schwierigsten Karten stehen rechts.</li>
 <li><b>Probehand:</b> zieht 7 zufällige Karten; „Karte ziehen“ simuliert die nächsten Züge, „Mulligan“ mischt neu (London-Mulligan). Darüber steht eine Statistik aus 20.000 Starthänden: wie oft die Hand behaltbar ist (2–5 Länder) und wie oft du in Zug 1–4 ein Land spielen kannst.</li>
-<li><b>Deck-Editor:</b> „↶ Rückgängig“ / „↷ Wiederherstellen“ (auch Strg+Z / Strg+Y) nehmen jede Änderung an der Liste zurück (60 Schritte). Eigene Gruppen: eine Karte in eine andere Gruppe ziehen – beim Ziehen erscheint unten eine Leiste mit allen Gruppen, dem Maybeboard und „Entfernen“ – oder bei der Karte ⇄ antippen und eine Gruppe wählen bzw. eine neue anlegen. Eigene Gruppen werden mit dem Deck gespeichert, auf der Teilen-Seite als Abschnitte gezeigt und beim Archidekt-Export als Kategorie mitgegeben. „☐ Mehrfachauswahl“ setzt Häkchen vor die Karten; die markierten Karten lassen sich gemeinsam verschieben, taggen, ins Maybeboard legen oder entfernen. Die Ansicht „Stapel“ zeigt die Karten als Bildstapel nach Manawert; antippen sucht Ersatz.</li>
-<li><b>🎮 Testspielfeld:</b> spielt das Deck allein Zug für Zug durch (Goldfischen): Starthand behalten oder Mulligan (der erste ist frei), dann ziehen, Länder und Zauber spielen, Commander wirken (Steuer +2 pro Wurf). Der Spieltisch ist aufgebaut wie bei digitalen Kartenspielen: oben der Gegner (Leben, Stapel, verdeckte Hand), in der Mitte das Spielfeld – Kreaturen und Co. zur Mitte, Länder nach außen, gleiche Länder gestapelt –, unten deine Hand als Fächer. Links unten dein Avatar mit Lebenspunkten, daneben 📚 Bibliothek, 🪦 Friedhof, 🌀 Exil und die Kommandozone; rechts unten der große Knopf „Zug beenden“ (Leertaste) und 🃏 zum Ziehen. Oben die Phasenleiste (antippen markiert die Phase, die aktuelle antippen = weiter). <b>Bedienen:</b> Karte antippen zeigt nur die passenden Aktionen (z. B. „Ausspielen“, „Tappen“, „Wirken“), „Mehr“ den Rest; Karten lassen sich auch ziehen – auf das Spielfeld, 🪦, 🌀, 📚, die Hand oder die Kommandozone. Zweimal antippen tappt, lange drücken oder Rechtsklick zeigt die Karte groß. Avatar antippen: Leben, Gift, Commander-Schaden. Alles Weitere liegt hinter ⚙: Spielmatte (Farben des Decks, Filz, Pergament, Bild des Commanders), Textansicht „Aa“, Kartengröße, Querformat, Tokens aus dem Deck, Würfel und Münze, Statistik, Protokoll, Partie beenden. Kurze Meldungen zeigen, was gerade passiert ist; ↶ nimmt Schritte zurück (Taste Z). Regeln prüft der Tisch nicht.</li>
+<li><b>Deck-Editor:</b> „↶ Rückgängig“ / „↷ Wiederherstellen“ (auch Strg+Z / Strg+Y) nehmen jede Änderung an der Liste zurück (60 Schritte). Eigene Gruppen: eine Karte in eine andere Gruppe ziehen (beim Ziehen erscheint unten eine Leiste mit allen Gruppen, dem Maybeboard und „Entfernen“) oder bei der Karte ⇄ antippen und eine Gruppe wählen bzw. eine neue anlegen. Eigene Gruppen werden mit dem Deck gespeichert, auf der Teilen-Seite als Abschnitte gezeigt und beim Archidekt-Export als Kategorie mitgegeben. „☐ Mehrfachauswahl“ setzt Häkchen vor die Karten; die markierten Karten lassen sich gemeinsam verschieben, taggen, ins Maybeboard legen oder entfernen. Die Ansicht „Stapel“ zeigt die Karten als Bildstapel nach Manawert; antippen sucht Ersatz.</li>
+<li><b>🎮 Testspielfeld:</b> spielt das Deck allein Zug für Zug durch (Goldfischen): Starthand behalten oder Mulligan (der erste ist frei), dann ziehen, Länder und Zauber spielen, Commander wirken (Steuer +2 pro Wurf). Der Spieltisch ist aufgebaut wie bei digitalen Kartenspielen: oben der Gegner (Leben, Stapel, verdeckte Hand), in der Mitte das Spielfeld (Kreaturen und Co. zur Mitte, Länder nach außen, gleiche Länder gestapelt), unten deine Hand als Fächer. Links unten dein Avatar mit Lebenspunkten, daneben 📚 Bibliothek, 🪦 Friedhof, 🌀 Exil und die Kommandozone; rechts unten der große Knopf „Zug beenden“ (Leertaste) und 🃏 zum Ziehen. Oben die Phasenleiste (antippen markiert die Phase, die aktuelle antippen = weiter). <b>Bedienen:</b> Karte antippen zeigt nur die passenden Aktionen (z. B. „Ausspielen“, „Tappen“, „Wirken“), „Mehr“ den Rest; Karten lassen sich auch ziehen: auf das Spielfeld, 🪦, 🌀, 📚, die Hand oder die Kommandozone. Zweimal antippen tappt, lange drücken oder Rechtsklick zeigt die Karte groß. Avatar antippen: Leben, Gift, Commander-Schaden. Alles Weitere liegt hinter ⚙: Spielmatte (Farben des Decks, Filz, Pergament, Bild des Commanders), Textansicht „Aa“, Kartengröße, Querformat, Tokens aus dem Deck, Würfel und Münze, Statistik, Protokoll, Partie beenden. Kurze Meldungen zeigen, was gerade passiert ist; ↶ nimmt Schritte zurück (Taste Z). Regeln prüft der Tisch nicht.</li>
 
 <h3 id=h-import>Importieren und Speichern</h3>
 <ul><li><b>Speichern:</b> im umrahmten Feld „💾 Deck speichern“ direkt unter der Deck-Überschrift einen Namen eingeben und <b>Speichern</b> klicken. Gleicher Name = altes Deck wird überschrieben.</li>
-<li><b>Gespeicherte Decks</b> findest du im aufklappbaren Bereich „Deck importieren &amp; gespeicherte Decks“ – mit den Knöpfen „Mein Deck“ (laden), „Gegner“ (als Gegner verwenden), „Versionen“ und „Löschen“ (zweimal klicken).</li>
+<li><b>Gespeicherte Decks</b> findest du im aufklappbaren Bereich „Deck importieren &amp; gespeicherte Decks“, mit den Knöpfen „Mein Deck“ (laden), „Gegner“ (als Gegner verwenden), „Versionen“ und „Löschen“ (zweimal klicken).</li>
 <li><b>Teilen:</b> erzeugt einen Link auf eine Nur-Lese-Seite des gespeicherten Decks (mit Bildern, Tags, Notizen). „Link widerrufen“ macht ihn sofort ungültig. Im lokalen Betrieb funktioniert der Link nur auf dem PC bzw. im Heimnetz, im Server-Betrieb im Internet.</li>
-<li><b>📤 Senden:</b> Im Server-Betrieb wählst du einen anderen Benutzer und optional eine Nachricht; das Deck landet in dessen Postfach („📥 Erhaltene Decks“ oben unter Meine Decks, mit Zähler am Menüpunkt) und wird dort mit „Übernehmen“ als eigenes Deck gespeichert (bei gleichem Namen mit „(von …)“) oder abgelehnt. Ohne Benutzerkonten (lokal oder im Heimnetz) erzeugt „Senden“ einen Link samt QR-Code – über „Senden über …“ z. B. per Messenger. Die andere Person fügt den Link in ihrer Manaschmiede unter „Deck importieren“ ins Link-Feld ein; das Deck wird komplett übernommen. Der Link funktioniert, solange deine Manaschmiede für die andere Person erreichbar ist.</li>
-<li><b>Versionen:</b> jedes Mal, wenn du ein Deck mit geänderter Liste speicherst, wird die vorige Fassung aufgehoben (bis zu 30). Unter „Versionen“ siehst du, was seitdem dazugekommen oder weggefallen ist, und kannst eine alte Fassung wiederherstellen – die aktuelle bleibt dabei ebenfalls als Version erhalten. Beim Speichern kannst du eine <b>Notiz zur Änderung</b> mitgeben; im Versionsfenster lassen sich <b>zwei beliebige Fassungen vergleichen</b>.</li>
+<li><b>📤 Senden:</b> Im Server-Betrieb wählst du einen anderen Benutzer und optional eine Nachricht; das Deck landet in dessen Postfach („📥 Erhaltene Decks“ oben unter Meine Decks, mit Zähler am Menüpunkt) und wird dort mit „Übernehmen“ als eigenes Deck gespeichert (bei gleichem Namen mit „(von …)“) oder abgelehnt. Ohne Benutzerkonten (lokal oder im Heimnetz) erzeugt „Senden“ einen Link samt QR-Code, den du über „Senden über …“ z. B. per Messenger verschickst. Die andere Person fügt den Link in ihrer Manaschmiede unter „Deck importieren“ ins Link-Feld ein; das Deck wird komplett übernommen. Der Link funktioniert, solange deine Manaschmiede für die andere Person erreichbar ist.</li>
+<li><b>Versionen:</b> jedes Mal, wenn du ein Deck mit geänderter Liste speicherst, wird die vorige Fassung aufgehoben (bis zu 30). Unter „Versionen“ siehst du, was seitdem dazugekommen oder weggefallen ist, und kannst eine alte Fassung wiederherstellen. Die aktuelle bleibt dabei ebenfalls als Version erhalten. Beim Speichern kannst du eine <b>Notiz zur Änderung</b> mitgeben; im Versionsfenster lassen sich <b>zwei beliebige Fassungen vergleichen</b>.</li>
 <li><b>Deutsche Kartennamen:</b> Listen, Sammlungen und die Kartensuche verstehen auch deutsche (und andere fremdsprachige) Namen, z. B. „Blitzschlag“ → Lightning Bolt. Unbekannte Namen werden einmalig bei Scryfall nachgeschlagen und dann gemerkt; dafür ist eine Internetverbindung nötig.</li>
-<li><b>Importieren:</b> eine Liste einfügen (z. B. aus Moxfield „Export“), eine Datei wählen (.txt, .dck, .dec, .csv, .json) oder einen Link angeben (Archidekt, MTGGoldfish, TappedOut, Deckstats; Moxfield blockiert Links oft – dann die Liste kopieren). Dateien werden in jeder üblichen Zeichenkodierung erkannt, auch MTGO (.dek) und Cockatrice (.cod). Danach <b>Importieren</b>.</li>
+<li><b>Importieren:</b> eine Liste einfügen (z. B. aus Moxfield „Export“), eine Datei wählen (.txt, .dck, .dec, .csv, .json) oder einen Link angeben (Archidekt, MTGGoldfish, TappedOut, Deckstats; Moxfield blockiert Links oft, dann hilft es, die Liste zu kopieren). Dateien werden in jeder üblichen Zeichenkodierung erkannt, auch MTGO (.dek) und Cockatrice (.cod). Danach <b>Importieren</b>.</li>
 <li>Die Vorschau zeigt, ob der Commander erkannt wurde, welche Karten nicht gefunden oder korrigiert wurden und ob etwas nicht zur Farbidentität passt. Den Commander kannst du dort ändern; Partner mit „ + “ trennen.</li></ul>
 
-<h3 id=h-precons>Precons – fertige Commander-Decks</h3>
+<h3 id=h-precons>Precons: fertige Commander-Decks</h3>
 <ul><li>Der Bereich „🎁 Precons“ zeigt alle offiziellen Commander-Precons (vorkonstruierte Decks von Wizards of the Coast) mit vollständiger Deckliste, sortiert nach Set und Erscheinungsdatum. Die Listen kommen aus der frei verfügbaren Sammlung github.com/taw/magic-preconstructed-decks-data (auch Grundlage von mtg.wtf und MTGJSON) und werden mit den übrigen Daten automatisch aktualisiert.</li>
-<li>Suche nach Deckname, Commander oder Set; die Farbknöpfe zeigen nur Decks, die höchstens diese Farben haben. Je Deck stehen Wert (Summe der Einzelkarten, ohne Standardländer), Bracket-Schätzung und – wenn du eine Sammlung angelegt hast – wie viel davon du schon besitzt.</li>
-<li>Ein Deck antippen öffnet die Liste. „✏ Im Deck-Editor öffnen“ lädt es zum Anpassen (Analyse, Testspielfeld, Upgrades); „💾 In Meine Decks speichern“ legt eine eigene Kopie an; „⚔ Als Gegner“ setzt es für Vergleich und Forge-Duelle; „📥 Gekauft – in meine Sammlung“ fügt alle Karten deiner Sammlung hinzu (nach einer Rückfrage).</li>
+<li>Suche nach Deckname, Commander oder Set; die Farbknöpfe zeigen nur Decks, die höchstens diese Farben haben. Je Deck stehen Wert (Summe der Einzelkarten, ohne Standardländer), Bracket-Schätzung und, wenn du eine Sammlung angelegt hast, wie viel davon du schon besitzt.</li>
+<li>Ein Deck antippen öffnet die Liste. „✏ Im Deck-Editor öffnen“ lädt es zum Anpassen (Analyse, Testspielfeld, Upgrades); „💾 In Meine Decks speichern“ legt eine eigene Kopie an; „⚔ Als Gegner“ setzt es für Vergleich und Forge-Duelle; „📥 Gekauft: in meine Sammlung“ fügt alle Karten deiner Sammlung hinzu (nach einer Rückfrage).</li>
 <li>Sammlerversionen mit identischer Liste erscheinen nur einmal. Karten, die in der Kartendatenbank fehlen (z. B. ganz neue Promokarten), werden beim Deck genannt.</li></ul>
-<h3 id=h-brackets>Brackets – die offiziellen Stärkestufen</h3>
-<p>Mit den <b>Commander Brackets</b> (von Wizards of the Coast und dem Commander Format Panel, offiziell noch „Beta“) sprecht ihr vor der Partie ab, wie stark eure Decks sind, damit ähnlich starke Decks gegeneinander spielen. Sie sind eine Gesprächshilfe, kein Bauverbot.</p>
+<h3 id=h-brackets>Brackets: die offiziellen Stärkestufen</h3>
+<p>Mit den <b>Commander Brackets</b> (von Wizards of the Coast und dem Commander Format Panel, offiziell noch „Beta“) sprecht ihr vor der Partie ab, wie stark eure Decks sind, damit ähnlich starke Decks gegeneinander spielen. Sie helfen bei der Absprache und verbieten keine Karten.</p>
 <table class=ftable><tr><th>Bracket</th><th>Was ihr erwarten könnt</th><th>Deckbau-Regeln</th></tr>
-<tr><td><b>1 – Exhibition</b></td><td>Thema oder Idee vor Stärke, kaum optimiert; Partien dauern mindestens etwa 9 Züge.</td><td>keine Game Changer, keine Massen-Landzerstörung, keine Extra-Züge, keine Zwei-Karten-Combos</td></tr>
-<tr><td><b>2 – Core</b></td><td>Unoptimiert und geradlinig, Siege kommen nach und nach und lassen sich stören; entspannt und gesellig; mindestens etwa 8 Züge.</td><td>keine Game Changer, keine Massen-Landzerstörung, keine absichtlichen Zwei-Karten-Combos, Extra-Züge nur wenige und nicht hintereinander</td></tr>
-<tr><td><b>3 – Upgraded</b></td><td>Verstärkt mit guter Synergie und Kartenqualität, kann Gegner stören; der Sieg kann in einem großen Zug kommen; mindestens etwa 6 Züge.</td><td>höchstens 3 Game Changer, keine Massen-Landzerstörung, keine Extra-Zug-Ketten, keine Zwei-Karten-Combos, die vor etwa Zug 6 gewinnen</td></tr>
-<tr><td><b>4 – Optimized</b></td><td>Tödlich, beständig und schnell, aber nicht auf das Turnier-Metagame ausgerichtet; mindestens etwa 4 Züge.</td><td>nur die Bannliste</td></tr>
-<tr><td><b>5 – cEDH</b></td><td>Für das kompetitive Metagame gebaut; Partien können in jedem Zug enden.</td><td>nur die Bannliste</td></tr></table>
+<tr><td><b>1 Exhibition</b></td><td>Thema oder Idee vor Stärke, kaum optimiert; Partien dauern mindestens etwa 9 Züge.</td><td>keine Game Changer, keine Massen-Landzerstörung, keine Extra-Züge, keine Zwei-Karten-Combos</td></tr>
+<tr><td><b>2 Core</b></td><td>Unoptimiert und geradlinig, Siege kommen nach und nach und lassen sich stören; entspannt und gesellig; mindestens etwa 8 Züge.</td><td>keine Game Changer, keine Massen-Landzerstörung, keine absichtlichen Zwei-Karten-Combos, Extra-Züge nur wenige und nicht hintereinander</td></tr>
+<tr><td><b>3 Upgraded</b></td><td>Verstärkt mit guter Synergie und Kartenqualität, kann Gegner stören; der Sieg kann in einem großen Zug kommen; mindestens etwa 6 Züge.</td><td>höchstens 3 Game Changer, keine Massen-Landzerstörung, keine Extra-Zug-Ketten, keine Zwei-Karten-Combos, die vor etwa Zug 6 gewinnen</td></tr>
+<tr><td><b>4 Optimized</b></td><td>Tödlich, beständig und schnell, aber nicht auf das Turnier-Metagame ausgerichtet; mindestens etwa 4 Züge.</td><td>nur die Bannliste</td></tr>
+<tr><td><b>5 cEDH</b></td><td>Für das kompetitive Metagame gebaut; Partien können in jedem Zug enden.</td><td>nur die Bannliste</td></tr></table>
 <ul><li><b>Game Changer:</b> eine offizielle Liste besonders spielstarker Karten (zurzeit 53, Stand 9. Februar 2026, z. B. Rhystic Study, Smothering Tithe, Demonic Tutor). Sie sind nicht verboten, bestimmen aber das Bracket. Die Kennzeichnung kommt mit den Kartendaten von Scryfall und ist nach jeder Aktualisierung aktuell.</li>
-<li><b>Massen-Landzerstörung / Mana-Entzug:</b> Karten wie Armageddon oder „Länder enttappen nicht“ – in Bracket 1–3 nicht vorgesehen.</li>
+<li><b>Massen-Landzerstörung / Mana-Entzug:</b> Karten wie Armageddon oder „Länder enttappen nicht“. In Bracket 1–3 sind sie nicht vorgesehen.</li>
 <li><b>Extra-Züge:</b> wenige sind ab Bracket 2 in Ordnung, „Ketten“ (mehrere hintereinander oder in Schleife) erst ab Bracket 4. Das Programm wertet mehr als 3 Extra-Zug-Karten als Kette.</li>
 <li><b>Zwei-Karten-Combos:</b> zwei Karten, die zusammen das Spiel entscheiden (z. B. unendlich Schaden). Bracket 3 erlaubt sie nur, wenn sie nicht schon vor etwa Zug 6 zusammenkommen. Die Manaschmiede prüft das automatisch über Commander Spellbook, sobald ein Deck geladen ist (braucht Internet; ohne Verbindung bleibt dieser Punkt offen und lässt sich mit „🔗 Combos erneut prüfen“ nachholen). Der früheste Zug ist eine Schätzung aus vielen gezogenen Probehänden.</li>
 <li><b>So stuft die Manaschmiede ein:</b> In der Deckansicht zeigt „🎚 Bracket-Einstufung“ für jede Regel, was gefunden wurde, und daraus das niedrigste mögliche Bracket. Was ein Programm nicht sehen kann, bleibt offen: ob ein Deck ohne eingeschränkte Karten Bracket 1 oder 2 ist (Absicht) und ob ein starkes Deck 4 oder 5 ist (Turnier-Metagame). Deshalb legst du dein <b>Ziel-Bracket</b> selbst fest; es wird mit dem Deck gespeichert, steht als „B3“ in „Meine Decks“, in der Galerie (auch als Filter) und auf der Teilen-Seite. Ohne Angabe steht dort die Schätzung „≈B3“. Enthält das Deck Karten über dem gewählten Ziel, erscheint ⚠ mit den betreffenden Karten.</li>
@@ -6353,21 +6357,24 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <ul><li><b>Importieren:</b> im Bereich „Meine Sammlung“ eine CSV-Datei aus ManaBox, Moxfield, Deckbox, Archidekt oder Dragon Shield wählen oder eine Liste einfügen. „Hinzufügen“ zählt die Karten zur vorhandenen Sammlung dazu, „Ersetzen“ beginnt neu. Nicht erkannte Namen werden angezeigt.</li>
 <li><b>Besitzanteil:</b> bei jedem Deck steht, wie viel Prozent du besitzt und was fehlt (mit Preis). In der Liste markiert ✓ vorhandene Karten, ✗ fehlende und ⚠ Karten, die schon in einem anderen gespeicherten Deck stecken und von denen nicht genug Exemplare frei sind.</li>
 <li><b>Deckbau aus der Sammlung:</b> im Assistenten „Sammlung: bevorzugen“ (eigene Karten zuerst) oder „nur eigene Karten“ wählen. Standardländer gelten immer als vorhanden.</li>
-<li><b>📷 Karten scannen:</b> im Tab „Sammlung“ (oder in der Deckansicht neben „Hinzufügen“). Drei Wege: <b>Foto aufnehmen</b> (geht überall; am Handy öffnet sich die Kamera), <b>Live-Kamera</b> (im Browser nur über HTTPS bzw. am PC) und in der Android-App <b>„Mit der Handykamera scannen“</b> (Erkennung direkt auf dem Gerät, besonders schnell). Kartensprache einstellen, Karte formatfüllend und gerade aufnehmen. Erkannt wird der Name; bei Unsicherheit werden Alternativen angeboten. <b>Dauerscan:</b> in der Live-Kamera „🔁 Dauerscan starten“ (bzw. in der Android-App „Dauerscan mit der Handykamera“) – dann Karten nacheinander in den Rahmen legen; jede sicher erkannte Karte wird mit Ton automatisch in die Scanliste übernommen. Dieselbe Karte zählt erst wieder, wenn sie kurz aus dem Bild war; für mehrere gleiche Exemplare „+1“ tippen. Beim Einzelscan jede Karte mit „✓ Übernehmen“ in die Scanliste, Mengen mit + / − anpassen, am Ende „Zur Sammlung hinzufügen“ oder „Ins aktuelle Deck“. Beim allerersten Scan wird die Texterkennung einmalig geladen (rund 30 MB, Internet nötig), danach geht es ohne. Für sehr große Sammlungen sind spezialisierte Scanner-Apps (ManaBox, Delver Lens) schneller – deren CSV lässt sich weiterhin importieren.</li><li><b>🛒 Einkaufsliste:</b> zählt alle Karten, die dir für deine gespeicherten Decks fehlen, mit Preis und Deckzuordnung. „Karten wandern zwischen Decks“ (Standard) rechnet mit der größten Menge in einem Deck, sonst bekommt jedes Deck eigene Exemplare. Die Liste lässt sich kopieren – das Format „1 Kartenname“ je Zeile versteht auch die Wunschliste auf Cardmarket – oder komplett auf die eigene Wunschliste setzen.</li>
+<li><b>📷 Karten scannen:</b> im Tab „Sammlung“ (oder in der Deckansicht neben „Hinzufügen“). Drei Wege: <b>Foto aufnehmen</b> (geht überall; am Handy öffnet sich die Kamera), <b>Live-Kamera</b> (im Browser nur über HTTPS bzw. am PC) und in der Android-App <b>„Mit der Handykamera scannen“</b> (Erkennung direkt auf dem Gerät, besonders schnell). Kartensprache einstellen, Karte formatfüllend und gerade aufnehmen. Erkannt wird der Name; bei Unsicherheit werden Alternativen angeboten. <b>Dauerscan:</b> in der Live-Kamera „🔁 Dauerscan starten“ (bzw. in der Android-App „Dauerscan mit der Handykamera“), dann die Karten nacheinander in den Rahmen legen; jede sicher erkannte Karte wird mit Ton automatisch in die Scanliste übernommen. Dieselbe Karte zählt erst wieder, wenn sie kurz aus dem Bild war; für mehrere gleiche Exemplare „+1“ tippen. Beim Einzelscan jede Karte mit „✓ Übernehmen“ in die Scanliste, Mengen mit + / − anpassen, am Ende „Zur Sammlung hinzufügen“ oder „Ins aktuelle Deck“. Beim allerersten Scan wird die Texterkennung einmalig geladen (rund 30 MB, Internet nötig), danach geht es ohne. Für sehr große Sammlungen sind spezialisierte Scanner-Apps (ManaBox, Delver Lens) schneller, und deren CSV lässt sich weiterhin importieren.</li><li><b>🛒 Einkaufsliste:</b> zählt alle Karten, die dir für deine gespeicherten Decks fehlen, mit Preis und Deckzuordnung. „Karten wandern zwischen Decks“ (Standard) rechnet mit der größten Menge in einem Deck, sonst bekommt jedes Deck eigene Exemplare. Die Liste lässt sich kopieren (das Format „1 Kartenname“ je Zeile versteht auch die Wunschliste auf Cardmarket) oder komplett auf die eigene Wunschliste setzen.</li>
 <li><b>⭐ Wunschliste und Preisalarm:</b> Karten mit Anzahl und optionalem Zielpreis. Liegt der aktuelle Preis darunter, steht die Karte grün markiert in der Liste und als „🔔 Preisalarm“ auf der Startseite. Dort erscheinen auch Karten deiner Sammlung, deren Preis sich in etwa sieben Tagen um mindestens 20 % und 1 € verändert hat. Neue Preise kommen mit jeder Kartenaktualisierung.</li>
 <li><b>📁 Ordner:</b> Teile der Sammlung ordnen (z. B. Tauschordner, Binder). Ein Ordner enthält nur Karten, die du besitzt, und höchstens so viele, wie du hast; die Karten bleiben dabei Teil der Sammlung.</li>
-<li><b>🛒 Händler-Links:</b> Bei jeder Karte führen kleine Links direkt zum Händler: <b>CM</b> Cardmarket (günstigste Druckversion) und <b>TO</b> Trader-online (Suche nach der Karte). Bei Precons kommt <b>CC</b> cardcosmos dazu – dort gibt es nur versiegelte Ware, keine Einzelkarten. „🛒 Bei Cardmarket kaufen“ in Einkaufs- und Wunschliste kopiert die ganze Liste und öffnet die Wants-Seite von Cardmarket: neue Liste anlegen, „Decklist hinzufügen“, einfügen – der Shopping Wizard sucht dann die günstigste Händlerkombination. Anmeldung und Kauf laufen immer direkt beim Händler; die Manaschmiede überträgt keine Daten. Unter der Einkaufsliste lässt sich jeder Händler abschalten.</li>
+<li><b>🛒 Händler-Links:</b> Bei jeder Karte führen kleine Links direkt zum Händler: <b>CM</b> Cardmarket (günstigste Druckversion) und <b>TO</b> Trader-online (Suche nach der Karte). Bei Precons kommt <b>CC</b> cardcosmos dazu, das nur versiegelte Ware führt. „🛒 Bei Cardmarket kaufen“ in Einkaufs- und Wunschliste kopiert die ganze Liste und öffnet die Wants-Seite von Cardmarket: neue Liste anlegen, „Decklist hinzufügen“, einfügen. Der Shopping Wizard sucht dann die günstigste Händlerkombination. Anmeldung und Kauf laufen immer direkt beim Händler; die Manaschmiede überträgt keine Daten. Unter der Einkaufsliste lässt sich jeder Händler abschalten.</li>
 <li><b>📚 Bestand nach Druck:</b> jede Zeile ist ein Druck deiner Karte mit Set, Sammlernummer, Foil (normal, Foil, Etched), Zustand (Cardmarket-Stufen MT, NM, EX, GD, LP, PL, PO), Sprache und Anzahl. Alles lässt sich direkt in der Tabelle ändern; ✎ öffnet die Liste aller Drucke der Karte mit Bild und Preis (normal und Foil). Einträge mit gleichen Angaben werden zusammengelegt, Anzahl 0 entfernt den Eintrag. Oben über der Tabelle: „Druck wählen …“ fügt eine Karte in einem bestimmten Druck hinzu. Beim <b>Import</b> werden Set, Nummer, Foil, Zustand und Sprache aus ManaBox, Moxfield, Deckbox, Archidekt und Dragon Shield übernommen, aus Textlisten „2 Counterspell (MH2) 267 *F*“. Die Druckdaten (Set-Name, Bild, Cardmarket-Nummer) holt das Programm von Scryfall; ist Scryfall gerade nicht erreichbar, bleiben die Angaben erhalten und lassen sich später mit „Druckdaten nachladen“ ergänzen. <b>Wert:</b> der Cardmarket-Preis genau dieses Drucks (Foil mit Foil-Preis), sonst der Scryfall-Preis des Drucks; ohne bekannten Druck gilt der günstigste Druck der Karte. Zustand und Sprache ändern den Wert nicht, weil die Cardmarket-Preisliste sie nicht unterscheidet. Für Deckbau, Besitzanteil, Einkaufsliste und Ordner zählt die Summe je Karte. Der Export „Als CSV herunterladen“ enthält alle Druckangaben und lässt sich wieder einlesen (auch von Moxfield, ManaBox, Archidekt).</li>
+<li><b>🧭 Kaufassistent:</b> plant den Kauf fehlender Karten für ein Deck, alle Decks oder die Wunschliste. Mit Budget werden Karten, die in mehreren Decks stecken, zuerst eingeplant, danach die günstigsten; was nicht hineinpasst, ist markiert. Je Karte wählst du Druck und Foil, den Händler (Cardmarket oder Trader-online) oder „nicht kaufen“. Für Cardmarket kopiert der Assistent die Karten mit beliebigem Druck für die Wants-Liste; festgelegte Drucke und Foils legst du über die Produktlinks in den Warenkorb. Der Precon-Check zeigt Precons, die mehrere der fehlenden Karten enthalten. Gekaufte Karten ankreuzen und „als gekauft in die Sammlung“ übernehmen; die Wunschliste wird dabei gekürzt.</li>
+<li><b>🖨 Proxy-Druck:</b> druckt Kopien beliebiger Kartenlisten zum privaten Testen, siehe „Proxys drucken“ unter „Deck ansehen und anpassen“.</li>
 <li><b>📈 Wertverlauf:</b> der Wert der Sammlung je Stichtag (bei jeder Kartenaktualisierung) und zum Vergleich in Dollar.</li>
-<li><b>Preisquellen und Budget-Tausch:</b> Euro-Preise kommen direkt aus der öffentlichen <b>Cardmarket-Preisliste</b>, die jeden Tag neu geladen wird. Als Preis einer Karte gilt der Trendpreis ihrer <b>günstigsten Druckversion</b> – so viel kostet die Karte etwa, wenn man sie fürs Deck kauft. Ein Klick auf den Preis in der Kartensuche zeigt dazu Tiefstpreis, Durchschnitt über 1, 7 und 30 Tage, Foil-Preis und Zahl der Drucke; 🛒 öffnet die günstigste Druckversion auf Cardmarket. Ist die Preisliste einmal nicht erreichbar, gelten die zuletzt geladenen Cardmarket-Preise, ganz ohne Preisliste die Euro-Preise von Scryfall. Dollar-Preise (TCGplayer) liefert Scryfall. In der Deckansicht sucht „💸 Budget-Tausch“ für teure Karten (ab einstellbarem Preis, ohne eigene Karten) Ersatz mit gleicher Aufgabe für höchstens 30 % des Preises; ein Klick tauscht die Karte.</li></ul>
+<li><b>Preisquellen und Budget-Tausch:</b> Euro-Preise kommen direkt aus der öffentlichen <b>Cardmarket-Preisliste</b>, die jeden Tag neu geladen wird. Als Preis einer Karte gilt der Trendpreis ihrer <b>günstigsten Druckversion</b>, also etwa der Betrag, den du für eine spielbare Kopie bezahlst. Ein Klick auf den Preis in der Kartensuche zeigt dazu Tiefstpreis, Durchschnitt über 1, 7 und 30 Tage, Foil-Preis und Zahl der Drucke; 🛒 öffnet die günstigste Druckversion auf Cardmarket. Ist die Preisliste einmal nicht erreichbar, gelten die zuletzt geladenen Cardmarket-Preise, ganz ohne Preisliste die Euro-Preise von Scryfall. Dollar-Preise (TCGplayer) liefert Scryfall. In der Deckansicht sucht „💸 Budget-Tausch“ für teure Karten (ab einstellbarem Preis, ohne eigene Karten) Ersatz mit gleicher Aufgabe für höchstens 30 % des Preises; ein Klick tauscht die Karte.</li></ul>
 
 <h3 id=h-spieltisch>Spieltisch: Lebenszähler und Spielprotokoll</h3>
 <ul><li><b>Partie starten:</b> Spielerzahl (2–6) und Startleben wählen, Namen eintragen und je Spieler ein gespeichertes Deck auswählen oder frei eintippen.</li>
 <li><b>Tischansicht (Standard):</b> ein großes Feld je Spieler, die obere Reihe steht auf dem Kopf für die gegenüber Sitzenden (🔄 schaltet das ab). <b>Links tippen = −1, rechts tippen = +1, gedrückt halten = ±10</b> (wiederholt, solange der Finger liegt); die Änderung wird kurz angezeigt. Ist zum Spieler ein Deck mit Commander gespeichert oder ein Commander-Name eingetragen, erscheint dessen Kartenbild als Hintergrund. ☠/⚔ öffnet Gift, Commander-Schaden je Gegner, Monarch, „am Zug“ und Aufgeben. In der Mitte: 🎲 Startspieler auslosen, Zugzähler, ⏭ nächster Spieler, ⛶ Vollbild, 📋 Tabellenansicht.</li>
-<li><b>📡 Gemeinsamer Tisch (mehrere Handys):</b> Alle Geräte müssen dieselbe Manaschmiede nutzen (Server oder PC im Heimnetz mit „im Netzwerk starten“). Eine Person startet die Partie, wählt unten „Dein Platz“ und tippt „📡 Tisch teilen“ – es erscheinen ein vierstelliger Code, ein QR-Code und ein Link. Die anderen geben im Spieltisch bei „📡 Einem Tisch beitreten“ den Code ein (oder scannen den QR-Code) und wählen ihren Platz. Jedes Handy zeigt dann das eigene Feld groß und die Mitspieler klein darüber; Leben, Gift, Commander-Schaden (trägt der Getroffene ein), Zug und Monarch werden innerhalb etwa einer Sekunde abgeglichen. Jeder kann nur sein eigenes Feld ändern. Fällt ein Handy aus, hakt der Gastgeber „alle Felder anzeigen und steuern“ an. Speichern oder Abbrechen beim Gastgeber beendet den Tisch für alle. Nach dem Neuladen verbindet sich ein Handy von selbst wieder; offene Tische verfallen nach 12 Stunden ohne Änderung.</li>
+<li><b>📡 Gemeinsamer Tisch (mehrere Handys):</b> Alle Geräte müssen dieselbe Manaschmiede nutzen (Server oder PC im Heimnetz mit „im Netzwerk starten“). Eine Person startet die Partie, wählt unten „Dein Platz“ und tippt „📡 Tisch teilen“. Daraufhin erscheinen ein vierstelliger Code, ein QR-Code und ein Link. Die anderen geben im Spieltisch bei „📡 Einem Tisch beitreten“ den Code ein (oder scannen den QR-Code) und wählen ihren Platz. Jedes Handy zeigt dann das eigene Feld groß und die Mitspieler klein darüber; Leben, Gift, Commander-Schaden (trägt der Getroffene ein), Zug und Monarch werden innerhalb etwa einer Sekunde abgeglichen. Jeder kann nur sein eigenes Feld ändern. Fällt ein Handy aus, hakt der Gastgeber „alle Felder anzeigen und steuern“ an. Speichern oder Abbrechen beim Gastgeber beendet den Tisch für alle. Nach dem Neuladen verbindet sich ein Handy von selbst wieder; offene Tische verfallen nach 12 Stunden ohne Änderung.</li>
 <li><b>Tabellenansicht:</b> mit 📋 umschaltbar (🃏 wieder zurück, die Wahl wird gemerkt): Gift (ab 10 verloren) und Commander-Schaden je Gegner (ab 21 verloren). Wer verloren hat, wird ausgegraut. „Nächster Zug“ zählt die Runden. Der Stand bleibt beim Neuladen erhalten; am Handy bleibt der Bildschirm an.</li>
 <li><b>Partie beenden:</b> Sieger wählen (bleibt nur einer übrig, ist er vorausgewählt) und speichern. Die Statistik zeigt Partien, Siege und Siegquote je Deck und je Spieler sowie die letzten Partien.</li>
-<li><b>Forge-Ergebnisse:</b> nach einem Duell mit „Ins Spielprotokoll übernehmen“ zählen die KI-Partien mit (als „Forge“ gekennzeichnet).</li></ul>
+<li><b>Forge-Ergebnisse:</b> nach einem Duell mit „Ins Spielprotokoll übernehmen“ zählen die KI-Partien mit (als „Forge“ gekennzeichnet).</li>
+<li><b>🏆 Spielabend:</b> Mitspieler eintragen und Tische auslosen. Die Manaschmiede bildet möglichst Vierertische, sonst Dreiertische, und vermeidet Paarungen, die es an diesem Abend schon gab. Den Sieger tippst du an, die Rangliste zählt nur Siege. Eine Saison ist optional und wertet mehrere Abende zusammen. Mitspieler öffnen den Link oder QR-Code am Handy und tragen Sieger ohne eigenes Konto ein. „Am Handy-Tisch spielen“ startet den Lebenszähler mit den Spielern des Tisches und meldet den Sieger beim Speichern zurück.</li></ul>
 
 <h3 id=h-export>Exportieren und übertragen</h3>
 <ul><li><b>→ Moxfield / → Archidekt:</b> die Liste wird in die Zwischenablage kopiert und die Seite geöffnet. Dort ein neues Deck anlegen, den Import öffnen und mit <b>Strg+V</b> einfügen. (Beide Seiten erlauben keinen direkten Upload durch andere Programme.)</li>
@@ -6377,24 +6384,26 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 
 <h3 id=h-gegner>Gegner wählen und vergleichen</h3>
 <ul><li>Gegner kann ein offizielles <b>Precon</b> sein (Suchfeld oder passende Vorschläge) oder ein <b>eigenes Deck</b> (Knöpfe „Eigene Decks als Gegner“ oder „Als Gegner verwenden“ beim Import).</li>
-<li>Der <b>Vergleich</b> stellt Kennzahlen gegenüber: Ramp (Mana-Beschleunigung), Kartenvorteil, Entfernung, Massenentfernung, Länderzahl, Manawert, Game Changer, Tutoren, Kartenqualität. Grün markiert, wer vorne liegt. Das ist eine Papier-Analyse, keine Spielsimulation.</li>
+<li>Der <b>Vergleich</b> stellt Kennzahlen gegenüber: Ramp (Mana-Beschleunigung), Kartenvorteil, Entfernung, Massenentfernung, Länderzahl, Manawert, Game Changer, Tutoren, Kartenqualität. Grün markiert, wer vorne liegt. Der Vergleich rechnet nur mit den Decklisten; gespielt wird erst im Forge-Duell.</li>
 <li><b>Ideen aus dem Gegnerdeck:</b> beliebte Karten, die dein Deck nicht hat und die zu deinen Farben passen.</li></ul>
 
 <h3 id=h-combos>Combos</h3>
-<p>Combos sind Kartenkombinationen, die zusammen etwas Außergewöhnliches bewirken – oft sofortigen Sieg. Die Daten kommen von Commander Spellbook. Für jede Combo siehst du, wie wahrscheinlich du alle Teile bis Zug 6, 8 oder 10 zusammen hast (berechnet aus 1.500 simulierten Starthänden, ohne Störung durch Gegner). Früh mögliche Siegcombos heben die Bracket-Einstufung an.</p>
-<p>Zusätzlich zeigt die Analyse die <b>Einstufung von Commander Spellbook</b> (Ruthless, Spicy, Powerful, Oddball, Core, Exhibition) mit Begründung, z. B. Anzahl der Game Changer und Zwei-Karten-Combos. Unter <b>„Fast vollständig“</b> stehen Combos, denen genau eine Karte fehlt – mit dem Knopf „➕ … ins Deck“ fügst du sie direkt hinzu. Die fehlende Karte ist gestrichelt rot umrandet.</p>
+<p>Combos sind Kartenkombinationen, die zusammen etwas Außergewöhnliches bewirken, oft den sofortigen Sieg. Die Daten kommen von Commander Spellbook. Für jede Combo siehst du, wie wahrscheinlich du alle Teile bis Zug 6, 8 oder 10 zusammen hast (berechnet aus 1.500 simulierten Starthänden, ohne Störung durch Gegner). Früh mögliche Siegcombos heben die Bracket-Einstufung an.</p>
+<p>Zusätzlich zeigt die Analyse die <b>Einstufung von Commander Spellbook</b> (Ruthless, Spicy, Powerful, Oddball, Core, Exhibition) mit Begründung, z. B. Anzahl der Game Changer und Zwei-Karten-Combos. Unter <b>„Fast vollständig“</b> stehen Combos, denen genau eine Karte fehlt. Mit dem Knopf „➕ … ins Deck“ fügst du sie direkt hinzu. Die fehlende Karte ist gestrichelt rot umrandet.</p>
 
 <h3 id=h-duell>Direktes Duell mit Forge</h3>
-<p>Forge ist ein kostenloses Programm, das Magic mit allen Regeln spielt. Hier spielen zwei Computer-Gegner deine beiden Decks komplett gegeneinander – inklusive Combos.</p>
+<p>Forge ist ein kostenloses Programm, das Magic mit allen Regeln spielt. Hier spielen zwei Computer-Gegner deine beiden Decks komplett gegeneinander, Combos eingeschlossen.</p>
 <ol><li><b>Einmalig einrichten:</b> Java 17 oder neuer installieren (z. B. von adoptium.net) und Forge von github.com/Card-Forge/forge/releases installieren.</li>
-<li>Im Duell-Bereich den <b>Forge-Ordner</b> eintragen – den Ordner, in dem die Datei <code>forge-gui-desktop-…-jar-with-dependencies.jar</code> liegt – und <b>Speichern</b>. Es sollte „Forge ist bereit.“ erscheinen.</li>
-<li><b>Spielform:</b> „1 gegen 1“, „Commander-Runde zu dritt“ (ein weiterer Gegner) oder „Commander-Runde zu viert“ (zwei weitere Gegner) – jeweils passende Precons oder eigene Decks wählen. Mehrspieler-Partien dauern deutlich länger (1–10 Minuten je Partie); bei gleich starken Decks gewinnt jedes zu dritt etwa 33 %, zu viert etwa 25 %.</li>
+<li>Im Duell-Bereich den <b>Forge-Ordner</b> eintragen (den Ordner, in dem die Datei <code>forge-gui-desktop-…-jar-with-dependencies.jar</code> liegt) und <b>Speichern</b> drücken. Es sollte „Forge ist bereit.“ erscheinen.</li>
+<li><b>Spielform:</b> „1 gegen 1“, „Commander-Runde zu dritt“ (ein weiterer Gegner) oder „Commander-Runde zu viert“ (zwei weitere Gegner), dazu jeweils passende Precons oder eigene Decks wählen. Mehrspieler-Partien dauern deutlich länger (1–10 Minuten je Partie); bei gleich starken Decks gewinnt jedes zu dritt etwa 33 %, zu viert etwa 25 %.</li>
 <li><b>Precon wählen:</b> In der Liste „Precon auswählen“ stehen alle offiziellen Precons mit Namen, Commander und Farben, nach Set und Jahr geordnet; ganz oben die zu deinen Farben passenden. Wer den Namen kennt, kann auch im Suchfeld nach Precon, Commander oder Set suchen.</li>
-<li>Anzahl Partien wählen (10 ist ein guter Anfang) und <b>Duell starten</b>. Die erste Partie dauert etwas länger, weil Forge startet. Eine Partie dauert meist 0,5–3 Minuten.</li></ol>
+<li>Anzahl Partien wählen (10 ist ein guter Anfang) und <b>Duell starten</b>. Die erste Partie dauert etwas länger, weil Forge startet. Danach dauert eine Partie 1 gegen 1 je nach Decks etwa 15 Sekunden bis 3 Minuten.</li></ol>
+<p><b>⚙ KI-Einstellungen:</b> das KI-Profil deines Decks (die Gegner spielen mit „Default“) und die Vorausschau. Mit Vorausschau prüft die KI Züge vorher durch und spielt stärker, braucht aber länger: etwa 15 s je Partie ohne, 30 s mit und 50 s mit maximaler Vorausschau (1 gegen 1).</p>
+<p><b>🔬 Messlabor:</b> misst, ob ein Kartentausch hilft oder mit welchem KI-Profil Forge dein Deck am besten spielt. Alle Varianten spielen gleich oft gegen dieselben Gegner (bis zu vier), mit gleichem Zufallsstart. Die Stufen Schnell, Standard, Gründlich und Sehr gründlich zeigen vorab die ungefähre Dauer; während der Messung siehst du die Restzeit. Das Ergebnis nennt die Siegquote mit 90-%-Bereich und ein Urteil („deutlich besser“, „eher schlechter“ usw., erst ab 8 Partien je Variante). Eine bessere Variante übernimmst du mit einem Klick ins Deck, ein besseres Profil als KI-Pilot für dieses Deck. Frühere Messungen bleiben gespeichert.</p>
 <p><b>📊 Genaue Statistik:</b> unter dem Ergebnis eingeklappt. Je Deck: wie oft es begonnen (und dann gewonnen) hat, Ø Mulligans, in welcher Runde der Commander zuerst kam und wie oft er gewirkt wurde, Ø Länder und Zauber, Ø Schaden an Gegnern (davon im Kampf), die am häufigsten gewirkten Karten, die Karten mit dem meisten Schaden und „Schlüsselkarten“, mit denen das Deck deutlich öfter gewinnt als im Schnitt. Bei „Einzelne Partien“ zeigt <b>🔎 Verlauf</b> eine Partie Zug für Zug: Länder, Zauber, Commander, Angriffe, Schaden und Lebenspunkte, dazu ein Diagramm der Lebenspunkte. „Runde“ zählt die eigenen Züge eines Spielers.</p>
-<p><b>🃏 Selbst spielen:</b> „Im Browser“ öffnet denselben Spieltisch mit deinem Deck und dem Gegner; du spielst beide Seiten. Nach „Zug beenden“ kommt der andere Spieler nach unten, ⇅ wechselt die Seite jederzeit. „Partie beenden“ (⚙) trägt das Ergebnis ins Spielprotokoll ein. Im lokalen Betrieb legt „🖥 In Forge selbst spielen“ beide Decks in Forge ab und öffnet Forge: dort links „Commander“ wählen, Spieler 1 ist dein Deck, Spieler 2 die KI mit dem Gegnerdeck – Forge prüft dann alle Regeln.</p>
-<p><b>📱 Am Handy:</b> quer gehalten ist der Tisch am besten lesbar; im Hochformat holt 📱 oben Vollbild und Querformat (Android/Chrome; auf dem iPhone das Handy einfach drehen). Die Hand ragt nur halb ins Bild und hebt sich beim Antippen. Für kleine Bildschirme helfen „Aa“ (Textkacheln mit Regeltext und Stärke/Widerstand) und die Kartengröße im ⚙-Menü.</p>
-<p><b>Ergebnis lesen:</b> Siege in Prozent, durchschnittlicher Siegzug, Siegart (z. B. Commander-Schaden, Combo) und welche Karte gewonnen hat. Die KI spielt solide, aber nicht perfekt – aussagekräftig sind Tendenzen über viele Partien. Läuft eine Partie zu lange, wird sie als Unentschieden gewertet.</p>
+<p><b>🃏 Selbst spielen:</b> „Im Browser“ öffnet denselben Spieltisch mit deinem Deck und dem Gegner; du spielst beide Seiten. Nach „Zug beenden“ kommt der andere Spieler nach unten, ⇅ wechselt die Seite jederzeit. „Partie beenden“ (⚙) trägt das Ergebnis ins Spielprotokoll ein. Im lokalen Betrieb legt „🖥 In Forge selbst spielen“ beide Decks in Forge ab und öffnet Forge: dort links „Commander“ wählen, Spieler 1 ist dein Deck, Spieler 2 die KI mit dem Gegnerdeck. Forge prüft dabei alle Regeln.</p>
+<p><b>📱 Am Handy:</b> quer gehalten ist der Tisch am besten lesbar; im Hochformat holt 📱 oben Vollbild und Querformat (Android/Chrome; auf dem iPhone das Handy drehen). Die Hand ragt nur halb ins Bild und hebt sich beim Antippen. Für kleine Bildschirme helfen „Aa“ (Textkacheln mit Regeltext und Stärke/Widerstand) und die Kartengröße im ⚙-Menü.</p>
+<p><b>Ergebnis lesen:</b> Siege in Prozent, durchschnittlicher Siegzug, Siegart (z. B. Commander-Schaden, Combo) und welche Karte gewonnen hat. Die KI spielt solide, macht aber Fehler. Aussagekräftig sind deshalb erst Tendenzen über viele Partien. Wie die KI dein Deck am besten spielt und ob ein Kartentausch hilft, misst das 🔬 Messlabor unter dem Duell. Läuft eine Partie zu lange, wird sie als Unentschieden gewertet.</p>
 
 <h3 id=h-regeln>Offizielle Regeln</h3>
 <p>Die vollständigen <b>Comprehensive Rules</b> von Wizards of the Coast (englisch), automatisch in der neuesten Fassung. Suche nach</p>
@@ -6407,18 +6416,19 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 
 <h3 id=h-update>Automatische Aktualisierung</h3>
 <ul><li>Bei jedem Start wird geprüft: <b>Regeln</b> (neue Fassung bei Wizards?), <b>Precons</b> (neue Decklisten?) und <b>Kartendaten</b> (werden neu geladen, wenn sie älter als 7 Tage sind und Scryfall neuere hat).</li>
-<li>Es wird nur heruntergeladen, wenn sich wirklich etwas geändert hat. Ohne Internet läuft alles mit den vorhandenen Daten weiter.</li>
+<li>Heruntergeladen wird nur, was sich geändert hat. Ohne Internet läuft alles mit den vorhandenen Daten weiter.</li>
 <li>Mit <b>Jetzt aktualisieren</b> im Balken oben prüfst du sofort; <b>Alles neu laden</b> erzwingt einen frischen Download.</li>
 <li>Gespeicherte Decks, Einstellungen und Forge-Ordner bleiben bei Aktualisierungen erhalten.</li></ul>
 
 <h3 id=h-geraete>Handy, Tablet und andere Geräte</h3>
-<ul><li><b>Im Heimnetz:</b> auf dem PC mit <code>Commander-DB im Netzwerk starten.bat</code> (oder <code>python commander_db_v15.py serve --lan</code>) starten. Im schwarzen Fenster erscheint eine Adresse wie <code>http://192.168.178.23:8000/?key=…</code> – diese im Browser von Handy oder Tablet öffnen (gleiches WLAN). Der Code im Link schützt vor fremdem Zugriff; danach merkt sich der Browser die Freigabe.</li>
-<li>Windows fragt beim ersten Mal, ob Python im Netzwerk kommunizieren darf – für <b>private Netzwerke</b> erlauben.</li>
+<ul><li><b>Im Heimnetz:</b> auf dem PC mit <code>Commander-DB im Netzwerk starten.bat</code> (oder <code>python commander_db_vNN.py serve --lan</code>) starten. Im schwarzen Fenster erscheint eine Adresse wie <code>http://192.168.178.23:8000/?key=…</code>. Diese Adresse im Browser von Handy oder Tablet öffnen (gleiches WLAN). Der Code im Link schützt vor fremdem Zugriff; danach merkt sich der Browser die Freigabe.</li>
+<li>Windows fragt beim ersten Mal, ob Python im Netzwerk kommunizieren darf. Für <b>private Netzwerke</b> erlauben.</li>
 <li>Duelle laufen dabei auf dem PC; das Handy zeigt nur die Ergebnisse.</li>
-<li><b>Mac und Linux:</b> das Skript läuft dort genauso (Python 3 installieren, dann <code>python3 commander_db_v15.py serve</code>).</li>
-<li><b>Im Internet (Server):</b> läuft die Datenbank auf einem Server, öffnest du einfach dessen Adresse (z. B. <code>https://commander.deine-domain.de</code>) und meldest dich mit Benutzername und Passwort an. Jeder Benutzer hat eigene gespeicherte Decks. Neue Benutzer legt der Administrator über „Benutzer verwalten“ an.</li>
+<li><b>Mac und Linux:</b> das Skript läuft dort genauso (Python 3 installieren, dann <code>python3 commander_db_vNN.py serve</code>).</li>
+<li><b>Im Internet (Server):</b> läuft die Datenbank auf einem Server, öffnest du dessen Adresse (z. B. <code>https://commander.deine-domain.de</code>) und meldest dich mit Benutzername und Passwort an. Jeder Benutzer hat eigene gespeicherte Decks. Neue Benutzer legt der Administrator über „Benutzer verwalten“ an.</li>
 <li><b>Als App installieren:</b> auf Android in Chrome die Serveradresse öffnen, dann „📲 Als App installieren“ (oder Menü ⋮ → „App installieren“). Unter Windows in Edge oder Chrome genauso über das Installieren-Symbol in der Adressleiste. Die App erscheint dann im App-Menü bzw. Startmenü und öffnet sich im eigenen Fenster.</li>
-<li><b>Android-App (APK):</b> fragt beim ersten Start nach der Serveradresse und zeigt danach dieselben Inhalte; Dateien werden im Download-Ordner gespeichert.</li></ul>
+<li><b>Android-App (APK):</b> fragt beim ersten Start nach der Serveradresse und zeigt danach dieselben Inhalte; Dateien werden im Download-Ordner gespeichert.</li>
+<li><b>Impressum und Datenschutz:</b> Ist der Server aus dem Internet erreichbar, trägt der Administrator unter „Impressum &amp; Datenschutz“ in der oberen Leiste Name, Anschrift und E-Mail ein. Die Seiten <code>/impressum</code> und <code>/datenschutz</code> sind in der Fußzeile verlinkt.</li></ul>
 
 <h3 id=h-begriffe>Begriffe</h3>
 <dl><dt>Ramp</dt><dd>Karten, die zusätzliches Mana bringen (z. B. Sol Ring, Länder suchen).</dd>
@@ -6429,7 +6439,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <dt>Game Changer</dt><dd>Offizielle Liste besonders spielstarker Karten; sie bestimmen mit, in welches Bracket ein Deck gehört.</dd>
 <dt>Bracket</dt><dd>Offizielle Stärkestufe 1 (sehr locker) bis 5 (Turnierniveau, cEDH).</dd>
 <dt>Precon</dt><dd>Fertig gekauftes, offizielles Commander-Deck.</dd>
-<dt>Farbidentität</dt><dd>Alle Farbsymbole auf der Karte, auch im Regeltext – bestimmt die erlaubten Farben im Deck.</dd>
+<dt>Farbidentität</dt><dd>Alle Farbsymbole auf der Karte, auch im Regeltext. Sie bestimmt die erlaubten Farben im Deck.</dd>
 <dt>EDHREC-Rang</dt><dd>Wie oft eine Karte in Commander-Decks gespielt wird (kleiner = beliebter).</dd>
 <dt>Mulligan</dt><dd>Neue Starthand ziehen, wenn die erste schlecht ist.</dd>
 <dt>Combo</dt><dd>Karten, die zusammen eine besonders starke oder spielentscheidende Wirkung haben.</dd></dl>
@@ -6440,7 +6450,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <dt>„Java ist zu alt“ / „Java nicht gefunden“</dt><dd>Java 17 oder neuer installieren und das Programm neu starten.</dd>
 <dt>„Keine Datei forge-gui-desktop… gefunden“</dt><dd>Falscher Forge-Ordner. Im Explorer nach „forge-gui-desktop“ suchen und den Ordner der Datei eintragen.</dd>
 <dt>Moxfield-Link funktioniert nicht</dt><dd>In Moxfield „Export“ → Liste kopieren und einfügen.</dd>
-<dt>Combos „nicht erreichbar“</dt><dd>Keine Internetverbindung oder Commander Spellbook gerade nicht erreichbar – später erneut versuchen.</dd>
+<dt>Combos „nicht erreichbar“</dt><dd>Keine Internetverbindung oder Commander Spellbook gerade nicht erreichbar. Später erneut versuchen.</dd>
 <dt>Aktualisierung „fehlgeschlagen“</dt><dd>Meist fehlt kurz das Internet. Die alten Daten bleiben nutzbar; später „Jetzt aktualisieren“ klicken.</dd></dl>
 <p class=hint>Kartendaten: Scryfall · Precons: mtg.wtf/MTGJSON · Combos: Commander Spellbook · Regeln: Wizards of the Coast · Regel-Engine: Forge. Magic: The Gathering ist eine Marke von Wizards of the Coast; dieses Programm ist ein privates Fan-Werkzeug ohne Verbindung zu Wizards.</p>
 </div></div>
@@ -6455,33 +6465,33 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <div class=hero>
 <div class=orbs aria-hidden=true><span class="orb w"></span><span class="orb u"></span><span class="orb b"></span><span class="orb r"></span><span class="orb g"></span></div>
 <h1 class=herot>Willkommen in der Manaschmiede!</h1>
-<p class=herosub>Baue, teste und vergleiche deine Decks für das Commander-Format von <b>Magic: The Gathering</b> – 100 Karten, ein Commander und bis zu drei Gegner am Tisch.</p>
+<p class=herosub>Baue, teste und vergleiche deine Decks für das Commander-Format von <b>Magic: The Gathering</b>: 100 Karten, ein Commander und bis zu drei Gegner am Tisch.</p>
 <form id=wquick autocomplete=off><span class=ac><input id=wcmd placeholder="Mit welchem Commander möchtest du spielen?" size=40></span>
 <button class=primary>Deck bauen ✦</button></form>
 <div id=palert class=palert hidden></div>
-<p class=hint>Noch keine Idee? Einfach „Atraxa“, „Krenko“ oder „Edgar Markov“ eintippen – oder <a href="#deck" id=wsug>💡 Commander nach Farbe und Thema vorschlagen lassen</a>.</p>
-<a href="#neu" class=newbtn>🌱 <b>Neu bei Magic oder Commander?</b> Hier in Ruhe starten – Grundlagen, erstes Deck, erste Partie</a>
+<p class=hint>Noch keine Idee? „Atraxa“, „Krenko“ oder „Edgar Markov“ eintippen oder <a href="#deck" id=wsug>💡 Commander nach Farbe und Thema vorschlagen lassen</a>.</p>
+<a href="#neu" class=newbtn>🌱 <b>Neu bei Magic oder Commander?</b> Hier in Ruhe starten: Grundlagen, erstes Deck, erste Partie</a>
 </div>
 <div id=recent></div>
 <div class=tiles>
 <a class="tile w" href="#neu"><span class=tt>Neu hier?</span><span class=ta>🌱</span><span class=tx>Magic und Commander von Grund auf: Karten, Zugablauf, Commander-Regeln, erstes Deck und erste Partie.</span></a>
-<a class="tile w" href="#deck"><span class=tt>Deck bauen</span><span class=ta>🛠</span><span class=tx>Der Assistent stellt ein vollständiges Deck zusammen – passend zu Commander, Budget und Sammlung. Danach frei anpassen.</span></a>
+<a class="tile w" href="#deck"><span class=tt>Deck bauen</span><span class=ta>🛠</span><span class=tx>Der Assistent stellt ein vollständiges Deck zusammen, passend zu Commander, Budget und Sammlung. Danach frei anpassen.</span></a>
 <a class="tile r" href="#gegner"><span class=tt>Gegner &amp; Duell</span><span class=ta>⚔</span><span class=tx>Mit offiziellen Precons oder eigenen Decks vergleichen, Combos finden und KI-Partien mit Forge spielen lassen.</span></a>
 <a class="tile u" href="#decks"><span class=tt>Meine Decks</span><span class=ta>📂</span><span class=tx>Decks importieren (Moxfield, Archidekt, Dateien), speichern, Versionen vergleichen und teilen.</span></a>
-<a class="tile g" href="#sammlung"><span class=tt>Sammlung</span><span class=ta>📦</span><span class=tx>Karten mit der Handykamera scannen oder aus ManaBox &amp; Co. übernehmen – und sehen, was für ein Deck fehlt.</span></a>
-<a class="tile b" href="#spieltisch"><span class=tt>Spieltisch</span><span class=ta>🎲</span><span class=tx>Lebenszähler mit Commander-Schaden und Gift, Spielprotokoll und Siegquoten je Deck.</span></a>
+<a class="tile g" href="#sammlung"><span class=tt>Sammlung</span><span class=ta>📦</span><span class=tx>Karten mit der Handykamera scannen oder aus ManaBox &amp; Co. übernehmen. Der Kaufassistent plant, was für ein Deck noch fehlt.</span></a>
+<a class="tile b" href="#spieltisch"><span class=tt>Spieltisch</span><span class=ta>🎲</span><span class=tx>Lebenszähler mit Commander-Schaden und Gift, Spielprotokoll, Siegquoten je Deck und Spielabende mit Rangliste.</span></a>
 <a class="tile c" href="#suche"><span class=tt>Kartensuche</span><span class=ta>🔎</span><span class=tx>Alle Commander-Karten nach Name, Text, Typ, Farbe und Manawert durchsuchen.</span></a>
 <a class="tile c" href="#regeln"><span class=tt>Regeln</span><span class=ta>📖</span><span class=tx>Die offiziellen Comprehensive Rules von Wizards of the Coast mit Suche und Glossar.</span></a>
-<a class="tile c" href="#" data-h=start><span class=tt>Hilfe</span><span class=ta>❓</span><span class=tx>Schritt für Schritt erklärt – auch für alle, die Commander noch nicht kennen.</span></a>
+<a class="tile c" href="#" data-h=start><span class=tt>Hilfe</span><span class=ta>❓</span><span class=tx>Schritt für Schritt erklärt, auch für alle, die Commander noch nicht kennen.</span></a>
 </div>
 </section>
 <section id=v-neu class=page hidden>
 <div class=guide>
 <h2>🌱 Neu hier? So kommst du ins Spiel</h2>
-<p class=herosub style="margin-left:0">Du hast noch nie Magic gespielt oder kennst Magic, aber nicht Commander? Hier steht alles, was du für die erste Partie brauchst – in Ruhe zum Durchlesen, ohne Fachchinesisch.</p>
+<p class=herosub style="margin-left:0">Du hast noch nie Magic gespielt oder kennst Magic, aber nicht Commander? Hier steht alles, was du für die erste Partie brauchst, in Ruhe zum Durchlesen und ohne Fachchinesisch.</p>
 <div class=gpick>
 <a href="#g-magic" class="gbtn w">✨ <b>Komplett neu bei Magic</b><span>Grundlagen: Karten, Mana, Zugablauf, Kampf</span></a>
-<a href="#g-commander" class="gbtn u">👑 <b>Neu bei Commander</b><span>Ich kenne Magic – was ist bei Commander anders?</span></a>
+<a href="#g-commander" class="gbtn u">👑 <b>Neu bei Commander</b><span>Ich kenne Magic. Was ist bei Commander anders?</span></a>
 <a href="#g-deck" class="gbtn g">🛠 <b>Mein erstes Deck</b><span>Fertiges Deck oder selbst bauen</span></a>
 <a href="#g-partie" class="gbtn r">🎲 <b>Die erste Partie</b><span>Schritt für Schritt vom Mischen bis zum Sieg</span></a>
 </div>
@@ -6497,12 +6507,12 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <div class=gcard><h4>Die fünf Farben</h4>
 <p>Fast jede Karte gehört zu einer oder mehreren Farben. Jede Farbe hat ihren eigenen Stil:</p>
 <ul class=gcol>
-<li><span class="pip pW">W</span> <b>Weiß</b> – Ordnung und Gemeinschaft: viele kleine Kreaturen, Schutz, Lebenspunkte gewinnen, alles auf einmal zerstören.</li>
-<li><span class="pip pU">U</span> <b>Blau</b> – Wissen und Kontrolle: Karten ziehen, gegnerische Zauber verhindern, Dinge zurück auf die Hand schicken.</li>
-<li><span class="pip pB">B</span> <b>Schwarz</b> – Macht um jeden Preis: Kreaturen vernichten, Tote aus dem Friedhof zurückholen, Leben für Vorteile bezahlen.</li>
-<li><span class="pip pR">R</span> <b>Rot</b> – Feuer und Tempo: direkter Schaden, schnelle Angriffe, Chaos.</li>
-<li><span class="pip pG">G</span> <b>Grün</b> – Natur und Wachstum: große Kreaturen, zusätzliche Länder und viel Mana.</li>
-<li><span class="pip pC">◇</span> <b>Farblos</b> – Artefakte und manche Kreaturen passen in jedes Deck.</li></ul>
+<li><span class="pip pW">W</span> <b>Weiß:</b> Ordnung und Gemeinschaft: viele kleine Kreaturen, Schutz, Lebenspunkte gewinnen, alles auf einmal zerstören.</li>
+<li><span class="pip pU">U</span> <b>Blau:</b> Wissen und Kontrolle: Karten ziehen, gegnerische Zauber verhindern, Dinge zurück auf die Hand schicken.</li>
+<li><span class="pip pB">B</span> <b>Schwarz:</b> Macht um jeden Preis: Kreaturen vernichten, Tote aus dem Friedhof zurückholen, Leben für Vorteile bezahlen.</li>
+<li><span class="pip pR">R</span> <b>Rot:</b> Feuer und Tempo: direkter Schaden, schnelle Angriffe, Chaos.</li>
+<li><span class="pip pG">G</span> <b>Grün:</b> Natur und Wachstum: große Kreaturen, zusätzliche Länder und viel Mana.</li>
+<li><span class="pip pC">◇</span> <b>Farblos:</b> Artefakte und manche Kreaturen passen in jedes Deck.</li></ul>
 <p>Das passende Land zu jeder Farbe: Ebene (Weiß), Insel (Blau), Sumpf (Schwarz), Gebirge (Rot), Wald (Grün).</p></div>
 
 <div class=gcard><h4>Kartenarten</h4>
@@ -6511,7 +6521,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <tr><td><b>Land</b></td><td>Gibt Mana. Du darfst <b>ein Land pro Zug</b> spielen, kostet nichts.</td></tr>
 <tr><td><b>Kreatur</b></td><td>Bleibt liegen und kann angreifen und blocken. Unten rechts stehen <b>Stärke/Widerstandskraft</b>, z. B. 3/2: macht 3 Schaden, stirbt bei 2 Schaden.</td></tr>
 <tr><td><b>Hexerei</b> (Sorcery)</td><td>Einmaliger Effekt, nur in deinem eigenen Zug, wenn sonst nichts passiert.</td></tr>
-<tr><td><b>Spontanzauber</b> (Instant)</td><td>Einmaliger Effekt, <b>jederzeit</b> – auch im Zug der anderen, als Reaktion.</td></tr>
+<tr><td><b>Spontanzauber</b> (Instant)</td><td>Einmaliger Effekt, <b>jederzeit</b>, auch im Zug der anderen als Reaktion.</td></tr>
 <tr><td><b>Artefakt</b> und <b>Verzauberung</b></td><td>Bleiben liegen und wirken dauerhaft, z. B. zusätzliches Mana oder ein laufender Vorteil.</td></tr>
 <tr><td><b>Planeswalker</b></td><td>Mächtige Verbündete mit Loyalität; einmal pro Zug eine ihrer Fähigkeiten nutzen. Können angegriffen werden.</td></tr>
 </table></div>
@@ -6521,17 +6531,17 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 
 <div class=gcard><h4>Ein Zug läuft so ab</h4>
 <ol class=gsteps>
-<li><b>Enttappen</b> – alle deine Karten wieder gerade drehen.</li>
-<li><b>Versorgung</b> – Effekte „zu Beginn deines Zuges“ passieren jetzt.</li>
-<li><b>Ziehen</b> – eine Karte vom Deck nehmen.</li>
-<li><b>Erste Hauptphase</b> – Land spielen, Kreaturen und andere Karten wirken.</li>
-<li><b>Kampf</b> – du wählst angreifende Kreaturen (sie werden getappt) und wen sie angreifen. Jeder Angegriffene darf mit ungetappten Kreaturen blocken. Ungeblockter Schaden geht auf die Lebenspunkte, geblockte Kreaturen kämpfen gegeneinander.</li>
-<li><b>Zweite Hauptphase</b> – noch einmal Karten spielen (z. B. was du vor dem Angriff nicht zeigen wolltest).</li>
-<li><b>Ende</b> – mehr als sieben Handkarten? Überzählige abwerfen. Schaden an Kreaturen verschwindet.</li></ol>
+<li><b>Enttappen:</b> alle deine Karten wieder gerade drehen.</li>
+<li><b>Versorgung:</b> Effekte „zu Beginn deines Zuges“ passieren jetzt.</li>
+<li><b>Ziehen:</b> eine Karte vom Deck nehmen.</li>
+<li><b>Erste Hauptphase:</b> Land spielen, Kreaturen und andere Karten wirken.</li>
+<li><b>Kampf:</b> Du wählst angreifende Kreaturen (sie werden getappt) und wen sie angreifen. Jeder Angegriffene darf mit ungetappten Kreaturen blocken. Ungeblockter Schaden geht auf die Lebenspunkte, geblockte Kreaturen kämpfen gegeneinander.</li>
+<li><b>Zweite Hauptphase:</b> noch einmal Karten spielen (z. B. was du vor dem Angriff nicht zeigen wolltest).</li>
+<li><b>Ende:</b> mehr als sieben Handkarten? Überzählige abwerfen. Schaden an Kreaturen verschwindet.</li></ol>
 <p>Dann ist die nächste Person im Uhrzeigersinn dran.</p></div>
 
 <div class=gcard><h4>Reagieren: der Stapel</h4>
-<p>Wird etwas gewirkt, dürfen alle darauf antworten, etwa mit einem Spontanzauber. Antworten kommen „oben drauf“ und werden <b>zuerst</b> abgehandelt – der zuletzt gewirkte Zauber wirkt zuerst. Für den Anfang reicht: Bevor ein Zauber wirkt, kurz fragen, ob jemand reagieren möchte.</p></div>
+<p>Wird etwas gewirkt, dürfen alle darauf antworten, etwa mit einem Spontanzauber. Antworten kommen „oben drauf“ und werden <b>zuerst</b> abgehandelt. Der zuletzt gewirkte Zauber wirkt also zuerst. Für den Anfang reicht: Bevor ein Zauber wirkt, kurz fragen, ob jemand reagieren möchte.</p></div>
 
 <div class=gcard><h4>Häufige Fähigkeiten</h4>
 <table class=gtab>
@@ -6549,28 +6559,28 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 
 <h3 id=g-commander>👑 Teil 2: Was macht Commander besonders?</h3>
 <div class=gcard><ul class=gbig>
-<li><b>Ein Anführer:</b> Dein Deck hat einen <b>Commander</b> – meist eine legendäre Kreatur. Er liegt zu Beginn in der <b>Kommandozone</b> neben dem Spielfeld und kann von dort jederzeit gewirkt werden, als hättest du ihn auf der Hand.</li>
-<li><b>100 Karten, jede nur einmal:</b> Das Deck hat genau 100 Karten einschließlich Commander. Jede Karte darf nur einmal vorkommen – außer Standardländern (Ebene, Insel, Sumpf, Gebirge, Wald, Ödnis) und Karten, die es ausdrücklich erlauben.</li>
+<li><b>Ein Anführer:</b> Dein Deck hat einen <b>Commander</b>, meist eine legendäre Kreatur. Er liegt zu Beginn in der <b>Kommandozone</b> neben dem Spielfeld und kann von dort jederzeit gewirkt werden, als hättest du ihn auf der Hand.</li>
+<li><b>100 Karten, jede nur einmal:</b> Das Deck hat genau 100 Karten einschließlich Commander. Jede Karte darf nur einmal vorkommen. Ausgenommen sind Standardländer (Ebene, Insel, Sumpf, Gebirge, Wald, Ödnis) und Karten, die es ausdrücklich erlauben.</li>
 <li><b>Farbidentität:</b> Alle Karten müssen zu den Farben deines Commanders passen. Gezählt werden alle Manasymbole auf der Karte, auch im Regeltext. Ein rot-grüner Commander erlaubt also nur rote, grüne und farblose Karten.</li>
 <li><b>40 Lebenspunkte</b> statt 20, und meist sitzen <b>drei oder vier Personen</b> am Tisch, jede gegen jede.</li>
 <li><b>Commander-Steuer:</b> Stirbt dein Commander oder würde er ins Exil gehen, darfst du ihn stattdessen in die Kommandozone zurücklegen. Jedes weitere Wirken kostet <b>2 Mana mehr</b> als das letzte Mal.</li>
-<li><b>Commander-Schaden:</b> Wer insgesamt <b>21 Kampfschaden von demselben Commander</b> erhalten hat, verliert – egal wie viele Lebenspunkte noch übrig sind.</li>
+<li><b>Commander-Schaden:</b> Wer insgesamt <b>21 Kampfschaden von demselben Commander</b> erhalten hat, verliert, egal wie viele Lebenspunkte noch übrig sind.</li>
 <li><b>Freier Mulligan:</b> Gefällt dir die Starthand nicht, mischst du neu und ziehst sieben Karten. In Partien mit mehreren Gegnern ist der erste Mulligan frei, danach legst du je Mulligan eine Karte unter das Deck.</li>
 <li><b>Ziehen im ersten Zug:</b> In Partien mit mehr als zwei Personen zieht auch, wer anfängt, im ersten Zug eine Karte.</li></ul></div>
 
 <div class=gcard><h4>Spielstärke absprechen</h4>
-<p>Commander ist ein gemeinschaftliches Format: Alle sollen Spaß haben. Sprecht vor der Partie kurz ab, wie stark eure Decks sind („Rule 0“). Dafür gibt es offizielle <b>Brackets</b> (Stufen 1–5): von sehr gemütlichen Themendecks bis zu turnierstarken Decks. Viele fertige Precons liegen in Stufe 2 oder 3. Besonders starke Karten stehen auf der Liste der <b>Game Changer</b> – die Manaschmiede markiert sie und kann sie beim Deckbau weglassen. Die Stufe deines Decks zeigt die Deckansicht unter „🎚 Bracket-Einstufung“ mit Begründung; die ausführliche Erklärung steht in der Hilfe unter „Brackets“.</p></div>
+<p>Commander ist ein gemeinschaftliches Format: Alle sollen Spaß haben. Sprecht vor der Partie kurz ab, wie stark eure Decks sind („Rule 0“). Dafür gibt es offizielle <b>Brackets</b> (Stufen 1–5): von sehr gemütlichen Themendecks bis zu turnierstarken Decks. Viele fertige Precons liegen in Stufe 2 oder 3. Besonders starke Karten stehen auf der Liste der <b>Game Changer</b>. Die Manaschmiede markiert sie und kann sie beim Deckbau weglassen. Die Stufe deines Decks zeigt die Deckansicht unter „🎚 Bracket-Einstufung“ mit Begründung; die ausführliche Erklärung steht in der Hilfe unter „Brackets“.</p></div>
 
 <div class=gcard><h4>Am Tisch mit mehreren</h4>
-<ul><li>Greif nicht immer dieselbe Person an – wer vorne liegt, wird zum Ziel.</li>
+<ul><li>Greif nicht immer dieselbe Person an. Zum Ziel wird, wer vorne liegt.</li>
 <li>Absprachen („Ich greife dich nicht an, wenn …“) sind erlaubt, aber nicht bindend.</li>
 <li>Erkläre deine Karten, wenn jemand fragt, und lies sie bei Unsicherheit laut vor.</li>
-<li>Lebenspunkte und Commander-Schaden offen führen – der <a href="#spieltisch">🎲 Spieltisch</a> nimmt dir das ab.</li></ul></div>
+<li>Lebenspunkte und Commander-Schaden offen führen. Der <a href="#spieltisch">🎲 Spieltisch</a> nimmt dir das ab.</li></ul></div>
 
 <h3 id=g-deck>🛠 Teil 3: Dein erstes Deck</h3>
-<div class=gcard><h4>Weg A – fertiges Deck (empfohlen für den Anfang)</h4>
-<p>Vorkonstruierte Commander-Decks („<b>Precons</b>“) sind sofort spielbar und untereinander ausgeglichen. Unter <a href="#gegner">⚔ Gegner &amp; Duell</a> findest du alle Precons mit Kartenliste und kannst sie gegeneinander antreten lassen – so siehst du vor dem Kauf, welches dir liegt.</p></div>
-<div class=gcard><h4>Weg B – selbst bauen mit dem Assistenten</h4>
+<div class=gcard><h4>Weg A: fertiges Deck (empfohlen für den Anfang)</h4>
+<p>Vorkonstruierte Commander-Decks („<b>Precons</b>“) sind sofort spielbar und untereinander ausgeglichen. Unter <a href="#precons">🎁 Precons</a> findest du alle Precons mit Kartenliste, und unter <a href="#gegner">⚔ Gegner &amp; Duell</a> kannst du sie gegeneinander antreten lassen. So siehst du vor dem Kauf, welches dir liegt.</p></div>
+<div class=gcard><h4>Weg B: selbst bauen mit dem Assistenten</h4>
 <ol class=gsteps>
 <li>Unter <a href="#deck">🛠 Deck bauen</a> die Lieblingsfarben anklicken und/oder ein Thema eintragen, z. B. „Drachen“, „Tokens“ oder „Friedhof“.</li>
 <li><b>„💡 Commander vorschlagen“</b> zeigt passende Commander mit Bild. Einen auswählen.</li>
@@ -6581,11 +6591,11 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <h3 id=g-partie>🎲 Teil 4: Die erste Partie</h3>
 <div class=gcard><ol class=gsteps>
 <li><b>Aufbauen:</b> Commander offen in die Kommandozone legen, die übrigen 99 Karten mischen. Den <a href="#spieltisch">🎲 Spieltisch</a> öffnen, Namen eintragen, Partie starten.</li>
-<li><b>Startspieler:</b> im Spieltisch 🎲 antippen – das Los entscheidet.</li>
+<li><b>Startspieler:</b> im Spieltisch 🎲 antippen, dann entscheidet das Los.</li>
 <li><b>Starthand:</b> alle ziehen sieben Karten. Zu wenige oder zu viele Länder (gut sind 3–4)? Mulligan nehmen.</li>
 <li><b>Spielen:</b> Reihum im Uhrzeigersinn. In den ersten Zügen Länder legen und Ramp spielen, dann den Commander wirken.</li>
 <li><b>Leben zählen:</b> Im Spieltisch rechts tippen = +1, links = −1, gedrückt halten = ±10. Commander-Schaden über ⚔ eintragen.</li>
-<li><b>Ende:</b> Wer zuletzt übrig ist, gewinnt. Sieger im Spieltisch wählen und speichern – so entsteht deine Statistik.</li></ol></div>
+<li><b>Ende:</b> Wer zuletzt übrig ist, gewinnt. Sieger im Spieltisch wählen und speichern. Daraus entsteht deine Statistik.</li></ol></div>
 
 <div class=gcard><h4>Kleines Wörterbuch</h4>
 <table class=gtab>
@@ -6598,16 +6608,16 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <tr><td><b>Token / Spielstein</b></td><td>durch Effekte erzeugte Kreatur oder Gegenstand ohne echte Karte</td></tr>
 <tr><td><b>Staple</b></td><td>Karte, die in sehr vielen Decks steckt (z. B. Sol Ring)</td></tr>
 <tr><td><b>Combo</b></td><td>wenige Karten, die zusammen sofort gewinnen oder Endloses erzeugen</td></tr>
-<tr><td><b>Proxy</b></td><td>Platzhalter-Ausdruck zum Testen – <a href="#decks">📂 Meine Decks</a> kann sie drucken</td></tr>
+<tr><td><b>Proxy</b></td><td>Platzhalter-Ausdruck zum Testen, druckbar im Deck und unter <a href="#sammlung">📦 Sammlung</a></td></tr>
 </table></div>
 <p class=hint>Noch Fragen? ❓ oben rechts erklärt jede Funktion der Manaschmiede. Das vollständige offizielle Regelwerk steht unter <a href="#regeln">📖 Regeln</a>.</p>
 </div>
 </section>
 <section id=v-deck class=page hidden>
-<div class=openline id=openbox><b>📂 Gespeichertes Deck öffnen:</b> <select id=opensel><option value="">– Deck wählen –</option></select>
+<div class=openline id=openbox><b>📂 Gespeichertes Deck öffnen:</b> <select id=opensel><option value="">Deck wählen …</option></select>
 <button type=button id=openbtn class=primary>Öffnen</button> <a href="#decks">alle Decks verwalten</a></div>
 <h3>Deckbau-Assistent <button type=button class=qh data-h=bauen>?</button></h3>
-<p class=hint>Alle Felder sind optional – eine Angabe genügt. Namen werden beim Tippen vorgeschlagen.</p>
+<p class=hint>Alle Felder sind optional, eine Angabe genügt. Namen werden beim Tippen vorgeschlagen.</p>
 <form id=b autocomplete=off>
 <span class=ac><input name=commander id=cmd placeholder="Commander (Partner: A + B)" size=34></span>
 <input name=theme placeholder="Thema: Mill, Lifegain, Stompy ..." size=26 list=th>
@@ -6620,25 +6630,25 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <label>Höchstpreis je Karte € <input name=maxprice id=maxprice size=5 inputmode=decimal></label> &nbsp;
 <label>Budget gesamt € <input name=budget id=budget size=6 inputmode=decimal></label> &nbsp;
 <label>Sammlung: <select name=coll id=coll><option value="">nicht beachten</option><option value=prefer>bevorzugen</option><option value=only>nur eigene Karten</option></select></label><br>
-<details id=exbox><summary>Nicht verfügbare Karten (<span id=excount>0</span>) – werden nie vorgeschlagen</summary>
+<details id=exbox><summary>Nicht verfügbare Karten (<span id=excount>0</span>), werden nie vorgeschlagen</summary>
 <span class=ac><input id=exadd placeholder="Karte hinzufügen (Enter)" size=30></span>
 <button type=button id=exclear>Liste leeren</button><br>
 <textarea name=exclude id=exclude rows=4 cols=70 placeholder="Eine Karte pro Zeile"></textarea></details>
 <button class=primary>Deck vorschlagen</button></form>
-<div id=csugbox class=csugbox><b>💡 Noch keinen Commander?</b> Farben oben anklicken und/oder ein Thema eintragen (z. B. Drachen, Tokens, Friedhof, Lebensgewinn) –
+<div id=csugbox class=csugbox><b>💡 Noch keinen Commander?</b> Farben oben anklicken und/oder ein Thema eintragen (z. B. Drachen, Sagen, Tokens, Friedhof, Lebensgewinn).
 <button type=button id=csugbtn class=primary>Commander vorschlagen</button>
 <label><input type=checkbox id=cfewer> auch mit weniger Farben</label><div id=csug></div></div>
 <p class=view>Ansicht: <button type=button data-v=list>Liste</button><button type=button data-v=img>Kartenbilder</button><button type=button data-v=stack>Stapel</button></p>
 <div id=out></div>
 </section>
 <section id=v-gegner class=page hidden>
-<p id=nogegner class=hint>Zuerst im Tab <a href="#deck">„Deck bauen“</a> ein Deck erstellen oder unter <a href="#decks">„Meine Decks“</a> eines laden – dann hier den Gegner wählen.</p>
+<p id=nogegner class=hint>Zuerst im Tab <a href="#deck">„Deck bauen“</a> ein Deck erstellen oder unter <a href="#decks">„Meine Decks“</a> eines laden. Danach wählst du hier den Gegner.</p>
 <div id=cmpbox><h3>Gegner wählen: Precon oder eigenes Deck <button type=button class=qh data-h=gegner>?</button></h3>
 <p class=hint>Vergleicht die Deckwerte mit dem Gegnerdeck; darunter Combos und das Duell über Forge.</p>
 <p id=oppinfo class=big></p>
 <div class=chips id=oppdecks></div>
 <div id=pmissing></div>
-<label for=pall><b>Precon auswählen:</b></label> <select id=pall><option value="">– alle offiziellen Precons, nach Erscheinen sortiert –</option></select><br>
+<label for=pall><b>Precon auswählen:</b></label> <select id=pall><option value="">Alle offiziellen Precons (nach Erscheinen sortiert)</option></select><br>
 <span class=ac><input id=pq placeholder="… oder nach Precon, Commander oder Set suchen" size=44></span>
 <div class=chips id=psugg></div>
 <div id=cmp></div><div id=combos></div><div id=duel></div><div id=pview></div></div>
@@ -6664,7 +6674,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <label><input type=radio name=collmode value=add checked> zur Sammlung hinzufügen</label>
 <label><input type=radio name=collmode value=replace> Sammlung ersetzen</label>
 <button type=button id=collgo class=primary>Sammlung importieren</button>
-<button type=button id=collexp title="mit Set, Nummer, Foil, Zustand, Sprache – lesbar für Moxfield, ManaBox, Archidekt">Als CSV herunterladen</button> <button type=button id=collexpn>CSV nur mit Namen</button> <button type=button id=collclr>Sammlung leeren</button>
+<button type=button id=collexp title="mit Set, Nummer, Foil, Zustand und Sprache, lesbar für Moxfield, ManaBox und Archidekt">Als CSV herunterladen</button> <button type=button id=collexpn>CSV nur mit Namen</button> <button type=button id=collclr>Sammlung leeren</button>
 <div id=collres></div></details>
 <details class=subbox id=invbox><summary><b>📚 Bestand nach Druck, Foil, Zustand</b> <span class=hint id=invsum></span></summary>
 <p class=hint>Jede Zeile ist ein Druck deiner Karten. Druck, Foil, Zustand, Sprache und Anzahl lassen sich direkt ändern; Einträge mit gleichen Angaben werden zusammengelegt. Für Deckbau und Einkaufsliste zählt die Summe je Karte.</p>
@@ -6681,8 +6691,8 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <p class=hint>Plant den Kauf fehlender Karten: für ein Deck, alle Decks oder die Wunschliste. Je Karte Druck, Foil und Händler wählbar; gekaufte Karten landen mit dem gewählten Druck in der Sammlung.</p>
 <div id=buyctl></div><div id=buyres></div></details>
 <details class=subbox id=pxbox><summary><b>🖨 Proxy-Druck</b> <span class=hint>Kopien beliebiger Karten zum Testen</span></summary>
-<p class=hint>Druckt Kopien von Karten in Originalgröße – als Kartenbild oder tintensparend nur mit Text. <b>Nur Kopien zum privaten Testen, keine echten Karten:</b> jede Kopie trägt den Vermerk „PROXY – keine echte Karte“.</p>
-<p class=hint>🃏 Die Kopie mit einer echten, wertlosen Karte (z. B. Standardland) in eine Hülle stecken – so sehen alle Karten von hinten gleich aus, auch in durchsichtigen Hüllen.</p>
+<p class=hint>Druckt Kopien von Karten in Originalgröße, als Kartenbild oder tintensparend nur mit Text. <b>Nur Kopien zum privaten Testen, keine echten Karten:</b> jede Kopie trägt den Vermerk „PROXY – keine echte Karte“.</p>
+<p class=hint>🃏 Die Kopie mit einer echten, wertlosen Karte (z. B. Standardland) in eine Hülle stecken. So sehen alle Karten von hinten gleich aus, auch in durchsichtigen Hüllen.</p>
 <button type=button class=primary id=pxopen>🖨 Proxys zusammenstellen</button></details>
 <details class=subbox id=wishbox><summary><b>⭐ Wunschliste &amp; Preisalarm</b> <span class=hint id=wishsum></span></summary>
 <p class=hint>Karten, die du kaufen möchtest. Mit Zielpreis erscheint auf der Startseite ein Hinweis, sobald der Preis darunter fällt (geprüft bei jeder Kartenaktualisierung).</p>
@@ -6722,8 +6732,8 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <select id=galsort><option value=new>neueste zuerst</option><option value=likes>beliebteste zuerst</option><option value=eur>günstigste zuerst</option></select>
 <button class=primary id=galgo>🔎 Suchen</button></form>
 <div id=galres></div></section>
-<section id=v-precons class=page hidden><h3>🎁 Precons – fertige Commander-Decks <button type=button class=qh data-h=precons>?</button></h3>
-<p class=hint id=pcintro>Alle offiziellen Commander-Precons mit vollständiger Deckliste. Antippen zeigt die Liste; von dort kannst du das Deck im Editor öffnen, speichern, als Gegner nehmen oder – wenn du es gekauft hast – in deine Sammlung übernehmen.</p>
+<section id=v-precons class=page hidden><h3>🎁 Precons: fertige Commander-Decks <button type=button class=qh data-h=precons>?</button></h3>
+<p class=hint id=pcintro>Alle offiziellen Commander-Precons mit vollständiger Deckliste. Antippen zeigt die Liste; von dort kannst du das Deck im Editor öffnen, speichern, als Gegner nehmen oder, wenn du es gekauft hast, in deine Sammlung übernehmen.</p>
 <form id=pcf class=galf><input id=pcq placeholder="Suche: Deckname, Commander oder Set" size=36><span class=galci id=pcci></span>
 <select id=pcset title="Set"><option value="">alle Sets</option></select>
 <select id=pcsort><option value=new>neueste zuerst</option><option value=old>älteste zuerst</option><option value=eur>günstigste zuerst</option><option value=eurd>teuerste zuerst</option><option value=own>meiste Karten in meiner Sammlung</option></select></form>
@@ -6757,13 +6767,13 @@ Combos: <a href="https://commanderspellbook.com" target=_blank rel=noopener>Comm
 const $=(t,x,h)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(h){e.href=h;e.target='_blank'}return e};
 const J=async(u,body)=>{try{const r=await fetch(u,body?{method:'POST',body:new URLSearchParams(body)}:undefined);
  if(r.status==401&&!u.startsWith('/api/login')){location.href='/login';return {error:'Bitte anmelden.'}}
- return await r.json()}catch(e){return {error:'Keine Verbindung zum Server – läuft das Programm noch? ('+e.message+')'}}};
+ return await r.json()}catch(e){return {error:'Keine Verbindung zum Server. Läuft das Programm noch? ('+e.message+')'}}};
 // Wer bin ich? (lokal: kein Login; Server: Benutzer, Admin-Rechte, Grenzen)
 let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{if(!m.error)ME=m;return ME});
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='59';
+const PAGE_VERSION='60';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -6805,7 +6815,7 @@ function markMobNav(v){if(v=='start')v='deck';document.querySelectorAll('#mobnav
  const mb=E('mobmorebtn');if(mb)mb.classList.toggle('on',MOBMORE.some(x=>x[0]==v))}
 function applyLayout(){const ph=isPhone();document.body.classList.toggle('mob',ph);if(!ph&&E('mobmore'))E('mobmore').classList.remove('open');
  const b=E('layoutbtn');if(b){b.textContent=layoutPref=='auto'?(ph?'📱 auto':'🖥 auto'):(layoutPref=='mobile'?'📱 Handy':'🖥 PC');
-  b.title='Ansicht: '+(layoutPref=='auto'?'automatisch ('+(ph?'Handy erkannt':'PC erkannt')+')':layoutPref=='mobile'?'immer Handy':'immer PC')+' – antippen zum Wechseln'}
+  b.title='Ansicht: '+(layoutPref=='auto'?'automatisch ('+(ph?'Handy erkannt':'PC erkannt')+')':layoutPref=='mobile'?'immer Handy':'immer PC')+', antippen zum Wechseln'}
  if(ph)buildMobNav()}
 E('layoutbtn').onclick=()=>{layoutPref=layoutPref=='auto'?(isPhone()?'desktop':'mobile'):layoutPref=='mobile'?'desktop':'auto';
  try{localStorage.setItem('layout',layoutPref)}catch(e){};applyLayout()};
@@ -6851,8 +6861,8 @@ async function setCommander(n){
  if(ds.some(d=>!d.name)){ci.readOnly=false;cih.textContent='Commander nicht gefunden';ciBtns();return}
  cmd.value=ds.map(d=>d.name).join(' + ');
  ci.value=[...'WUBRG'].filter(c=>ds.some(d=>(d.ci||'').includes(c))).join('')||'C';ci.readOnly=true;ciBtns();
- cih.textContent='aus Commander übernommen'+(ds.every(d=>d.can_be_commander)?'':' – Achtung: kein gültiger Commander');
- if(ds.length==2){const pc=await J('/api/partner_check?commander='+encodeURIComponent(cmd.value));if(pc.error){cih.textContent+=' – Achtung: '+pc.error;cih.className='warn'}else cih.className='hint'}
+ cih.textContent='aus Commander übernommen'+(ds.every(d=>d.can_be_commander)?'':'. Achtung: kein gültiger Commander');
+ if(ds.length==2){const pc=await J('/api/partner_check?commander='+encodeURIComponent(cmd.value));if(pc.error){cih.textContent+='. Achtung: '+pc.error;cih.className='warn'}else cih.className='hint'}
 }
 ac(cmd,{get:v=>names(true)(v.split(' + ').pop()),pick:setCommander});
 cmd.addEventListener('change',()=>setCommander());
@@ -6907,12 +6917,12 @@ function recBox(o){const hh=$('h4','Empfehlungen, Streichvorschläge und Frust-I
  b.onclick=async()=>{res.innerHTML='';P(res,'rechne ...','hint');
   const r=await J('/api/recommend',{list:deck.export,commander:deck.commander||'',extra:JSON.stringify(deckExtra()),owned:ow.checked?1:0,maxeur:me.value});res.innerHTML='';
   if(r.error){P(res,r.error,'warn');return}
-  const f=r.frust;P(res,'Frust-Index: '+f.level+' ('+String(f.score).replace('.',',')+' Punkte)'+(f.hits.length?' – '+f.hits.map(h=>h.label+': '+h.cards.length).join(', '):''),'big');
+  const f=r.frust;P(res,'Frust-Index: '+f.level+' ('+String(f.score).replace('.',',')+' Punkte)'+(f.hits.length?': '+f.hits.map(h=>h.label+': '+h.cards.length).join(', '):''),'big');
   if(f.hits.length){const d=$('details');d.append($('summary','Karten dazu'));f.hits.forEach(h=>d.append($('div',h.label+': '+h.cards.join(', '))));res.append(d)}
   P(res,f.hint,'hint');
   const cols=$('div');cols.className='cols';res.append(cols);
   const list=(title,items,act)=>{const c=$('div');c.id=title.startsWith('Ergänzen')?'recadd':'reccut';c.append($('h4',title));
-   if(!items.length)P(c,'Keine Vorschläge – zu wenig ähnliche Decks.','hint');
+   if(!items.length)P(c,'Keine Vorschläge, weil es zu wenig ähnliche Decks gibt.','hint');
    items.forEach(x=>{const r=$('div');r.append(cardName(x.name,x.scryfall,x.image),' ',manaEl(x.mana||''),x.eur!=null?'  · '+Number(x.eur).toFixed(2)+' €':'');
     if(x.owned){const ok=$('span',' ✓ Sammlung');ok.className='owned';r.append(ok)}
     const w=$('div',x.why);w.className='hint';r.append(act(x),w);c.append(r)});cols.append(c)};
@@ -6923,7 +6933,7 @@ function recBox(o){const hh=$('h4','Empfehlungen, Streichvorschläge und Frust-I
    const ok=Object.entries(r.counts||{}).filter(([k])=>!r.gaps.some(g=>g.role==k));
    if(!r.gaps.length)P(gb,'Ramp, Kartenziehen, Removal und Board-Wipes erreichen die Richtwerte (10 / 10 / 8 / 3).','hint');
    r.gaps.forEach(g=>{const d=$('div');d.className='recgap';d.dataset.role=g.role;
-    d.append($('b',g.label+': '+g.have+' von etwa '+g.target),$('span',' – es fehlen '+(g.target-g.have)));
+    d.append($('b',g.label+': '+g.have+' von etwa '+g.target),$('span',', es fehlen '+(g.target-g.have)));
     if(!g.cards.length)P(d,r.owned_filter?'Keine passende Karte in deiner Sammlung.':'Keine passende Karte gefunden'+(r.maxeur?' (Preisgrenze)':'')+'.','hint');
     g.cards.forEach(x=>{const row=$('div');row.className='recgcard';row.append(cardName(x.name,x.scryfall,x.image),' ',manaEl(x.mana||''),x.eur!=null?'  · '+Number(x.eur).toFixed(2)+' €':'');
      if(x.owned){const o2=$('span',' ✓ Sammlung');o2.className='owned';row.append(o2)}
@@ -6940,7 +6950,7 @@ async function priceBox(o){const r=await J('/api/price_history',{list:deck.expor
   const t=document.createElementNS(ns,'title');t.textContent=x.day+': '+x.value.toFixed(2).replace('.',',')+' €';c.append(t);svg.append(c)});
  o.append(svg);const a=s[0],z=s[s.length-1];
  P(o,'Deckwert '+a.day+': '+a.value.toFixed(2).replace('.',',')+' € → '+z.day+': '+z.value.toFixed(2).replace('.',',')+' € ('+(z.value>=a.value?'+':'')+(z.value-a.value).toFixed(2).replace('.',',')+' €)','big');
- if(r.usd)P(o,'Zweite Preisquelle – TCGplayer (USA) über Scryfall: ca. '+r.usd.toFixed(2).replace('.',',')+' $'+(r.usd_missing?' ('+r.usd_missing+' Karten ohne Dollarpreis)':''),'hint');
+ if(r.usd)P(o,'Zweite Preisquelle, TCGplayer (USA) über Scryfall: ca. '+r.usd.toFixed(2).replace('.',',')+' $'+(r.usd_missing?' ('+r.usd_missing+' Karten ohne Dollarpreis)':''),'hint');
  if(r.moves.length){const t=$('table');t.id='pricemoves';o.append($('div','Größte Änderungen seit '+r.since+':'),t);const hr=t.insertRow();['Karte','vorher','jetzt','Änderung'].forEach(x=>hr.append($('th',x)));
   r.moves.forEach(m=>{const tr=t.insertRow();tr.insertCell().append(cardName(m.name));[m.from.toFixed(2)+' €',m.to.toFixed(2)+' €',(m.diff>0?'+':'')+m.diff.toFixed(2)+' €'+(m.pct!=null?' ('+(m.pct>0?'+':'')+m.pct+' %)':'')].forEach(v=>tr.insertCell().textContent=v.replace(/\\./g,','))})}
  P(o,r.hint,'hint')}
@@ -6953,11 +6963,11 @@ async function tokenBox(o){const r=await J('/api/tokens',{list:deck.export,comma
  r.tokens.forEach(k=>{const tr=t.insertRow();const c=tr.insertCell();c.append(k.image?cardName(k.name,k.image,k.image):$('span',k.name));
   tr.insertCell().textContent=k.type||'–';tr.insertCell().textContent=k.from.join(', ')})}
 // ---------- Proxy-Druck: Kopien zum privaten Testen – Bild- oder Textfassung, Rückseiten, Tokens, Schnittlinien
-const PROXY_NOTE='Proxys sind Kopien bzw. Platzhalter zum privaten Testen – keine echten Karten. Nicht verkaufen, nicht tauschen und nicht als echte Karten ausgeben; in offiziellen Turnieren sind sie nicht erlaubt. Kartenbilder und -texte sind Eigentum von Wizards of the Coast (Bilder von Scryfall). Jede Kopie trägt deshalb fest den Vermerk „PROXY – keine echte Karte“, Kartenrückseiten werden nicht gedruckt.';
-const PROXY_SLEEVE='Tipp für Hüllen: Die ausgeschnittene Kopie zusammen mit einer echten, wertlosen Karte (z. B. Standardland oder übrige Common) in eine Hülle stecken – Kopie nach vorne. So zeigt jede Karte die gleiche Rückseite, auch in durchsichtigen Hüllen, und die Kopie hat Dicke und Festigkeit einer echten Karte.';
+const PROXY_NOTE='Proxys sind Kopien bzw. Platzhalter zum privaten Testen und keine echten Karten. Nicht verkaufen, nicht tauschen und nicht als echte Karten ausgeben; in offiziellen Turnieren sind sie nicht erlaubt. Kartenbilder und -texte sind Eigentum von Wizards of the Coast (Bilder von Scryfall). Jede Kopie trägt deshalb fest den Vermerk „PROXY – keine echte Karte“, Kartenrückseiten werden nicht gedruckt.';
+const PROXY_SLEEVE='Tipp für Hüllen: Die ausgeschnittene Kopie zusammen mit einer echten, wertlosen Karte (z. B. Standardland oder übrige Common) in eine Hülle stecken, Kopie nach vorne. So zeigt jede Karte die gleiche Rückseite, auch in durchsichtigen Hüllen, und die Kopie hat Dicke und Festigkeit einer echten Karte.';
 let PXOPT={mode:'img',backs:true,cut:true,gap:false,gray:false,paper:'A4'};try{Object.assign(PXOPT,JSON.parse(localStorage.getItem('pxopt')||'{}'))}catch(e){}
 function proxyDialog(tokens){proxyStudio({deck:true})}
-async function proxyStudio(pre){pre=pre||{};const b=$('div');b.id='pxstudio';dlgOpen('🖨 Proxys drucken – Kopien zum Testen').append(b);
+async function proxyStudio(pre){pre=pre||{};const b=$('div');b.id='pxstudio';dlgOpen('🖨 Proxys drucken (Kopien zum Testen)').append(b);
  const note=$('div');note.className='warn pxnote';note.id='pxnote';note.append($('b','Nur Kopien: '),PROXY_NOTE);b.append(note);
  const sl=$('div');sl.className='tag pxsleeve';sl.id='pxsleeve';sl.append($('b','🃏 In die Hülle: '),PROXY_SLEEVE.replace('Tipp für Hüllen: ',''));b.append(sl);
  const ta=$('textarea');ta.id='pxlist';ta.rows=8;ta.style.width='100%';ta.placeholder='Eine Karte je Zeile, z. B.\\n1 Sol Ring\\n2 Lightning Bolt\\n1 Counterspell (MH2) 267   ← bestimmter Druck';
@@ -6966,7 +6976,7 @@ async function proxyStudio(pre){pre=pre||{};const b=$('div');b.id='pxstudio';dlg
  const deckText=(onlyMissing)=>deck.groups.flatMap(g=>g.cards).filter(c=>!c.basic).map(c=>c.qty+' '+c.name).join('\\n');
  if(hasDeck){sb('📂 Deck im Editor','pxsrcdeck',()=>{ta.value=deckText()});
   sb('📦 Nur fehlende Karten des Decks','pxsrcmiss',async()=>{const r=await J('/api/ownership',{list:deck.export,commander:deck.commander||'',deck_name:deck.name||''});
-   if(!r.has_collection){ta.value=deckText();P(src,'Keine Sammlung importiert – alle Karten übernommen.','hint');return}ta.value=r.missing.map(n=>'1 '+n).join('\\n')})}
+   if(!r.has_collection){ta.value=deckText();P(src,'Keine Sammlung importiert, deshalb sind alle Karten übernommen.','hint');return}ta.value=r.missing.map(n=>'1 '+n).join('\\n')})}
  if(BUY&&BUY.items&&BUY.items.length)sb('🧭 Aus dem Kaufplan','pxsrcbuy',()=>{ta.value=BUY.items.filter(x=>!x.skip).map(x=>x.qty+' '+x.name+(x.print?' ('+x.print.set_code+') '+x.print.number:'')).join('\\n')});
  b.append($('h4','Karten'),src,ta);
  const opts=$('div');opts.className='pxopts';b.append($('h4','Druck'),opts);
@@ -7021,7 +7031,7 @@ function toMaybe(gi,ci){const g=deck.groups[gi],c=g.cards[ci];deck.maybe=deck.ma
  if(!deck.maybe.some(x=>x.name==c.name))deck.maybe.push(Object.assign({},c,{qty:1}));
  if(c.qty>1)c.qty--;else g.cards.splice(ci,1);if(!g.cards.length)deck.groups.splice(gi,1);
  deck.msg='„'+c.name+'“ ins Maybeboard verschoben.';recalc()}
-function maybeBox(o){const m=deck.maybe||[];const hh=$('h4','Maybeboard ('+m.length+') – Kandidaten, die nicht mitzählen');hh.append(qBtn('anpassen'));o.append(hh);
+function maybeBox(o){const m=deck.maybe||[];const hh=$('h4','Maybeboard ('+m.length+'): Kandidaten, die nicht mitzählen');hh.append(qBtn('anpassen'));o.append(hh);
  o.id='maybezone';dropZone(o,n=>{const gi=deck.groups.findIndex(g=>g.cards.some(c=>c.name==n));if(gi>=0)toMaybe(gi,deck.groups[gi].cards.findIndex(c=>c.name==n))});
  const row=$('div');const inp=$('input');inp.size=30;inp.placeholder='Karte fürs Maybeboard';inp.id='maybeadd';const sp=$('span');sp.className='ac';sp.append(inp);row.append(sp);o.append(row);
  const addM=async n=>{const c=await J('/api/card_info?name='+encodeURIComponent(n));if(c.error){deck.msg=c.error;showDeck();return}
@@ -7088,11 +7098,11 @@ function ptNewClassic(){if(!deck||!deck.groups){alert('Bitte zuerst ein Deck bau
  const lib=shuffle(libraryCards().map(c=>ptCard(c)));
  const cz=(deck.groups.find(g=>g.name=='Commander')||{cards:[]}).cards.map(c=>ptCard(c,{cmdr:true}));
  PT={name:deck.name||(cz[0]&&cz[0].name)||'Deck',lib:lib,hand:[],bf:[],gy:[],ex:[],cz:cz,turn:1,life:40,mull:0,mullBottom:0,casts:{},log:[]};
- PTU.length=0;ptDraw(7,true);ptLog('Partie gestartet – 7 Karten gezogen.');ptOpen()}
+ PTU.length=0;ptDraw(7,true);ptLog('Partie gestartet, 7 Karten gezogen.');ptOpen()}
 function ptSnap(){PTU.push(JSON.stringify(PT));if(PTU.length>40)PTU.shift()}
 function ptUndo(){if(!PTU.length)return;PT=JSON.parse(PTU.pop());ptRender()}
 function ptLog(t){PT.log.unshift('Zug '+PT.turn+': '+t);PT.log.length=Math.min(PT.log.length,60)}
-function ptDraw(n,silent){for(let i=0;i<n;i++){const c=PT.lib.shift();if(!c){ptLog('Bibliothek leer – du würdest verlieren!');break}PT.hand.push(c)}if(!silent)ptLog(n+' Karte'+(n>1?'n':'')+' gezogen.')}
+function ptDraw(n,silent){for(let i=0;i<n;i++){const c=PT.lib.shift();if(!c){ptLog('Bibliothek leer, du würdest verlieren!');break}PT.hand.push(c)}if(!silent)ptLog(n+' Karte'+(n>1?'n':'')+' gezogen.')}
 const PTZ={hand:'Hand',bf:'Spielfeld',gy:'Friedhof',ex:'Exil',lib:'Bibliothek',cz:'Kommandozone'};
 function ptFind(id){for(const z of ['hand','bf','gy','ex','lib','cz']){const i=PT[z].findIndex(c=>c.id==id);if(i>=0)return [z,i]}return [null,-1]}
 // Karte verschieben; pos: 'top' | 'bottom' (Bibliothek)
@@ -7124,13 +7134,13 @@ document.documentElement.style.setProperty('--tk',TSIZE);
 async function tableLandscape(){let full=false,lock=false;
  try{if(!document.fullscreenElement&&document.documentElement.requestFullscreen){await document.documentElement.requestFullscreen({navigationUI:'hide'})}full=!!document.fullscreenElement}catch(e){}
  try{if(screen.orientation&&screen.orientation.lock){await screen.orientation.lock('landscape');lock=true}}catch(e){}
- if(!lock)tableNote('Dieses Gerät lässt die Drehung nicht automatisch zu (z. B. iPhone) – bitte das Handy einfach quer halten'+(full?'.':' und die Bildschirmsperre für die Drehung ausschalten.'));
+ if(!lock)tableNote('Dieses Gerät lässt die Drehung nicht automatisch zu (z. B. iPhone). Bitte das Handy quer halten'+(full?'.':' und die Bildschirmsperre für die Drehung ausschalten.'));
  return lock}
 function tableExit(){try{if(screen.orientation&&screen.orientation.unlock)screen.orientation.unlock()}catch(e){}
  try{if(document.fullscreenElement)document.exitFullscreen()}catch(e){}}
 function tableNote(t){const n=$('div',t);n.className='tnote';n.onclick=()=>n.remove();document.body.append(n);setTimeout(()=>n.remove(),6000)}
 function rotHint(){const h=$('div');h.className='rothint';let off=false;try{off=localStorage.getItem('rothint')=='0'}catch(e){}if(off)return h;
- h.append('📱 Tipp: Handy quer halten – dann sind Hand und Spielfeld besser lesbar. ');
+ h.append('📱 Quer gehalten sind Hand und Spielfeld besser lesbar. ');
  const b=$('button','Quer + Vollbild');b.type='button';b.onclick=e=>{e.stopPropagation();tableLandscape()};
  const x=$('button','✕');x.type='button';x.title='Hinweis nicht mehr zeigen';x.onclick=e=>{e.stopPropagation();h.remove();try{localStorage.setItem('rothint','0')}catch(e){}};h.append(b,' ',x);return h}
 // Textansicht: Karten als lesbare Kacheln (Name, Kosten, Typ, Regeltext, Stärke/Widerstand)
@@ -7209,8 +7219,8 @@ async function ptTokens(){const o=E('pt');const old=E('ptlist');if(old)old.remov
  const cmd=(deck.groups.find(g=>g.name=='Commander')||{cards:[]}).cards.map(c=>c.name).join(' + ');
  const list=deck.groups.flatMap(g=>g.cards.map(c=>c.qty+' '+c.name)).join('\\n');
  const r=await J('/api/tokens',{list:list,commander:cmd});lst.innerHTML='';
- (r.tokens||[]).forEach(t=>{const b=$('button',(t.name+(t.type?' – '+t.type:'')));b.type='button';b.title='aus: '+(t.from||[]).join(', ');b.onclick=()=>{w.remove();ptToken(t.name,t.image||'')};lst.append(b)});
- if(!(r.tokens||[]).length)P(lst,'Keine Tokens im Deck erkannt – oben einen eigenen eintragen.','hint')}
+ (r.tokens||[]).forEach(t=>{const b=$('button',(t.name+(t.type?' ('+t.type+')':'')));b.type='button';b.title='aus: '+(t.from||[]).join(', ');b.onclick=()=>{w.remove();ptToken(t.name,t.image||'')};lst.append(b)});
+ if(!(r.tokens||[]).length)P(lst,'Keine Tokens im Deck erkannt. Oben kannst du einen eigenen eintragen.','hint')}
 function ptRender(){setTimeout(ttextLoad,0);const o=E('pt');if(!o||!PT)return;const keepList=E('ptlist');o.innerHTML='';
  const bar=$('div');bar.className='ptbar';
  const B=(t,ti,fn,id)=>{const b=$('button',t);b.type='button';b.title=ti;if(id)b.id=id;b.onclick=fn;return b};
@@ -7237,7 +7247,7 @@ function ptRender(){setTimeout(ttextLoad,0);const o=E('pt');if(!o||!PT)return;co
  const r1=$('div');r1.className='ptrow';r1.dataset.row='perm';PT.bf.filter(c=>!c.land).forEach(c=>r1.append(ptCardEl(c,'bf')));if(!r1.childElementCount)r1.append($('small','Bleibende Karten (Kreaturen, Artefakte …)'));
  const r2=$('div');r2.className='ptrow lands';r2.dataset.row='lands';PT.bf.filter(c=>c.land).forEach(c=>r2.append(ptCardEl(c,'bf')));if(!r2.childElementCount)r2.append($('small','Länder'));
  field.append(r1,r2);main.append(side,field);o.append(main);
- const hand=$('div');hand.className='pthand';hand.append($('div','✋ Hand ('+PT.hand.length+') – antippen = ausspielen, gedrückt halten / Rechtsklick = weitere Aktionen'));
+ const hand=$('div');hand.className='pthand';hand.append($('div','✋ Hand ('+PT.hand.length+'): antippen = ausspielen, gedrückt halten / Rechtsklick = weitere Aktionen'));
  const hr=$('div');hr.className='ptrow';PT.hand.forEach(c=>hr.append(ptCardEl(c,'hand')));hand.append(hr);o.append(hand);
  if(keepList)o.append(keepList)}
 
@@ -7252,7 +7262,7 @@ async function galSearch(){const o=E('galres');o.innerHTML='';P(o,'Suche …','h
  const r=await J('/api/gallery',{q:E('galq').value,ci:[...GAL.ci].join(''),cimode:E('galcim').value,maxeur:E('galeur').value,gc:E('galgc').value,bracket:E('galbr').value,sort:E('galsort').value});
  o.innerHTML='';if(r.error){P(o,r.error,'warn');return}
  if(!r.decks.length){P(o,r.total===0&&!E('galq').value&&!GAL.ci.size?'Noch keine Decks veröffentlicht. Veröffentliche eins unter „📂 Meine Decks“ mit „🌍 Veröffentlichen“.':'Keine Decks zu diesen Filtern.','hint');return}
- P(o,r.total+' Deck'+(r.total==1?'':'s')+(r.total>r.decks.length?' – angezeigt werden die ersten '+r.decks.length:''),'hint');
+ P(o,r.total+' Deck'+(r.total==1?'':'s')+(r.total>r.decks.length?', angezeigt werden die ersten '+r.decks.length:''),'hint');
  const g=$('div');g.className='galgrid';o.append(g);
  r.decks.forEach(d=>{const c=$('div');c.className='galcard'+(d.hidden?' hid':'');c.dataset.id=d.id;
   const im=$('div');im.className='gimg';if(d.image)im.style.backgroundImage='url("'+d.image+'")';
@@ -7297,9 +7307,9 @@ const fu=v=>v==null?'':Number(v).toFixed(2).replace('.',',')+' $';
 async function shopCalc(){const o=E('shopres');o.innerHTML='';P(o,'rechne …','hint');const r=await J('/api/shopping',{share:E('shopshare').checked?1:0});o.innerHTML='';
  if(r.error){P(o,r.error,'warn');return}
  if(!r.decks){P(o,'Noch keine Decks gespeichert.','hint');return}
- if(!r.has_collection)P(o,'Noch keine Sammlung importiert – es fehlen deshalb alle Karten.','hint');
+ if(!r.has_collection)P(o,'Noch keine Sammlung importiert, deshalb fehlen alle Karten.','hint');
  E('shopsum').textContent='('+r.cards+' Karten, ca. '+fe(r.total)+')';
- P(o,r.items.length?r.cards+' fehlende Karten ('+r.items.length+' verschiedene) für '+r.decks+' Decks · zusammen ca. '+fe(r.total)+(r.noprice?' · '+r.noprice+' ohne Preis':''):'Dir fehlt keine Karte – alle Decks sind komplett.','big');
+ P(o,r.items.length?r.cards+' fehlende Karten ('+r.items.length+' verschiedene) für '+r.decks+' Decks · zusammen ca. '+fe(r.total)+(r.noprice?' · '+r.noprice+' ohne Preis':''):'Dir fehlt keine Karte, alle Decks sind komplett.','big');
  if(CMAT&&r.items.length)P(o,'Preise: Cardmarket (Preisliste vom '+CMAT+', günstigste Druckversion). 🛒 öffnet die Karte auf Cardmarket.','hint');
  if(!r.items.length)return;
  const bar=$('p');const cp=$('button','📋 Liste kopieren');cp.type='button';cp.id='shopcopy';cp.onclick=async()=>{await copyText(r.text);cp.textContent='✓ kopiert'};
@@ -7333,7 +7343,7 @@ async function folderShow(name,r){r=r||await J('/api/folder',{folder:name});cons
  if(r.error){P(o,r.error,'warn');return}
  const msg=[];if(r.capped&&r.capped.length)msg.push('Auf den Bestand begrenzt: '+r.capped.join(', '));if(r.notown&&r.notown.length)msg.push('Nicht in deiner Sammlung: '+r.notown.join(', '));if(r.unknown&&r.unknown.length)msg.push('Unbekannt: '+r.unknown.join(', '));
  msg.forEach(m=>P(o,m,'warn'));
- o.append($('h4','📁 '+r.folder+' – '+r.items.reduce((a,x)=>a+x.qty,0)+' Karten, ca. '+fe(r.value)));
+ o.append($('h4','📁 '+r.folder+': '+r.items.reduce((a,x)=>a+x.qty,0)+' Karten, ca. '+fe(r.value)));
  if(!r.items.length){P(o,'Der Ordner ist leer.','hint');return}
  const t=$('table');t.className='ftable';t.id='foldertable';o.append(t);r.items.forEach(x=>{const tr=t.insertRow();const c=tr.insertCell();c.className='r';c.textContent=x.qty+'×';tr.insertCell().append(cardName(x.name));const p=tr.insertCell();p.className='r';p.textContent=fe(x.eur)});
  const bar=$('p');const cp=$('button','📋 Ordner kopieren');cp.type='button';cp.onclick=async()=>{await copyText(r.text);cp.textContent='✓ kopiert'};
@@ -7454,9 +7464,9 @@ function stackOut(o,groups,edit){const cols={};let lands=[];
 // ---- Bracket-Einstufung
 const BRN={'1':'Exhibition','2':'Core','3':'Upgraded','4':'Optimized','5':'cEDH'};
 function brBadge(tgt,est){const s=$('span');s.className='brb'+(tgt?' brt':'');
- if(tgt){s.textContent='B'+tgt;s.title='Bracket '+tgt+' ('+BRN[tgt]+') – vom Besitzer angegeben'+(est?'; Schätzung des Programms: '+est:'')}
+ if(tgt){s.textContent='B'+tgt;s.title='Bracket '+tgt+' ('+BRN[tgt]+'), vom Besitzer angegeben'+(est?'; Schätzung des Programms: '+est:'')}
  else if(est){s.textContent='≈B'+est;s.title='Bracket-Schätzung des Programms (ohne Combo-Prüfung): '+est}else s.textContent='–';
- if(tgt&&est){const lo=parseInt(est);if(lo>parseInt(tgt)){s.classList.add('brwarn');s.textContent+=' ⚠';s.title+=' – das Deck enthält Karten über diesem Bracket'}}
+ if(tgt&&est){const lo=parseInt(est);if(lo>parseInt(tgt)){s.classList.add('brwarn');s.textContent+=' ⚠';s.title+='. Das Deck enthält Karten über diesem Bracket'}}
  return s}
 let BRT=null;
 async function bracketBox(o,combos){o.id='brbox';o.innerHTML='';const ex=deck.export;
@@ -7469,7 +7479,7 @@ async function bracketBox(o,combos){o.id='brbox';o.innerHTML='';const ex=deck.ex
  if(deck.export!=ex)return;res.innerHTML='';
  if(r.error){P(res,r.error,'warn');return}
  if(combos)deck.brCombos={list:ex,err:!!r.combo_error};
- const big=$('div');big.className='brbig';big.id='brresult';big.append($('b','Bracket '+r.bracket),' – '+r.name);res.append(big);
+ const big=$('div');big.className='brbig';big.id='brresult';big.append($('b','Bracket '+r.bracket),' '+r.name);res.append(big);
  P(res,r.note,'hint');
  const t=$('table');t.className='ftable brtab';t.id='brrules';res.append(t);const hr=t.insertRow();['Regel','gefunden','erlaubt ab Bracket','Karten'].forEach(x=>hr.append($('th',x)));
  r.rules.forEach(x=>{const tr=t.insertRow();tr.dataset.k=x.key;const c0=tr.insertCell();c0.append($('b',x.label));const sm=$('div',x.rule);sm.className='hint';c0.append(sm);
@@ -7478,19 +7488,19 @@ async function bracketBox(o,combos){o.id='brbox';o.innerHTML='';const ex=deck.ex
   const c3=tr.insertCell();x.cards.forEach((n,i)=>{if(i)c3.append(', ');c3.append(x.key=='combo'?n:cardName(n))})});
  if(r.illegal&&r.illegal.length)P(res,'Nicht Commander-legal (gebannt): '+r.illegal.join(', '),'warn');
  if(r.combo_error)P(res,r.combo_error,'warn');
- const sb=r.spellbook;if(sb&&sb.name)P(res,'Zum Vergleich – Commander Spellbook stuft das Deck als „'+sb.name+'“ ein.','hint');
+ const sb=r.spellbook;if(sb&&sb.name)P(res,'Zum Vergleich: Commander Spellbook stuft das Deck als „'+sb.name+'“ ein.','hint');
  // Ziel-Bracket des Besitzers
  const row=$('div');row.className='brtarget';const sel=$('select');sel.id='brtarget';
- [['','– noch nicht festgelegt –'],['1','1 – Exhibition'],['2','2 – Core'],['3','3 – Upgraded'],['4','4 – Optimized'],['5','5 – cEDH']].forEach(([v,l])=>{const op=$('option',l);op.value=v;sel.append(op)});
+ [['','noch nicht festgelegt'],['1','1 Exhibition'],['2','2 Core'],['3','3 Upgraded'],['4','4 Optimized'],['5','5 cEDH']].forEach(([v,l])=>{const op=$('option',l);op.value=v;sel.append(op)});
  sel.value=deck.bracketTarget||'';const msg=$('span');msg.id='brmsg';
- const cmp=()=>{const tv=sel.value;msg.className='';if(!tv){msg.textContent=' Lege fest, in welchem Bracket du das Deck spielen willst – es wird mit dem Deck gespeichert und in Galerie und Teilen-Seite gezeigt.';return}
+ const cmp=()=>{const tv=sel.value;msg.className='';if(!tv){msg.textContent=' Lege fest, in welchem Bracket du das Deck spielen willst. Das Ziel wird mit dem Deck gespeichert und in Galerie und Teilen-Seite gezeigt.';return}
   if(r.value>parseInt(tv)&&!(r.bracket=='1–2'&&tv=='1')){msg.className='warn';msg.textContent=' ⚠ Das Deck enthält Karten über Bracket '+tv+': '+r.rules.filter(x=>x.min>parseInt(tv)).map(x=>x.label+' ('+x.cards.slice(0,4).join(', ')+(x.cards.length>4?', …':'')+')').join('; ')+'.'}
-  else if(parseInt(tv)>=4&&r.value<4){msg.className='hint';msg.textContent=' Keine Regel verbietet das – ob das Deck wirklich so schnell und beständig ist, zeigen Testspiel, Statistik und Forge-Duelle.'}
+  else if(parseInt(tv)>=4&&r.value<4){msg.className='hint';msg.textContent=' Keine Regel verbietet das. Ob das Deck wirklich so schnell und beständig ist, zeigen Testspiel, Statistik und Forge-Duelle.'}
   else{msg.className='ok';msg.textContent=' ✓ passt zu den prüfbaren Regeln'+(r.combos_checked?'':' (Combos noch ungeprüft)')+'.'}};
- sel.onchange=()=>{deck.bracketTarget=sel.value;cmp();deck.msg='Ziel-Bracket gesetzt – mit „Speichern“ übernehmen.'};
+ sel.onchange=()=>{deck.bracketTarget=sel.value;cmp();deck.msg='Ziel-Bracket gesetzt, mit „Speichern“ übernehmen.'};
  row.append($('b','Mein Ziel-Bracket: '),sel,msg);res.append(row);cmp();
  if(!r.combos_checked){const bc=$('button',r.combo_error?'🔗 Combos erneut prüfen':'🔗 Combos jetzt prüfen');bc.type='button';bc.id='brcombos';bc.onclick=()=>{clearTimeout(BRT);bracketBox(o,true)};res.append(bc)}
- else{const sm=$('div','Combos geprüft mit Commander Spellbook'+(r.rules[3].count?'':' – keine spielentscheidende Zwei-Karten-Combo gefunden')+'.');sm.className='hint';sm.id='brcombook';res.append(sm)}}
+ else{const sm=$('div','Combos geprüft mit Commander Spellbook'+(r.rules[3].count?'':', keine spielentscheidende Zwei-Karten-Combo gefunden')+'.');sm.className='hint';sm.id='brcombook';res.append(sm)}}
 
 // ---- Precon-Übersicht
 const PC={ci:new Set(),data:null};
@@ -7527,9 +7537,9 @@ async function pcOpen(id){const d=await J('/api/precon?id='+id);const meta=(PC.d
  const bar=$('div');bar.className='pcbar';const msg=$('div');msg.id='pcmsg';
  const ed=$('button','✏ Im Deck-Editor öffnen');ed.type='button';ed.className='primary';ed.id='pcedit';ed.onclick=()=>{closeSwap();location.hash='#deck';useMine({name:d.name,commander:d.commander,list:d.export})};
  const sv=$('button','💾 In Meine Decks speichern');sv.type='button';sv.id='pcsave';sv.onclick=async()=>{const x=await J('/api/deck_save',{name:d.name+' (Precon)',commander:d.commander,list:d.export,extra:'{}'});msg.textContent=x.error?'⚠ '+x.error:'✓ als „'+x.name+'“ gespeichert';msg.className=x.error?'warn':'ok';if(!x.error){sv.disabled=true;myDecks(x.decks)}};
- const op=$('button','⚔ Als Gegner');op.type='button';op.id='pcopp';op.onclick=()=>{const has=deck&&!deck.error;if(has)closeSwap();setOpp({kind:'precon',id:id,name:d.name,commander:d.commander,set:d.set});if(!has){msg.textContent='✓ als Gegner gesetzt – jetzt ein eigenes Deck bauen oder laden, dann vergleichen oder in Forge spielen.';msg.className='ok'}};
+ const op=$('button','⚔ Als Gegner');op.type='button';op.id='pcopp';op.onclick=()=>{const has=deck&&!deck.error;if(has)closeSwap();setOpp({kind:'precon',id:id,name:d.name,commander:d.commander,set:d.set});if(!has){msg.textContent='✓ als Gegner gesetzt. Jetzt ein eigenes Deck bauen oder laden, dann vergleichen oder in Forge spielen.';msg.className='ok'}};
  const cp=$('button','📋 Liste kopieren');cp.type='button';cp.onclick=async()=>{await copyText(d.export);cp.textContent='✓ kopiert'};
- const co=$('button','📥 Gekauft – in meine Sammlung');co.type='button';co.id='pccoll';co.title='Alle Karten dieses Precons zu deiner Sammlung hinzufügen';
+ const co=$('button','📥 Gekauft: in meine Sammlung');co.type='button';co.id='pccoll';co.title='Alle Karten dieses Precons zu deiner Sammlung hinzufügen';
  co.onclick=async()=>{if(co.dataset.ok!='1'){co.dataset.ok='1';co.textContent='Wirklich alle '+(meta.cards||'')+' Karten hinzufügen?';return}
   const x=await J('/api/precon_to_collection',{id:id});msg.textContent=x.error?'⚠ '+x.error:'✓ '+x.imported+' Karten in die Sammlung übernommen ('+x.imp_unique+' verschiedene).';msg.className=x.error?'warn':'ok';co.disabled=true;co.textContent='✓ übernommen';
   const r2=await J('/api/precon_catalog');PC.data=r2;pcRender()};
@@ -7556,7 +7566,7 @@ const SHOPS={cm:{name:'Cardmarket',short:'CM',search:q=>'https://www.cardmarket.
  to:{name:'Trader-online',short:'TO',search:q=>'https://www.trader-online.de/index.php?cl=search&searchparam='+encodeURIComponent(q)},
  cc:{name:'cardcosmos',short:'CC',sealed:true,search:q=>'https://cardcosmos.de/search?q='+encodeURIComponent(q)+'&type=product'}};
 let SHOPON={cm:true,to:true,cc:true};try{Object.assign(SHOPON,JSON.parse(localStorage.getItem('shops')||'{}'))}catch(e){}
-function shopA(k,url,title){const s=SHOPS[k];const a=$('a',s.short,url);a.target='_blank';a.rel='noopener';a.className='shoplnk s'+k;a.title=title||('Bei '+s.name+' ansehen – Anmeldung und Kauf direkt beim Händler');return a}
+function shopA(k,url,title){const s=SHOPS[k];const a=$('a',s.short,url);a.target='_blank';a.rel='noopener';a.className='shoplnk s'+k;a.title=title||('Bei '+s.name+' ansehen. Anmeldung und Kauf laufen direkt beim Händler.');return a}
 function cmA(url,name){const w=$('span');w.className='shops';
  if(SHOPON.cm&&(url||name)){const a=shopA('cm',url||SHOPS.cm.search(name),'Auf Cardmarket ansehen (günstigste Druckversion)');a.classList.add('cmlnk');w.append(a)}
  if(name)Object.keys(SHOPS).filter(k=>k!='cm'&&SHOPON[k]&&!SHOPS[k].sealed).forEach(k=>w.append(shopA(k,SHOPS[k].search(name))));
@@ -7567,7 +7577,7 @@ function shopSettings(){const w=$('div');w.className='shopset';w.append($('span'
   c.onchange=()=>{SHOPON[k]=c.checked;try{localStorage.setItem('shops',JSON.stringify(SHOPON))}catch(e){}document.querySelectorAll('.shopset input#shopon-'+k).forEach(x=>x.checked=c.checked)};
   l.append(c,' '+s.name+(s.sealed?' (nur versiegelte Ware, z. B. Precons)':''));w.append(l,' ')});return w}
 async function cmWants(text,btn){await copyText(text);window.open('https://www.cardmarket.com/de/Magic/Wants','_blank','noopener');
- if(btn)btn.textContent='✓ Liste kopiert – Cardmarket geöffnet';
+ if(btn)btn.textContent='✓ Liste kopiert, Cardmarket geöffnet';
  const n=$('div','Bei Cardmarket: neue Wants-Liste anlegen → „Decklist hinzufügen“ → Liste einfügen (Strg+V) → „Hinzufügen“. Danach findet der Shopping Wizard die günstigste Händlerkombination.');n.className='hint cmhow';
  if(btn&&!btn.parentNode.querySelector('.cmhow'))btn.parentNode.append(n)}
 
@@ -7613,7 +7623,7 @@ function showDeck(){const d=deck,o=E('out');o.innerHTML='';
  sb.onclick=async()=>{sb.disabled=true;sm.className='hint';sm.textContent=' speichere ...';
   const r=await J('/api/deck_save',{name:sn.value,commander:d.commander||'',list:d.export,note:sno.value,extra:JSON.stringify(deckExtra())});sb.disabled=false;sno.value='';
   if(r.error){sm.className='warn';sm.textContent=' '+r.error;return}
-  d.name=r.name;sm.className='tag';sm.textContent=' ✓ Gespeichert als „'+r.name+'“ – zu finden unter „Deck importieren & gespeicherte Decks“.';
+  d.name=r.name;sm.className='tag';sm.textContent=' ✓ Gespeichert als „'+r.name+'“, zu finden unter „Deck importieren & gespeicherte Decks“.';
   myDecks(r.decks)};
  exportBox(h('div'),()=>({name:sn.value||d.name||'',commander:d.commander||'',list:d.export,groups:JSON.stringify(deckExtra().groups)}));
  const n=d.groups.reduce((s,g)=>s+g.cards.reduce((t,c)=>t+c.qty,0),0);
@@ -7639,7 +7649,7 @@ function showDeck(){const d=deck,o=E('out');o.innerHTML='';
  const re=$('button','↷ Wiederherstellen');re.type='button';re.id='dredo';re.title='Strg+Y';re.disabled=DH.pos>=DH.stack.length-1;re.onclick=deckRedo;
  const se=$('button',DSEL.on?'☑ Auswahl beenden':'☐ Mehrfachauswahl');se.type='button';se.id='dselect';se.onclick=()=>{DSEL.on=!DSEL.on;DSEL.names.clear();showDeck()};
  const ng=$('button','➕ Neue Gruppe');ng.type='button';ng.id='dnewgrp';ng.onclick=()=>moveDialog([]);
- tb.append(un,' ',re,' ',se,' ',ng,$('span',' Karten in eine Gruppe ziehen oder ⇄ antippen – eigene Gruppen werden mit dem Deck gespeichert.'));tb.lastChild.className='hint';
+ tb.append(un,' ',re,' ',se,' ',ng,$('span',' Karten in eine Gruppe ziehen oder ⇄ antippen. Eigene Gruppen werden mit dem Deck gespeichert.'));tb.lastChild.className='hint';
  if(DSEL.on){const sb=$('div');sb.id='selbar';sb.className='selbar';tb.append(sb)}
  cardsOut(o,d.groups,true);if(DSEL.on)selBar();
  deckRecord();
@@ -7667,7 +7677,7 @@ async function suggestCmd(auto,more){const box=E('csug');const th=(E('b').elemen
  if(!r.cards.length){P(box,'Keine passenden Commander gefunden. Tipp: „auch mit weniger Farben“ anhaken, eine Farbe mehr wählen oder ein anderes Thema probieren.','hint');return}
  const cn=c?(c=='C'?'farblos':[...c].map(x=>CINAME[x]).join('-')):'alle Farben';
  csShown=csShown.concat(r.cards.map(x=>x.name));
- P(box,(auto?'Ein Commander ist im Format Pflicht – hier passende Vorschläge. ':'')+r.total+' Commander passen ('+cn+(th?', Thema „'+th+'“':'')+'). Gemischte Auswahl aus beliebten Commandern, Geheimtipps und günstigen Optionen'+(csShown.length>r.cards.length?' – '+csShown.length+' von '+r.total+' gezeigt':'')+':','hint');
+ P(box,(auto?'Ein Commander ist im Format Pflicht. Hier passende Vorschläge: ':'')+r.total+' Commander passen ('+cn+(th?', Thema „'+th+'“':'')+'). Gemischte Auswahl aus beliebten Commandern, Geheimtipps und günstigen Optionen'+(csShown.length>r.cards.length?' ('+csShown.length+' von '+r.total+' gezeigt)':'')+':','hint');
  const g=DV('','cgrid');
  r.cards.forEach(x=>{const d=DV('','cc');if(x.image){const im=$('img');im.loading='lazy';im.alt=x.name;im.src=x.image.replace('/normal/','/art_crop/');d.append(im)}
   const nb=$('b');nb.append(cardName(x.name,null,x.image));d.append(nb);const m=$('div');m.append(manaEl(x.ci?[...x.ci].map(k=>'{'+k+'}').join(''):'{C}'),' ',x.type);d.append(m);
@@ -7676,7 +7686,7 @@ async function suggestCmd(auto,more){const box=E('csug');const th=(E('b').elemen
   if(x.gc)d.append(DV('⚠ Game Changer (sehr stark)','why'));
   d.append(DV(x.text,'tx'));
   const bt=$('button','✔ Diesen Commander nehmen');bt.type='button';bt.className='primary ctake';bt.onclick=async()=>{cmd.value='';await setCommander(x.name);ciBtns();E('csug').innerHTML='';
-   P(E('csug'),'Commander „'+x.name+'“ übernommen – jetzt „Deck vorschlagen“ klicken.','hint');cmd.scrollIntoView({block:'center'})};
+   P(E('csug'),'Commander „'+x.name+'“ übernommen. Jetzt „Deck vorschlagen“ klicken.','hint');cmd.scrollIntoView({block:'center'})};
   d.append(bt);g.append(d)});box.append(g);
  const nav=DV('','csnav');const mb=$('button',r.left>0?'🔄 Andere Vorschläge ('+r.left+' weitere)':'🔀 Neu mischen');mb.type='button';mb.id='csmore';
  mb.onclick=()=>suggestCmd(false,r.left>0);nav.append(mb);if(r.left>0){const rb=$('button','🔀 Neu mischen');rb.type='button';rb.onclick=()=>suggestCmd(false,false);nav.append(' ',rb)}box.append(nav)}
@@ -7691,10 +7701,10 @@ async function bd(e){e.preventDefault();
 function afterDeck(){loadPrecons();oppInfo();if(opp&&deck&&!deck.error)runCompare(opp);else{['combos','duel'].forEach(x=>E(x).innerHTML='')}}
 
 // Precons: Auswahl, Vergleich, Ansicht
-const plabel=p=>p.name+' – '+p.commander+' ('+p.set+', '+p.date.slice(0,4)+')';
+const plabel=p=>p.name+' · '+p.commander+' ('+p.set+', '+p.date.slice(0,4)+')';
 const CDE={W:'Weiß',U:'Blau',B:'Schwarz',R:'Rot',G:'Grün'};
 const ciName=ci=>(ci&&ci!='C')?[...ci].map(c=>CDE[c]||c).join('-'):'farblos';
-const plong=p=>p.name+' – Commander: '+p.commander+' · '+ciName(p.ci);
+const plong=p=>p.name+' · Commander: '+p.commander+' · '+ciName(p.ci);
 let PALL=null;const preconsAll=async()=>PALL||(PALL=await J('/api/precons_all'));
 // Auswahlliste mit allen Precons, gruppiert nach Set; optional eigene Decks und „passend“-Gruppe davor
 function fillPreconSelect(sel,all,opts={}){
@@ -7705,7 +7715,7 @@ function fillPreconSelect(sel,all,opts={}){
  const sets=[];all.forEach(p=>{const k=p.set+' ('+(p.date||'').slice(0,4)+')';let e=sets.find(x=>x.k==k);if(!e)sets.push(e={k:k,items:[]});e.items.push(p)});
  sets.forEach(e=>grp(e.k,e.items,opts.prefix));
  if(opts.decks&&opts.decks.length){const g=document.createElement('optgroup');g.label='Eigene gespeicherte Decks';
-  opts.decks.forEach(d=>{const o=$('option','Eigenes Deck: '+d.name+(d.commander?' – '+d.commander:''));o.value='deck:'+d.id;g.append(o)});sel.append(g)}}
+  opts.decks.forEach(d=>{const o=$('option','Eigenes Deck: '+d.name+(d.commander?' · '+d.commander:''));o.value='deck:'+d.id;g.append(o)});sel.append(g)}}
 async function loadPrecons(){
  const info=await J('/api/info'),m=E('pmissing');m.innerHTML='';
  if(!info.precons_at){m.append($('p','Die Precon-Decklisten sind noch nicht geladen (einmalig ca. 30 MB von GitHub).'));
@@ -7717,14 +7727,14 @@ async function loadPrecons(){
  const sel=E('pall');fillPreconSelect(sel,all,{match:list.slice(0,8)});
  sel.onchange=()=>{const p=all.find(x=>String(x.id)==sel.value);if(p)setOpp({kind:'precon',id:p.id,name:p.name,commander:p.commander,set:p.set})};
  if(list.length){s.append($('span','Schnellwahl passend zu deinen Farben: '))}
- list.slice(0,8).forEach(p=>{const b=$('button');b.type='button';b.append($('b',p.name),' – '+p.commander+' ('+ciName(p.ci)+')');b.title=plabel(p);
+ list.slice(0,8).forEach(p=>{const b=$('button');b.type='button';b.append($('b',p.name),' · '+p.commander+' ('+ciName(p.ci)+')');b.title=plabel(p);
   b.onclick=()=>setOpp({kind:'precon',id:p.id,name:p.name,commander:p.commander,set:p.set});s.append(b)})}
 ac(E('pq'),{get:async v=>(await J('/api/precons?q='+encodeURIComponent(v))).map(p=>({t:plabel(p),v:p.id})),
  pick:(id,it)=>{E('pq').value=it.t;const p=(PALL||[]).find(x=>x.id==id);setOpp(p?{kind:'precon',id:p.id,name:p.name,commander:p.commander,set:p.set}:{kind:'precon',id:id,name:it.t})}});
 const fmt=v=>v==null?'–':(typeof v=='number'&&!Number.isInteger(v)?v.toFixed(2):String(v));
 const oppP=()=>opp.kind=='precon'?{precon:opp.id}:{opp_list:opp.list,opp_commander:opp.commander||'',opp_name:opp.name||''};
 const mineP=()=>({list:deck.export,commander:deck.commander||'',ci:deck.ci||''});
-function oppInfo(){E('oppinfo').textContent=opp?'Aktueller Gegner: '+(opp.kind=='precon'?'Precon „'+opp.name+'“'+(opp.commander?' – Commander: '+opp.commander:'')+(opp.set?' ('+opp.set+')':''):opp.name):'Noch kein Gegner gewählt.';
+function oppInfo(){E('oppinfo').textContent=opp?'Aktueller Gegner: '+(opp.kind=='precon'?'Precon „'+opp.name+'“'+(opp.commander?', Commander: '+opp.commander:'')+(opp.set?' ('+opp.set+')':''):opp.name):'Noch kein Gegner gewählt.';
  const sel=E('pall');if(sel)sel.value=opp&&opp.kind=='precon'?String(opp.id):''}
 function setOpp(o){opp=o;oppInfo();E('pview').innerHTML='';precon=null;
  if(deck&&!deck.error){runCompare(opp);if(document.body.dataset.page!='gegner')goTab('gegner')}}
@@ -7778,10 +7788,10 @@ function exportBox(o,get){const hh=$('h4','Exportieren & übertragen');hh.append
   b.onclick=async()=>{const w=window.open(url,'_blank');const r=await J('/api/export',Object.assign(get(),{fmt}));
    if(r.error){msg.className='warn';msg.textContent=r.error;return}
    const ok=await copyText(r.text);msg.className='hint';
-   msg.textContent=(ok?'Deckliste ist kopiert. ':'Kopieren nicht möglich – bitte die Datei unten herunterladen. ')+how+(w?'':' (Pop-up blockiert – bitte '+url+' selbst öffnen.)')}}
+   msg.textContent=(ok?'Deckliste ist kopiert. ':'Kopieren nicht möglich. Bitte die Datei unten herunterladen. ')+how+(w?'':' (Pop-up blockiert, bitte '+url+' selbst öffnen.)')}}
  const cp=$('button','Text kopieren');cp.type='button';row.append(cp);
  cp.onclick=async()=>{const r=await J('/api/export',Object.assign(get(),{fmt:'arena'}));
-  msg.textContent=r.error||((await copyText(r.text))?'Deckliste (Arena-/Moxfield-Format) kopiert – passt für die meisten Seiten und Apps.':'Kopieren nicht möglich.')};
+  msg.textContent=r.error||((await copyText(r.text))?'Deckliste (Arena-/Moxfield-Format) kopiert. Das Format passt für die meisten Seiten und Apps.':'Kopieren nicht möglich.')};
  const sel=$('select');[['arena','Datei: Moxfield/Arena (.txt)'],['archidekt','Datei: Archidekt (.txt)'],['text','Datei: einfache Liste (.txt)'],
   ['dck','Datei: Forge (.dck)'],['csv','Datei: CSV']].forEach(([v,t])=>{const op=$('option',t);op.value=v;sel.append(op)});
  const dl=$('button','Herunterladen');dl.type='button';row.append(' ',sel,dl);
@@ -7789,7 +7799,7 @@ function exportBox(o,get){const hh=$('h4','Exportieren & übertragen');hh.append
   if(r.error){msg.className='warn';msg.textContent=r.error;return}download(r.filename,r.text);msg.className='hint';msg.textContent='Datei „'+r.filename+'“ wird heruntergeladen.'};
  const fg=$('button','In Forge-Deckordner speichern');fg.type='button';if(!ME.server)row.append(' ',fg);
  fg.onclick=async()=>{const r=await J('/api/export',Object.assign(get(),{fmt:'forge'}));
-  msg.className=r.error?'warn':'hint';msg.textContent=r.error||('Gespeichert: '+r.path+' – in Forge unter Commander-Decks auswählbar.')}}
+  msg.className=r.error?'warn':'hint';msg.textContent=r.error||('Gespeichert: '+r.path+'. In Forge unter Commander-Decks auswählbar.')}}
 
 // ---- Import und gespeicherte Decks
 // Kodierung der Datei erkennen: UTF-8 (mit/ohne BOM), UTF-16, sonst Windows-1252 (ältere Windows-Programme)
@@ -7831,9 +7841,9 @@ async function useMine(d){E('out').textContent='Lade Deck ...';
  deck=await J('/api/deck_view',d);deck.name=d.name;if(d.extra&&!deck.error)await applyExtra(d.extra);showDeck();
  E('cmp').innerHTML='';E('pview').innerHTML='';precon=null;afterDeck();goTab('deck')}
 function useOpp(d,where){setOpp({kind:'deck',name:d.name||d.commander||'Gegnerdeck',list:d.list,commander:d.commander});
- if(!(deck&&!deck.error)&&where)P(where,'Als Gegner gesetzt – jetzt ein eigenes Deck vorschlagen oder laden.','hint')}
+ if(!(deck&&!deck.error)&&where)P(where,'Als Gegner gesetzt. Jetzt ein eigenes Deck vorschlagen oder laden.','hint')}
 function shareDialog(d){const b=dlgOpen('Deck teilen: '+d.name);
- P(b,'Wer den Link hat, sieht das Deck als Nur-Lese-Seite (Karten, Bilder, Tags, Notizen, Maybeboard) – ohne Anmeldung. Du kannst den Link jederzeit widerrufen.','hint');
+ P(b,'Wer den Link hat, sieht das Deck als Nur-Lese-Seite (Karten, Bilder, Tags, Notizen, Maybeboard), auch ohne Anmeldung. Du kannst den Link jederzeit widerrufen.','hint');
  if(!ME.server)P(b,'Hinweis: Im lokalen Betrieb funktioniert der Link nur auf diesem PC bzw. im Heimnetz (Start mit „im Netzwerk“). Für Links im Internet den Server-Betrieb nutzen.','hint');
  const res=$('div');b.append(res);
  const show=r=>{res.innerHTML='';if(r.error){P(res,r.error,'warn');return}
@@ -7847,9 +7857,9 @@ function shareDialog(d){const b=dlgOpen('Deck teilen: '+d.name);
 async function versionsDialog(id){const b=dlgOpen('Versionen');const r=await J('/api/deck_versions?id='+id);
  if(r.error){P(b,r.error,'warn');return}
  P(b,'Deck „'+r.deck.name+'“ · aktuelle Fassung: '+deck_count_js(r.deck.list)+' Karten. Ältere Fassungen werden beim Speichern automatisch gesichert (bis zu 30).','hint');
- if(!r.versions.length){P(b,'Noch keine älteren Fassungen – sie entstehen, sobald du das Deck geändert speicherst.');return}
+ if(!r.versions.length){P(b,'Noch keine älteren Fassungen. Sie entstehen, sobald du das Deck geändert speicherst.');return}
  const cmp=$('div');cmp.className='savebox';b.append(cmp);cmp.append($('b','Zwei Fassungen vergleichen: '));
- const opts=[{v:0,t:'aktuelle Fassung'}].concat(r.versions.map(v=>({v:v.vid,t:v.saved_at+(v.note?' – '+v.note:'')})));
+ const opts=[{v:0,t:'aktuelle Fassung'}].concat(r.versions.map(v=>({v:v.vid,t:v.saved_at+(v.note?': '+v.note:'')})));
  const mk=(sel)=>{const s=$('select');opts.forEach(o=>{const op=$('option',o.t);op.value=o.v;s.append(op)});s.value=sel;return s};
  const sa=mk(r.versions[r.versions.length-1].vid),sb2=mk(0);sa.id='vcmpa';sb2.id='vcmpb';
  const go=$('button','Vergleichen');go.type='button';const res=$('div');
@@ -7858,7 +7868,7 @@ async function versionsDialog(id){const b=dlgOpen('Versionen');const r=await J('
   if(x.error){P(res,x.error,'warn');return}
   P(res,'Von '+x.from+' nach '+x.to+': dazugekommen '+(x.added.join(', ')||'–')+' · entfernt '+(x.removed.join(', ')||'–'))};
  for(const v of r.versions){const d=$('div');d.className='combo';b.append(d);
-  d.append($('b','Fassung vom '+v.saved_at+' ('+v.count+' Karten)'+(v.note?' – „'+v.note+'“':'')));
+  d.append($('b','Fassung vom '+v.saved_at+' ('+v.count+' Karten)'+(v.note?': „'+v.note+'“':'')));
   d.append($('div','Seitdem dazugekommen: '+(v.added.join(', ')||'–')));
   d.append($('div','Seitdem entfernt: '+(v.removed.join(', ')||'–')));
   const rs=$('button','Diese Fassung wiederherstellen');rs.type='button';
@@ -7881,13 +7891,13 @@ function invRender(r){const o=E('invres');o.innerHTML='';
   ' · '+r.known+' Karten mit bekanntem Druck, '+r.unknown+' ohne'+(r.foil?' · '+r.foil+' Foils':''));
  if(r.pending){const b=$('button','Druckdaten für '+r.pending+' Einträge nachladen');b.type='button';b.id='invresolve';
   b.onclick=async()=>{b.disabled=true;b.textContent='lade …';const x=await J('/api/inv_resolve',{});if(x.error)alertBox(x.error);invLoad();J('/api/collection').then(collSum)};sm.append(' ',b)}
- P(o,'Preise: Cardmarket'+(r.cm_at?' (Preisliste vom '+r.cm_at+')':'')+' je Druck und Foil, sonst Scryfall; ohne bekannten Druck gilt der günstigste Druck der Karte. Zustand und Sprache ändern den Wert nicht – die Cardmarket-Preisliste unterscheidet sie nicht.','hint');
+ P(o,'Preise: Cardmarket'+(r.cm_at?' (Preisliste vom '+r.cm_at+')':'')+' je Druck und Foil, sonst Scryfall; ohne bekannten Druck gilt der günstigste Druck der Karte. Zustand und Sprache ändern den Wert nicht, weil die Cardmarket-Preisliste sie nicht unterscheidet.','hint');
  const t=$('table');t.id='invtab';o.append(t);const hr=t.insertRow();['','Karte','Druck','Foil','Zustand','Sprache','Anzahl','Preis','Wert',''].forEach(x=>hr.append($('th',x)));
- const conds=[['','–'],...r.conds.map(([c,n])=>[c,c+' – '+n])],langs=[['','–'],...r.langs.map(([c,n])=>[c,n])];
+ const conds=[['','–'],...r.conds.map(([c,n])=>[c,c+' ('+n+')'])],langs=[['','–'],...r.langs.map(([c,n])=>[c,n])];
  r.items.forEach(it=>{const tr=t.insertRow();tr.dataset.name=it.name;
   const c0=tr.insertCell();if(it.image){const im=$('img');im.src=it.image;im.loading='lazy';im.className='invimg';im.alt='';c0.append(im)}
   tr.insertCell().append(cardName(it.name));
-  const c2=tr.insertCell();c2.className='invprint';c2.append(it.set_code?(it.set_code+(it.number?' #'+it.number:'')+(it.set_name?' – '+it.set_name:'')+(it.known?'':' (Daten fehlen)')):'unbekannt',' ');
+  const c2=tr.insertCell();c2.className='invprint';c2.append(it.set_code?(it.set_code+(it.number?' #'+it.number:'')+(it.set_name?' · '+it.set_name:'')+(it.known?'':' (Daten fehlen)')):'unbekannt',' ');
   const pb=$('button','✎');pb.type='button';pb.className='sw invchg';pb.title='Druck wählen';pb.onclick=()=>invPrints(it.name,it);c2.append(pb);
   const fin=it.finishes||['nonfoil','foil','etched'];const fo=[[0,'normal'],[1,'Foil'],[2,'Etched']].filter(([v])=>v==it.foil||fin.includes(['nonfoil','foil','etched'][v]));
   tr.insertCell().append(invSel(fo,it.foil,v=>invSet(it,{foil:+v})));
@@ -7921,7 +7931,7 @@ async function invPrints(name,it){const o=dlgOpen((it?'Druck ändern: ':'Druck w
      if(a.error){alertBox(a.error);return}J('/api/collection').then(collSum);invLoad()}closeSwap()};return b};
   const bs=$('div');d.append(bs);if(x.finishes.includes('nonfoil'))bs.append(pick(0));if(x.finishes.includes('foil')||x.finishes.includes('etched'))bs.append(' ',pick(x.finishes.includes('foil')?1:2))})};
  flt.oninput=draw;draw()}
-let CONDS_JS=[['MT','MT – Mint'],['NM','NM – Near Mint'],['EX','EX – Excellent'],['GD','GD – Good'],['LP','LP – Light Played'],['PL','PL – Played'],['PO','PO – Poor']];
+let CONDS_JS=[['MT','MT (Mint)'],['NM','NM (Near Mint)'],['EX','EX (Excellent)'],['GD','GD (Good)'],['LP','LP (Light Played)'],['PL','PL (Played)'],['PO','PO (Poor)']];
 let LANGS_JS=[['EN','Englisch'],['DE','Deutsch'],['FR','Französisch'],['IT','Italienisch'],['ES','Spanisch'],['PT','Portugiesisch'],['JA','Japanisch'],['KO','Koreanisch'],['RU','Russisch'],['ZHS','Chinesisch (vereinfacht)'],['ZHT','Chinesisch (traditionell)']];
 E('invbox').addEventListener('toggle',()=>{if(E('invbox').open)invLoad()});
 ['invq'].forEach(id=>{let tm;E(id).oninput=()=>{clearTimeout(tm);tm=setTimeout(()=>{INV.page=0;invLoad()},300)}});
@@ -8029,9 +8039,9 @@ function scanDialog(target){const b=dlgOpen('📷 Karten scannen');
   if(m.error||!m.best){P(res,'Keine Karte erkannt. Bitte näher heran, gerader halten oder für mehr Licht sorgen.'+(lines&&lines.length?' (gelesen: „'+lines.slice(0,3).join(' / ')+'“)':''),'warn');return}
   const card=c=>{const d=$('div');d.className='scanhit';if(c.image){const im=$('img');im.src=c.image;im.alt=c.name;d.append(im)}
    const t=$('div');t.append($('b',c.name),$('div',(c.type||'')+(c.eur!=null?' · '+c.eur.toFixed(2).replace('.',',')+' €':'')),$('div','erkannt über: '+c.via+' ('+Math.round(c.score*100)+' %)'));
-   const ok=$('button','✓ Übernehmen');ok.type='button';ok.className='primary';ok.onclick=()=>{const e=scanList.find(x=>x.name==c.name);if(e)e.qty++;else scanList.push({name:c.name,qty:1});scanSave();showList();res.innerHTML='';say('„'+c.name+'“ übernommen – nächste Karte scannen.')};
+   const ok=$('button','✓ Übernehmen');ok.type='button';ok.className='primary';ok.onclick=()=>{const e=scanList.find(x=>x.name==c.name);if(e)e.qty++;else scanList.push({name:c.name,qty:1});scanSave();showList();res.innerHTML='';say('„'+c.name+'“ übernommen. Nächste Karte scannen.')};
    t.append(ok);d.append(t);return d};
-  res.append(card(m.best));if(!m.sure)P(res,'Nicht ganz sicher – bitte prüfen oder eine Alternative wählen:','hint');
+  res.append(card(m.best));if(!m.sure)P(res,'Nicht ganz sicher. Bitte prüfen oder eine Alternative wählen:','hint');
   if(m.alts.length){const al=$('div');al.append('Andere Möglichkeiten: ');m.alts.slice(0,4).forEach(a=>{const bt=$('button',a.name);bt.type='button';bt.onclick=()=>showMatch({best:a,alts:[],sure:true});al.append(bt,' ')});res.append(al)}};
  const showList=()=>{lst.innerHTML='';if(!scanList.length)return;lst.append($('h4','Gescannt ('+scanList.reduce((s,x)=>s+x.qty,0)+' Karten)'));
   scanList.forEach((x,i)=>{const r=$('div');r.append(x.qty+'× ',cardName(x.name),' ');
@@ -8081,7 +8091,7 @@ function scanDialog(target){const b=dlgOpen('📷 Karten scannen');
    const beep=()=>{try{const a=new (window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();o.frequency.value=880;g.gain.value=.08;o.connect(g);g.connect(a.destination);o.start();setTimeout(()=>{o.stop();a.close()},120)}catch(e){}
     try{navigator.vibrate&&navigator.vibrate(80)}catch(e){}};
    const addCard=n=>{const e=scanList.find(x=>x.name==n);if(e)e.qty++;else scanList.push({name:n,qty:1});scanSave();showList();count++;beep();
-    flash.textContent='✓ '+n;flash.classList.add('on');setTimeout(()=>flash.classList.remove('on'),900);say('Dauerscan läuft – '+count+' Karte(n) erfasst. Nächste Karte in den Rahmen legen.')};
+    flash.textContent='✓ '+n;flash.classList.add('on');setTimeout(()=>flash.classList.remove('on'),900);say('Dauerscan läuft, '+count+' Karte(n) erfasst. Nächste Karte in den Rahmen legen.')};
    plus.onclick=()=>{if(plusName)addCard(plusName)};
    const tick=async()=>{if(!running||!document.body.contains(wrap))return;const W=v.videoWidth,H=v.videoHeight;
     if(W){const fh=H*.86,fw=Math.min(W,fh*63/88*1.18),fx=(W-fw)/2,fy=(H-fh)/2;
@@ -8091,8 +8101,8 @@ function scanDialog(target){const b=dlgOpen('📷 Karten scannen');
       else{seen=0;last='';if(++gone>=2)added=''}}catch(e){say('Texterkennung fehlgeschlagen: '+(e&&e.message||e));running=false;auto.textContent='🔁 Dauerscan starten'}}
     if(running)setTimeout(tick,350)};
    auto.onclick=async()=>{running=!running;auto.textContent=running?'⏸ Dauerscan anhalten':'🔁 Dauerscan starten';res.innerHTML='';
-    if(running){say('Dauerscan läuft – Karte in den Rahmen legen, Name oben im hellen Streifen.');try{await ocrWorker(lang.value,say)}catch(e){say(String(e&&e.message||e));running=false;return}tick()}
-    else say('Dauerscan angehalten – '+count+' Karte(n) erfasst.')};
+    if(running){say('Dauerscan läuft. Karte in den Rahmen legen, Name oben im hellen Streifen.');try{await ocrWorker(lang.value,say)}catch(e){say(String(e&&e.message||e));running=false;return}tick()}
+    else say('Dauerscan angehalten, '+count+' Karte(n) erfasst.')};
    const obs=new MutationObserver(()=>{if(!document.body.contains(wrap)){st.getTracks().forEach(t=>t.stop());obs.disconnect()}});obs.observe(document.body,{childList:true,subtree:true});
    cap.onclick=async()=>{const W=v.videoWidth,H=v.videoHeight;if(!W)return;res.innerHTML='';const fh=H*.86,fw=Math.min(W,fh*63/88*1.18),fx=(W-fw)/2,fy=(H-fh)/2;
     try{const ny=Math.max(0,fy-fh*.04);let lines=await readName(prepCanvas(v,fx,ny,fw,fh*.2),lang.value,say);let m=await J('/api/scan_match',{lines:JSON.stringify(lines),lang:lang.value});
@@ -8102,7 +8112,7 @@ function scanDialog(target){const b=dlgOpen('📷 Karten scannen');
  showList()}
 function quickDecks(list){const sel=E('opensel'),cur=sel.value;sel.innerHTML='';
  const o0=$('option',list.length?'– Deck wählen ('+list.length+' gespeichert) –':'– noch keine Decks gespeichert –');o0.value='';sel.append(o0);
- list.forEach(d=>{const o=$('option',d.name+(d.commander&&d.commander!=d.name?' – '+d.commander:'')+' ('+d.count+' Karten, '+d.saved_at+')');o.value=d.id;sel.append(o)});sel.value=cur;
+ list.forEach(d=>{const o=$('option',d.name+(d.commander&&d.commander!=d.name?' · '+d.commander:'')+' ('+d.count+' Karten, '+d.saved_at+')');o.value=d.id;sel.append(o)});sel.value=cur;
  const r=E('recent');r.innerHTML='';if(!list.length)return;
  const box=$('div');box.className='recentbox';box.append($('b','Zuletzt gespeichert: '));
  [...list].sort((a,b)=>(b.saved_at||'').localeCompare(a.saved_at||'')).slice(0,5).forEach(d=>{const bt=$('button','📂 '+d.name);bt.type='button';
@@ -8128,7 +8138,7 @@ async function myDecks(list){list=list||await J('/api/decks');
   const bs=$('button',d.shared?'🔗 Geteilt':'Teilen');bs.type='button';bs.onclick=()=>shareDialog(d);
   const bx=$('button','📤 Senden');bx.type='button';bx.className='dsend';bx.onclick=()=>sendDialog(d);
   const bp=$('button',d.public?'🌍 Veröffentlicht':'🌍 Veröffentlichen');bp.type='button';bp.className='dpub srvonly';bp.hidden=!ME.server;
-  bp.title=d.public?'Steht in der Galerie – antippen, um es zurückzuziehen':'In die öffentliche Galerie dieses Servers stellen';
+  bp.title=d.public?'Steht in der Galerie. Antippen zieht es zurück':'In die öffentliche Galerie dieses Servers stellen';
   bp.onclick=async()=>{const r=await J('/api/deck_public',{id:d.id,on:d.public?0:1});if(r.error){bp.textContent='⚠ '+r.error;return}myDecks()};
   const b3=$('button','Löschen');b3.type='button';
   b3.onclick=async()=>{if(b3.textContent!='Wirklich?'){b3.textContent='Wirklich?';return}myDecks(await J('/api/deck_delete',{id:d.id}))};
@@ -8147,7 +8157,7 @@ async function sendDialog(d){await MEP;const b=dlgOpen('Deck senden: '+d.name);
     if(r.error)P(res,r.error,'warn');else{P(res,'✓ An '+r.to+' gesendet.');go.disabled=true}};
    const l1=$('div');l1.append('An: ',to);b.append(l1,msg,$('br'),go,res)}
   P(b,'Für Leute ohne Zugang zu diesem Server: „Teilen“ erzeugt einen Link, den sie in ihrer eigenen Manaschmiede unter „Meine Decks“ importieren können.','hint');return}
- P(b,'Hier gibt es keine Benutzerkonten. Du sendest deshalb einen Link: Die andere Person öffnet ihn im Browser oder fügt ihn in ihrer Manaschmiede unter „📂 Meine Decks → Deck importieren“ in das Link-Feld ein – das Deck wird dann komplett übernommen.','hint');
+ P(b,'Hier gibt es keine Benutzerkonten. Du sendest deshalb einen Link: Die andere Person öffnet ihn im Browser oder fügt ihn in ihrer Manaschmiede unter „📂 Meine Decks → Deck importieren“ in das Link-Feld ein. Das Deck wird dann komplett übernommen.','hint');
  P(b,'Der Link funktioniert nur, solange deine Manaschmiede läuft und für die andere Person erreichbar ist (gleiches Heimnetz mit „im Netzwerk starten“ oder Server).','hint');
  const res=$('div');b.append(res);let r=await J('/api/deck_share',{id:d.id,on:1});if(r.error){P(res,r.error,'warn');return}
  const url=location.origin+r.path;const inp=$('input');inp.id='sendlink';inp.readOnly=true;inp.value=url;inp.size=48;
@@ -8158,7 +8168,7 @@ async function inboxShow(){await MEP;const o=E('inbox');if(!o)return;o.innerHTML
  const r=await J('/api/inbox');const it=r.items||[];const nb=document.querySelector('#mainnav a[data-v=decks]');
  if(nb)nb.dataset.badge=it.length?String(it.length):'';const mb2=document.querySelector('#mobmore a[data-v=decks]');if(mb2)mb2.dataset.badge=it.length?String(it.length):'';const mbb=E('mobmorebtn');if(mbb)mbb.dataset.badge=it.length?String(it.length):'';if(!it.length)return;
  const box=$('div');box.className='roombox inboxbox';box.append($('h4','📥 Erhaltene Decks ('+it.length+')'));
- it.forEach(x=>{const d=$('div');d.className='inboxitem';d.append($('b',x.name),' – '+(x.commander||'ohne Commander')+' · '+x.cards+' Karten · von ',$('b',x.from),' · '+x.sent_at);
+ it.forEach(x=>{const d=$('div');d.className='inboxitem';d.append($('b',x.name),' · '+(x.commander||'ohne Commander')+' · '+x.cards+' Karten · von ',$('b',x.from),' · '+x.sent_at);
   if(x.msg){const m=$('div','„'+x.msg+'“');m.className='hint';d.append(m)}
   const ac=$('button','✔ Übernehmen');ac.type='button';ac.className='primary inacc';ac.onclick=async()=>{const q=await J('/api/inbox_accept',{id:x.id});if(q.error){P(d,q.error,'warn');return}
    await myDecks();await inboxShow();P(E('inbox'),'✓ „'+q.name+'“ ist jetzt unter deinen Decks.','hint')};
@@ -8185,8 +8195,8 @@ function comboList(o,rep,title){const box=$('div');o.append(box);box.append($('h
   const b=$('span');b.className='bar';const i=$('i');i.style.width=(c.by10||0)+'%';b.append(i);w.append(b);d.append(w);
   if(c.prereq)P(d,'Voraussetzungen: '+c.prereq,'hint');
   const l=$('a','Ablauf bei Commander Spellbook',c.url);d.append(l)}
- if(rep.almost&&rep.almost.length){box.append($('h4','Fast vollständig – eine Karte fehlt ('+rep.almost_count+')'));
-  P(box,'Combos, denen genau eine Karte fehlt (passend zur Farbidentität). Bewusst ergänzen – oder bewusst weglassen.','hint');
+ if(rep.almost&&rep.almost.length){box.append($('h4','Fast vollständig, es fehlt eine Karte ('+rep.almost_count+')'));
+  P(box,'Combos, denen genau eine Karte fehlt (passend zur Farbidentität). Du kannst sie bewusst ergänzen oder bewusst weglassen.','hint');
   for(const c of rep.almost.slice(0,12)){const d=$('div');d.className='combo'+(c.win?' win':'');box.append(d);
    const t=$('div');const tb=$('b');c.cards.forEach((u,k)=>{if(k)tb.append(' + ');const nm=cardName(u.name);if(c.missing.includes(u.name))nm.classList.add('miss');tb.append(nm)});t.append(tb);d.append(t);
    d.append($('div','Fehlt: '+c.missing.join(', ')+' · Ergebnis: '+c.produces.join(', ')+' · Einstufung: '+c.tag_name));
@@ -8207,7 +8217,7 @@ async function loadCombos(){const o=E('combos');o.innerHTML='';o.append(h3q('Com
 let duelTimer=null;
 let DUELGEN=0;
 async function duelBox(){const gen=++DUELGEN;const o=E('duel');o.innerHTML='';o.append(h3q('Direktes Duell (Regel-Engine Forge)','duell'));
- P(o,'Dein Deck gegen „'+opp.name+'“: Beide Decks spielen mehrere komplette Partien Commander 1-gegen-1 (40 Leben, Commander-Schaden, Commander-Steuer) – KI gegen KI. Jede Karte wird mit ihren echten Fähigkeiten ausgeführt, auch Combos.','hint');
+ P(o,'Dein Deck gegen „'+opp.name+'“: Beide Decks spielen mehrere komplette Partien Commander 1-gegen-1 (40 Leben, Commander-Schaden, Commander-Steuer), KI gegen KI. Jede Karte wird mit ihren echten Fähigkeiten ausgeführt, auch Combos.','hint');
  const man=$('div');man.className='savebox';man.id='manualbox';o.append(man);
  man.append($('b','🃏 Selbst gegeneinander spielen'),' ',pvBtn('Im Browser: Dein Deck gegen „'+opp.name+'“',()=>pvStart(true),'primary'));
  P(man,'Du spielst beide Seiten am Spieltisch im Browser: Starthand und Mulligan, Ziehen, Ausspielen, Angriffe, Leben und Commander-Schaden, mit Protokoll und Statistik. Regeln prüft der Spieltisch nicht.','hint');
@@ -8215,10 +8225,10 @@ async function duelBox(){const gen=++DUELGEN;const o=E('duel');o.innerHTML='';o.
  if(!ME.server&&st.ready){const fb=pvBtn('🖥 In Forge selbst gegen die KI spielen',async()=>{fb.disabled=true;const r=await J('/api/forge_play',Object.assign(mineP(),oppP(),{deck_name:deck&&deck.name||''}));fb.disabled=false;
    const msg=E('forgeplaymsg')||man.appendChild(Object.assign($('p'),{id:'forgeplaymsg'}));
    msg.className=r.error?'warn':'hint';msg.textContent=r.error||('Forge '+(r.started?'startet gleich (beim ersten Mal etwa eine Minute)':'ist vorbereitet')+'. Die Decks liegen dort unter Commander: '+r.decks.join(' und ')+
-    '. In Forge links „Commander“ wählen, bei Spieler 1 dein Deck, bei Spieler 2 „KI“ und den Gegner, dann „Spiel starten“ – Forge prüft alle Regeln.')});
+    '. In Forge links „Commander“ wählen, bei Spieler 1 dein Deck, bei Spieler 2 „KI“ und den Gegner, dann „Spiel starten“. Forge prüft dabei alle Regeln.')});
   man.append(' ',fb)}
  const cfg=$('div');o.append(cfg);
- if(ME.server){P(cfg,st.ready?'Forge ist auf dem Server bereit.':'Forge ist auf dem Server nicht eingerichtet – bitte den Administrator fragen.',st.ready?'hint':'warn');if(!st.ready)return}
+ if(ME.server){P(cfg,st.ready?'Forge ist auf dem Server bereit.':'Forge ist auf dem Server nicht eingerichtet. Bitte den Administrator fragen.',st.ready?'hint':'warn');if(!st.ready)return}
  else{
  const inp=$('input');inp.size=60;inp.placeholder='Forge-Ordner, z. B. C:\\Forge';inp.value=st.dir||'';cfg.append('Forge-Ordner: ',inp);
  const sv=$('button','Speichern');sv.type='button';cfg.append(sv);
@@ -8244,7 +8254,7 @@ async function duelBox(){const gen=++DUELGEN;const o=E('duel');o.innerHTML='';o.
  {const li=await J('/api/lab_list');if(gen!=DUELGEN)return;const ai=$('select');ai.id='duelai';(li.profiles||['Default']).forEach(x=>ai.append(new Option(x,x)));const pil=labPilot();if(pil)ai.value=pil;
   const dmc=$('select');dmc.id='duelmc';[['off','aus (ca. 15 s je Partie)'],['on','an (ca. 30 s je Partie)'],['max','maximal (ca. 50 s je Partie)']].forEach(([v,t])=>dmc.append(new Option(t,v)));
   const kd=$('details');kd.id='duelki';kd.append($('summary','⚙ KI-Einstellungen'+(pil?' (KI-Pilot: '+pil+')':'')),'KI-Profil deines Decks: ',ai,'  Vorausschau: ',dmc);
-  P(kd,'Die Gegner spielen mit „Default“. Mit Vorausschau prüft die KI mögliche Züge vorher durch – stärker, aber langsamer. Zeiten gelten für 1 gegen 1; Runden zu dritt oder viert dauern deutlich länger.','hint');run.append(kd)}
+  P(kd,'Die Gegner spielen mit „Default“. Mit Vorausschau prüft die KI mögliche Züge vorher durch. Sie spielt dann stärker, braucht aber länger. Zeiten gelten für 1 gegen 1; Runden zu dritt oder viert dauern deutlich länger.','hint');run.append(kd)}
  const n=$('input');n.size=4;n.type='number';n.min=1;n.max=ME.max_games||100;n.value=String(Math.min(10,ME.max_games||10));
  run.append('Anzahl Partien (max. '+(ME.max_games||100)+'): ',n,' ');
  const go=$('button','Duell starten');go.type='button';run.append(go);
@@ -8283,12 +8293,12 @@ async function buyLoad(extra,url){const o=E('buyres');if(!extra)o.innerHTML='<p 
 function buyRender(r){const o=E('buyres');o.innerHTML='';if(r.error){P(o,r.error,'warn');return}
  if(r.added)P(o,'✔ '+nK(r.added)+' in die Sammlung übernommen.','tag');
  const act=r.items.filter(x=>!x.skip);
- if(!r.items.length){P(o,'Für „'+r.title+'“ fehlt keine Karte – alles da.','tag');return}
+ if(!r.items.length){P(o,'Für „'+r.title+'“ fehlt keine Karte.','tag');return}
  const sm=$('div');sm.className='buysum';sm.id='buysum';o.append(sm);
  sm.append($('b',nK(act.reduce((a,x)=>a+x.qty,0))+' für '+eur(r.total)),' · '+r.title);
  Object.entries(r.shops).forEach(([k,s])=>sm.append($('div',SHOPS[k].name+': '+nK(s.cards)+', '+eur(s.total)+(s.noprice?' (+'+s.noprice+' ohne Preis)':''))));
  if(r.budget){const b=$('div');b.id='buybud';b.className=r.over?'warn':'tag';
-  b.textContent='Budget '+eur(r.budget)+': '+(r.over?eur(r.in_budget)+' passen hinein, '+nK(act.filter(x=>!x.fits).length)+' ('+eur(r.over)+' darüber) sind markiert – Karten, die in mehreren Decks stecken, haben Vorrang, sonst die günstigsten zuerst.':'alles passt ('+eur(r.budget-r.total)+' übrig).');sm.append(b)}
+  b.textContent='Budget '+eur(r.budget)+': '+(r.over?eur(r.in_budget)+' passen hinein, '+nK(act.filter(x=>!x.fits).length)+' ('+eur(r.over)+' darüber) sind markiert. Karten, die in mehreren Decks stecken, haben Vorrang, danach die günstigsten.':'alles passt ('+eur(r.budget-r.total)+' übrig).');sm.append(b)}
  if(r.noprice)P(sm,nK(r.noprice)+' ohne bekannten Preis sind nicht eingerechnet.','hint');
  // Tabelle
  const t=$('table');t.id='buytab';t.className='duel';o.append(t);const h=t.insertRow();
@@ -8299,7 +8309,7 @@ function buyRender(r){const o=E('buyres');o.innerHTML='';if(r.error){P(o,r.error
   tr.insertCell().textContent=x.qty;const nc=tr.insertCell();nc.append(cardName(x.name));if(x.decks.length>1)nc.append($('div',x.decks.length+' Decks: '+x.decks.join(', ')));
   if(!x.fits&&!x.skip)nc.append($('div','über Budget'));
   const pc=tr.insertCell();const pb=$('button',(x.print?x.print.set_code+' #'+x.print.number:'beliebig')+(x.foil?' ✨':''));pb.type='button';pb.className='buyprint';
-  pb.title=x.print?x.print.set_name:'Günstigste Druckversion – zum Festlegen klicken';pb.onclick=()=>buyPrint(x);pc.append(pb);
+  pb.title=x.print?x.print.set_name:'Günstigste Druckversion, zum Festlegen klicken';pb.onclick=()=>buyPrint(x);pc.append(pb);
   const sc=tr.insertCell();const ss=$('select');ss.className='buyshopsel';ss.append(new Option('CM','cm'),new Option('TO','to'));ss.value=x.shop;
   ss.onchange=()=>buyLoad({name:x.name,shop:ss.value},'/api/buy_set');sc.append(ss);
   tr.insertCell().textContent=eur(x.price)+(x.src=='cheapest'&&x.print?' *':'');tr.insertCell().textContent=eur(x.total);
@@ -8311,13 +8321,13 @@ function buyRender(r){const o=E('buyres');o.innerHTML='';if(r.error){P(o,r.error
  const hd=$('div');hd.id='buyshops';o.append(hd);
  if(r.shops.cm){const b=$('div');b.className='savebox';b.append($('b','Cardmarket: '));
   if(r.cm_any_text){const cb=$('button','🛒 Liste kopieren & Wants öffnen');cb.type='button';cb.id='buycmwants';cb.onclick=()=>cmWants(r.cm_any_text,cb);b.append(cb,' ',$('span',nK(r.cm_any_text.split('\\n').length)+' mit beliebigem Druck'))}
-  if(r.cm_specific)P(b,nK(r.cm_specific)+' mit festgelegtem Druck oder Foil bitte einzeln über den CM-Link in der Tabelle in den Warenkorb legen – die Wants-Liste kennt keine Drucke.','hint');hd.append(b)}
- if(r.shops.to){const b=$('div');b.className='savebox';const tl=act.filter(x=>x.shop=='to'&&x.fits);b.append($('b','Trader-online: '),nK(tl.length)+' – über die TO-Links in der Tabelle suchen und in den Warenkorb legen. ');
+  if(r.cm_specific)P(b,nK(r.cm_specific)+' mit festgelegtem Druck oder Foil bitte einzeln über den CM-Link in der Tabelle in den Warenkorb legen, weil die Wants-Liste keine Drucke kennt.','hint');hd.append(b)}
+ if(r.shops.to){const b=$('div');b.className='savebox';const tl=act.filter(x=>x.shop=='to'&&x.fits);b.append($('b','Trader-online: '),nK(tl.length)+'. Über die TO-Links in der Tabelle suchen und in den Warenkorb legen. ');
   const cb=$('button','Liste kopieren');cb.type='button';cb.id='buytocopy';cb.onclick=async()=>{await copyText(tl.map(x=>x.qty+' '+x.name).join('\\n'));cb.textContent='✓ kopiert'};b.append(cb);hd.append(b)}
  // Precon-Check
  if(r.precons.length){const d=$('details');d.id='buyprecons';d.className='subbox';keepOpen(d);d.append($('summary','📦 Precon-Check: '+r.precons.length+' Precons enthalten mehrere der fehlenden Karten'));
   P(d,'Manchmal ist ein Precon günstiger als die Einzelkarten. Vergleiche den Kaufpreis beim Händler mit dem Wert der fehlenden Karten.','hint');
-  r.precons.forEach(pc=>{const row=$('div');row.className='buypc';row.append($('b',pc.name),' ('+pc.set+') – enthält '+pc.covered+' fehlende Karten im Wert von '+eur(pc.value)+' · Einzelkartenwert des ganzen Precons '+eur(pc.precon_value)+' ',sealedLinks(pc.name));
+  r.precons.forEach(pc=>{const row=$('div');row.className='buypc';row.append($('b',pc.name),' ('+pc.set+') enthält '+pc.covered+' fehlende Karten im Wert von '+eur(pc.value)+' · Einzelkartenwert des ganzen Precons '+eur(pc.precon_value)+' ',sealedLinks(pc.name));
    row.append($('div',pc.cards.join(', ')));d.append(row)});o.append(d)}
  // Abschluss
  const f=$('p');const done=$('button','✔ Ausgewählte als gekauft in die Sammlung');done.type='button';done.id='buydone';
@@ -8327,7 +8337,7 @@ function buyRender(r){const o=E('buyres');o.innerHTML='';if(r.error){P(o,r.error
  const cs=$('button','CSV herunterladen');cs.type='button';cs.id='buycsv';cs.onclick=async()=>{const x=await J('/api/buy_csv',buyParams());if(x.csv)download(x.file,x.csv)};
  const px=$('button','🖨 Als Proxy drucken');px.type='button';px.id='buyproxy';px.title='Kopien zum Testen, bis die echten Karten da sind';px.onclick=()=>proxyStudio({text:act.map(x=>x.qty+' '+x.name+(x.print?' ('+x.print.set_code+') '+x.print.number:'')).join('\\n')});
  f.append(done,' ',cs,' ',px);o.append(f);
- P(o,'Preise: Cardmarket-Preisliste (Trend) bzw. Scryfall; * = Preis der günstigsten Druckversion, weil für den gewählten Druck keiner vorliegt. Trader-online liefert keine Preisliste – dort gilt der Preis im Shop. Anmeldung und Kauf laufen direkt beim Händler.','hint')}
+ P(o,'Preise: Cardmarket-Preisliste (Trend) bzw. Scryfall; * = Preis der günstigsten Druckversion, weil für den gewählten Druck keiner vorliegt. Trader-online liefert keine Preisliste, dort gilt der Preis im Shop. Anmeldung und Kauf laufen direkt beim Händler.','hint')}
 async function buyPrint(x){const b=dlgOpen('Druck für '+x.name);const any=$('button','Beliebiger Druck (günstigster)');any.type='button';any.id='buyany';
  any.onclick=()=>{closeSwap();buyLoad({name:x.name,set_code:'',number:'',foil:0},'/api/buy_set')};b.append(any);
  const l=$('div');l.id='buyprints';b.append(l);P(l,'Lade Drucke …','hint');const r=await J('/api/prints?name='+encodeURIComponent(x.name));l.innerHTML='';
@@ -8382,9 +8392,9 @@ async function labBox(o,gen){let ready=false;const wrap=$('details');wrap.id='la
  const go=$('button','▶ Messung starten');go.type='button';go.className='primary';go.id='labgo';
  const stop=$('button','Abbrechen');stop.type='button';stop.id='labstop';stop.hidden=true;
  // Umfang als Stufe mit ungefährer Dauer; „Eigene Einstellung“ für Partien und Vorausschau von Hand
- const LABPRE=[{k:'quick',t:'Schnell',n:10,mc:'off',pf:'few',d:'10 Partien je Variante und Gegner, ohne Vorausschau – zeigt grobe Tendenzen und große Unterschiede.'},
-  {k:'std',t:'Standard',n:20,mc:'off',pf:'all',d:'20 Partien, alle KI-Profile – erkennt Unterschiede ab etwa 25 Prozentpunkten zuverlässig.'},
-  {k:'deep',t:'Gründlich',n:40,mc:'off',pf:'all',d:'40 Partien, alle KI-Profile – macht auch kleinere Unterschiede sichtbar.'},
+ const LABPRE=[{k:'quick',t:'Schnell',n:10,mc:'off',pf:'few',d:'10 Partien je Variante und Gegner, ohne Vorausschau. Zeigt grobe Tendenzen und große Unterschiede.'},
+  {k:'std',t:'Standard',n:20,mc:'off',pf:'all',d:'20 Partien, alle KI-Profile. Erkennt Unterschiede ab etwa 25 Prozentpunkten zuverlässig.'},
+  {k:'deep',t:'Gründlich',n:40,mc:'off',pf:'all',d:'40 Partien, alle KI-Profile. Macht auch kleinere Unterschiede sichtbar.'},
   {k:'max',t:'Sehr gründlich',n:30,mc:'on',pf:'all',d:'30 Partien mit Vorausschau: die KI prüft Züge vorher durch und spielt stärker, dauert etwa doppelt so lange je Partie.'},
   {k:'custom',t:'Eigene Einstellung',d:'Partien und Vorausschau selbst festlegen.'}];
  const pre=$('select');pre.id='labpreset';LABPRE.forEach(x=>pre.append(new Option(x.t,x.k)));const pd=$('p');pd.className='hint';pd.id='labpredesc';
@@ -8396,7 +8406,7 @@ async function labBox(o,gen){let ready=false;const wrap=$('details');wrap.id='la
   n.value=x.n;mc.value=x.mc;if(mode.value=='pilot')pbox.querySelectorAll('.labpf').forEach(c=>c.checked=preProfs(x).includes(c.value));est()}
  function preLabels(){const nop=obox.children.length||1;[...pre.options].forEach(o=>{const x=LABPRE.find(y=>y.k==o.value);if(x.k=='custom'){o.textContent=x.t;return}
   const nvar=1+(mode.value=='swap'?variants().length:preProfs(x).length);const [tot,sec]=durOf(x.n,nvar,nop,x.mc);
-  o.textContent=x.t+' – '+(nvar<2?'?':fmtDur(sec))+' ('+tot+' Partien)'+(tot>info.max?' · über der Grenze':'');o.disabled=tot>info.max&&o.value!=pre.value})}
+  o.textContent=x.t+': '+(nvar<2?'?':fmtDur(sec))+' ('+tot+' Partien)'+(tot>info.max?' · über der Grenze':'');o.disabled=tot>info.max&&o.value!=pre.value})}
  pre.onchange=applyPre;n.addEventListener('input',()=>{pre.value='custom';pd.textContent=LABPRE[4].d});mc.addEventListener('change',()=>{pre.value='custom';pd.textContent=LABPRE[4].d});
  base.addEventListener('change',()=>{pbox.querySelectorAll('.labpf').forEach(c=>{c.disabled=c.value==base.value;if(c.disabled)c.checked=false});if(pre.value!='custom')applyPre()});
  pbox.querySelectorAll('.labpf').forEach(c=>{c.disabled=c.value==base.value;if(c.disabled)c.checked=false});
@@ -8408,7 +8418,7 @@ async function labBox(o,gen){let ready=false;const wrap=$('details');wrap.id='la
  function profs(){return [...pbox.querySelectorAll('.labpf:checked')].map(c=>c.value).filter(x=>x!=base.value)}
  function est(){if(!ready)return;const nv=Math.max(2,+n.value||2),nvar=1+(mode.value=='swap'?variants().length:profs().length),nop=obox.children.length||1;
   const tot=nv*nvar*nop,per={off:15,on:35,max:60}[mc.value]||15;
-  es.textContent=nvar<2?'Bitte mindestens eine Variante angeben.':tot+' Partien ('+nvar+' Varianten × '+nop+' Gegner × '+nv+') · voraussichtlich '+fmtDur((tot*per+nvar*nop*15)/Math.max(1,info.workers||1))+(tot>info.max?' – mehr als erlaubt ('+info.max+')':'');
+  es.textContent=nvar<2?'Bitte mindestens eine Variante angeben.':tot+' Partien ('+nvar+' Varianten × '+nop+' Gegner × '+nv+') · voraussichtlich '+fmtDur((tot*per+nvar*nop*15)/Math.max(1,info.workers||1))+(tot>info.max?', mehr als erlaubt ('+info.max+')':'');
   go.disabled=nvar<2||tot>info.max;preLabels()}
  ready=true;addOpp(true);pre.value='quick';applyPre();
  go.onclick=async()=>{const specs=[...obox.querySelectorAll('select')].map(s=>s.value);
@@ -8435,13 +8445,13 @@ function labTable(o,r){const t=$('table');t.className='duel';t.id='labres';o.app
   const c=tr.insertCell();if(i>0&&/besser/.test(x.verdict||'')){const b=$('button',x.applied?'✔ übernommen':r.mode=='swap'?'Ins Deck übernehmen':'Als KI-Pilot merken');b.type='button';b.className='labapply';b.disabled=!!x.applied;
    b.onclick=async()=>{x.applied=true;if(r.mode=='swap'){for(const n of x.out){const gi=deck.groups.findIndex(g=>g.cards.some(c=>c.name.toLowerCase()==n.toLowerCase()||c.name.split(' // ')[0].toLowerCase()==n.toLowerCase()));
       if(gi>=0)removeCard(gi,deck.groups[gi].cards.findIndex(c=>c.name.toLowerCase()==n.toLowerCase()||c.name.split(' // ')[0].toLowerCase()==n.toLowerCase()))}
-     for(const n of x.in)await addCardToDeck(n);b.textContent='✔ übernommen – Deck speichern nicht vergessen';b.disabled=true}
+     for(const n of x.in)await addCardToDeck(n);b.textContent='✔ übernommen, Deck speichern nicht vergessen';b.disabled=true}
     else{try{localStorage.setItem('aipilot:'+((deck&&deck.name)||deck.commander||''),x.ai)}catch(e){}const sel=E('duelai');if(sel)sel.value=x.ai;b.textContent='✔ gemerkt';b.disabled=true}};c.append(b)}});
  if(r.tip)P(o,r.tip,'tag');
  if(r.opps.length>1||r.rows.some(x=>x.turn)){const d=$('details');d.id='labper';d.append($('summary','Je Gegner und Siegrunde'));o.append(d);keepOpen(d);
   const t2=$('table');t2.className='duel';d.append(t2);const h2=t2.insertRow();['Variante',...r.opps.map(x=>x.opp||x.name),'Ø Siegzug'].forEach(x=>h2.append($('th',x)));
   r.rows.forEach(x=>{const tr=t2.insertRow();tr.insertCell().textContent=x.label;x.per.forEach(p=>tr.insertCell().textContent=p.games?p.wins+'/'+p.games+' ('+p.rate+' %)':'–');tr.insertCell().textContent=x.turn==null?'–':String(x.turn).replace('.',',')})}
- P(o,'Urteil: „deutlich“ heißt 90 % Sicherheit, „eher“ 80 %. Unter 8 Partien je Variante gibt es kein Urteil. Forge spielt nicht wie Menschen – das Ergebnis zeigt, wie die Änderung in KI-Partien wirkt.','hint')}
+ P(o,'Urteil: „deutlich“ heißt 90 % Sicherheit, „eher“ 80 %. Unter 8 Partien je Variante gibt es kein Urteil. Forge spielt nicht wie Menschen. Das Ergebnis zeigt, wie die Änderung in KI-Partien wirkt.','hint')}
 function labArchive(d,runs,out){[...d.querySelectorAll('.labrun')].forEach(x=>x.remove());
  runs.forEach(r=>{const row=$('div');row.className='labrun';const a=$('a',r.created+' · '+r.deck+' · '+(r.mode=='swap'?'Kartentausch':'KI-Profile')+' · '+r.played+' Partien');a.href='#';
   a.onclick=async e=>{e.preventDefault();const x=await J('/api/lab_get',{id:r.id});out.innerHTML='';if(x.error){P(out,x.error,'warn');return}out.append($('h4','Messung vom '+r.created));labTable(out,x)};
@@ -8465,17 +8475,17 @@ function duelStats(o,st,PL,s){const d=$('details');d.id='duelstats';d.className=
  row('Ø Schaden an Gegnern (davon Kampf)',x=>n1(x.dmg)+' ('+n1(x.combat)+')');
  const lst=(k,f)=>{const tr=t.insertRow();tr.insertCell().textContent=k;return tr};
  const tr1=lst('Am häufigsten gewirkt');PL.forEach(p=>{const c=tr1.insertCell();const x=st[p.k];if(!x){c.textContent='–';return}
-  x.top_cast.forEach(e=>c.append($('div',e.name+' – in '+e.games+' von '+x.games+' Partien')))});
+  x.top_cast.forEach(e=>c.append($('div',e.name+': in '+e.games+' von '+x.games+' Partien')))});
  const tr2=lst('Meister Schaden');PL.forEach(p=>{const c=tr2.insertCell();const x=st[p.k];if(!x||!x.top_dmg.length){c.textContent='–';return}
   x.top_dmg.forEach(e=>c.append($('div',e[0]+': '+e[1])))});
  const tr3=lst('Schlüsselkarten');tr3.cells[0].title='Karten, mit denen das Deck deutlich öfter gewinnt als im Schnitt (ab 3 Partien).';
  PL.forEach(p=>{const c=tr3.insertCell();const x=st[p.k];if(!x||!x.key.length){c.textContent='–';return}
   x.key.forEach(e=>c.append($('div',e.name+': '+e.won+' von '+e.games+' gewonnen ('+e.rate+' % statt '+x.rate+' %)')))});
- P(d,'Schlüsselkarten sind ein Hinweis, kein Beweis: bei wenigen Partien spielt der Zufall mit. „🔎 Verlauf“ bei einer Partie zeigt jeden Zug.','hint')}
-async function duelGame(job,i,PL){const r=await J('/api/duel_detail?job='+job+'&game='+i);const o=dlgOpen('Partie '+(i+1)+' – Verlauf');
+ P(d,'Schlüsselkarten sind nur ein Hinweis, denn bei wenigen Partien spielt der Zufall mit. „🔎 Verlauf“ bei einer Partie zeigt jeden Zug.','hint')}
+async function duelGame(job,i,PL){const r=await J('/api/duel_detail?job='+job+'&game='+i);const o=dlgOpen('Partie '+(i+1)+': Verlauf');
  if(r.error){P(o,r.error,'warn');return}const d=r.detail,nm=k=>{const x=PL.find(p=>p.k==k);return x?x.name:k};
  const fix=t=>t.replace(/@([a-f])/g,(_,k)=>nm(k));
- const g=r.result||{};P(o,'Sieger: '+(g.winner&&g.winner!='draw'?nm(g.winner):'Unentschieden')+(g.turn?' in Runde '+g.turn:'')+(g.reason?' – '+g.reason:'')+
+ const g=r.result||{};P(o,'Sieger: '+(g.winner&&g.winner!='draw'?nm(g.winner):'Unentschieden')+(g.turn?' in Runde '+g.turn:'')+(g.reason?', '+g.reason:'')+
   ' · begonnen hat '+nm(d.first)+' · '+d.turns+' Züge insgesamt','big');
  const t=$('table');t.className='duel';o.append(t);const hr=t.insertRow();['',...PL.map(x=>x.name)].forEach(x=>hr.append($('th',x)));
  const row=(l,f)=>{const tr=t.insertRow();tr.insertCell().textContent=l;PL.forEach(p=>{const x=d.p[p.k];tr.insertCell().textContent=x?f(x):'–'})};
@@ -8502,10 +8512,10 @@ function lifeChart(life,PL,rounds){const W=560,H=170,mx=Math.max(1,rounds||1);le
  svg+='</svg>';const w=$('div');w.innerHTML='<b>Lebenspunkte</b> '+PL.map((p,i)=>'<span style="color:'+cols[i%4]+'">■ '+H_(p.name)+'</span>').join(' ')+'<br>'+svg;return w}
 const H_=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function showDuel(o,s){o.innerHTML='';
- if(s.queued&&!s.done){P(o,'Wartet auf einen freien Platz – andere Duelle laufen gerade ('+(s.waiting||1)+' in der Warteschlange).','big');return}
+ if(s.queued&&!s.done){P(o,'Wartet auf einen freien Platz, andere Duelle laufen gerade ('+(s.waiting||1)+' in der Warteschlange).','big');return}
  P(o,(s.done?'Fertig: ':'Läuft: ')+s.games.length+' von '+s.total+' Partien'+(s.done?'':' (der erste Start von Forge dauert etwa eine Minute)'),'big');
  if(s.error)P(o,s.error,'warn');
- if(s.unsupported&&s.unsupported.length)P(o,'Achtung: Forge kennt '+s.unsupported.length+' Karte(n) noch nicht und spielt ohne sie – '+
+ if(s.unsupported&&s.unsupported.length)P(o,'Achtung: Forge kennt '+s.unsupported.length+' Karte(n) noch nicht und spielt ohne sie: '+
   'meist sehr neue Karten, die erst eine neuere Forge-Version enthält: '+s.unsupported.join(', ')+'. Das Ergebnis ist deshalb nur eingeschränkt aussagekräftig.','warn');
  const m=s.summary;if(!m||!s.games.length)return;
  const PL=s.players||[{k:'a',name:'Dein Deck'},{k:'b',name:(s.opp_kind=='precon'?'Precon ':'Gegner ')+s.opp}];
@@ -8524,9 +8534,9 @@ function showDuel(o,s){o.innerHTML='';
  if(m.stats)duelStats(o,m.stats,PL,s);
  const gl=$('details');gl.id='duelgames';o.append(gl);gl.append($('summary','Einzelne Partien'));keepOpen(gl);
  s.games.forEach((g,i)=>{const d=$('div','Partie '+(i+1)+': '+nm(g.winner)+
-  (g.turn?' in Zug '+g.turn:'')+(g.reason?' – '+g.reason:'')+(g.effect?' ('+g.effect+')':'')+' ');gl.append(d);
+  (g.turn?' in Zug '+g.turn:'')+(g.reason?', '+g.reason:'')+(g.effect?' ('+g.effect+')':'')+' ');gl.append(d);
   if(s.has_detail){const b=$('button','🔎 Verlauf');b.type='button';b.className='sw dueldet';b.onclick=()=>duelGame(s.id,i,PL);d.append(b)}});
- P(o,'Hinweis: Die KI spielt solide, aber nicht perfekt – aussagekräftig sind Tendenzen über viele Partien.','hint');
+ P(o,'Hinweis: Die KI spielt solide, macht aber Fehler. Aussagekräftig sind deshalb erst Tendenzen über viele Partien.','hint');
  if(s.done&&!s.logged){const lb=$('button','Ins Spielprotokoll übernehmen');lb.type='button';lb.id='duellog';
   lb.onclick=async()=>{const me=deck&&deck.name?deck.name:'Mein Deck',op=(s.opp_kind=='precon'?'Precon ':'')+s.opp;
    const ps=PL.map((x,i)=>({name:'Forge-KI '+'ABCD'[i],deck:i==0?me:x.name.replace(/^(Precon|Gegner) /,'')}));
@@ -8549,7 +8559,7 @@ async function pvStart(withOpp){const r=await J('/api/playtest',Object.assign(mi
  if(r.error){alertBox(r.error);return}
  PV={pl:[pvPlayer(r.mine)].concat(withOpp&&r.opp?[pvPlayer(r.opp)]:[]),act:Math.random()<.5||!withOpp?0:1,turn:0,log:[],view:0,menu:null,pile:null,bottom:null,done:null,
   missing:r.missing||[]};PVH=[];
- pvLog('Neue Testpartie: '+PV.pl.map(p=>p.name).join(' gegen ')+'. Jeder hat 7 Karten gezogen – behalten oder Mulligan (der erste ist frei).');pvOpen()}
+ pvLog('Neue Testpartie: '+PV.pl.map(p=>p.name).join(' gegen ')+'. Jeder hat 7 Karten gezogen: behalten oder Mulligan (der erste ist frei).');pvOpen()}
 function alertBox(t){const o=dlgOpen('Hinweis');P(o,t,'warn')}
 function pvOpen(){let o=E('pv');if(!o){o=document.createElement('div');o.id='pv';document.body.append(o)}o.hidden=false;document.body.classList.add('pvopen');pvRender()}
 function pvClose(){const o=E('pv');if(o)o.hidden=true;document.body.classList.remove('pvopen');pvSave();tableExit()}
@@ -8564,22 +8574,22 @@ function pvPlay(p,c,from){pvMove(p,c,from,'bf');
  else{p.st.casts++;pvLog(p.name+' spielt '+c.name+(from!='hand'?' (aus '+ZN[from]+')':''))}}
 function pvCastCmd(p,c){const tax=2*(c.casts||0);c.casts=(c.casts||0)+1;p.st.cmdCasts++;if(p.st.cmdRound==null)p.st.cmdRound=pvRound()||1;
  pvMove(p,c,'cz','bf');p.st.casts++;pvLog(p.name+' wirkt Commander '+c.name+(tax?' (Commander-Steuer +'+tax+')':''))}
-function pvDraw(p,n){for(let i=0;i<n;i++){if(!p.lib.length){pvLog(p.name+' kann nicht ziehen – Bibliothek leer!');return}p.hand.push(p.lib.pop());p.st.draws++}}
+function pvDraw(p,n){for(let i=0;i<n;i++){if(!p.lib.length){pvLog(p.name+' kann nicht ziehen, die Bibliothek ist leer!');return}p.hand.push(p.lib.pop());p.st.draws++}}
 function pvMull(i){const p=PV.pl[i];pvDo(()=>{p.lib.push(...p.hand);p.hand=[];pvShuf(p.lib);pvDraw(p,7);p.st.draws-=7;p.mull++;
  pvLog(p.name+' nimmt einen Mulligan ('+p.mull+'.'+(p.mull==1?', frei':'')+')')})}
 function pvKeep(i){const p=PV.pl[i];pvDo(()=>{const n=Math.max(0,p.mull-1);if(n){PV.bottom={p:i,n};pvLog(p.name+' behält und legt '+n+' Karte(n) unter die Bibliothek')}
  else{p.kept=true;pvLog(p.name+' behält '+p.hand.length+' Karten')}pvBegin()})}
 function pvBegin(){if(PV.turn||!PV.pl.every(p=>p.kept))return;PV.turn=1;const p=PV.pl[PV.act];PV.view=PV.act;
- pvLog('Zug 1 – '+p.name+' beginnt'+(PV.pl.length>1?' (zieht im ersten Zug keine Karte)':''))}
+ pvLog('Zug 1: '+p.name+' beginnt'+(PV.pl.length>1?' (zieht im ersten Zug keine Karte)':''))}
 function pvNext(){pvDo(()=>{const n=PV.pl.length;PV.act=(PV.act+1)%n;PV.turn++;PV.phase=0;const p=PV.pl[PV.act];p.landsTurn=0;
- p.bf.forEach(c=>c.tap=false);pvDraw(p,1);PV.view=PV.act;pvLog('Zug '+PV.turn+' (Runde '+pvRound()+') – '+p.name+': enttappt und zieht')})}
+ p.bf.forEach(c=>c.tap=false);pvDraw(p,1);PV.view=PV.act;pvLog('Zug '+PV.turn+' (Runde '+pvRound()+'): '+p.name+' enttappt und zieht')})}
 function pvBtn(t,f,cls){const b=$('button',t);b.type='button';if(cls)b.className=cls;b.onclick=e=>{e.stopPropagation();f()};return b}
 function pvStats(){const t=$('table');t.className='duel';t.id='pvstats';const hr=t.insertRow();['',...PV.pl.map(p=>p.name)].forEach(x=>hr.append($('th',x)));
  const row=(l,f)=>{const tr=t.insertRow();tr.insertCell().textContent=l;PV.pl.forEach(p=>tr.insertCell().textContent=f(p))};
  row('Mulligans',p=>String(p.mull));row('Commander zuerst gewirkt',p=>p.st.cmdRound?'Runde '+p.st.cmdRound+(p.st.cmdCasts>1?', '+p.st.cmdCasts+'× insgesamt':''):'noch nicht');
  row('Länder gespielt',p=>String(p.st.lands));row('Zauber gespielt',p=>String(p.st.casts));row('Karten gezogen (ohne Starthand)',p=>String(p.st.draws));
  row('Leben',p=>String(p.life));row('Karten in Bibliothek',p=>String(p.lib.length));return t}
-async function pvFinish(w){PV.done={winner:w};pvLog('Partie beendet nach '+pvRound()+' Runden'+(w>=0?' – gewonnen hat '+PV.pl[w].name:''));pvSave();
+async function pvFinish(w){PV.done={winner:w};pvLog('Partie beendet nach '+pvRound()+' Runden'+(w>=0?', gewonnen hat '+PV.pl[w].name:''));pvSave();
  if(w>=0&&PV.pl.length>1){const r=await J('/api/game_save',{games:JSON.stringify([{players:PV.pl.map((p,i)=>({name:i?'Gegner (manuell)':'Ich',deck:p.name})),winner:w,turns:pvRound(),source:'manuell'}])});
   PV.done.saved=!r.error;PV.done.msg=r.error||'✓ Ins Spielprotokoll übernommen'}pvRender()}
 // ---- Spieltisch im Arena-Stil (allein oder zu zweit): Gegner oben, Spielfeld Mitte, Hand als Fächer unten,
@@ -8656,14 +8666,14 @@ function arSelBar(){const s=PV.sel;if(!s)return null;const p=PV.pl[s.pi];const c
  w.append(pvBtn('✕',()=>{PV.sel=null;pvRender()},'aricon arx'));return w}
 // --- Spielerleiste: Avatar mit Leben, Stapel, Kommandozone
 function arPlayerBar(pi,top){const p=PV.pl[pi];const w=$('div');w.className='arpl'+(top?' top':' me')+(PV.act==pi&&PV.turn?' act':'');w.id='arpl'+pi;
- const av=$('button');av.type='button';av.className='aravatar';av.id='arav'+pi;av.style.setProperty('--ring',arRing(p.ci));av.title=p.name+' – Leben, Gift, Commander-Schaden';
+ const av=$('button');av.type='button';av.className='aravatar';av.id='arav'+pi;av.style.setProperty('--ring',arRing(p.ci));av.title=p.name+': Leben, Gift, Commander-Schaden';
  av.append(Object.assign($('b',String(p.life)),{className:'arlife'}),Object.assign($('span',p.name),{className:'arname'}));
  if(p.poison)av.append(Object.assign($('i','☠'+p.poison),{className:'arbadge'}));
  const cd=Object.values(p.cdmg||{}).reduce((a,b)=>Math.max(a,b),0);if(cd)av.append(Object.assign($('i','⚔'+cd),{className:'arbadge cd',title:'höchster Commander-Schaden'}));
  av.onclick=e=>{e.stopPropagation();PV.sheet={kind:'life',pi};pvRender()};w.append(av);
  const pile=(z,ic,title,fn)=>{const b=$('button');b.type='button';b.className='arpile';b.dataset.drop=z;b.dataset.pi=pi;b.id='arz-'+z+pi;b.title=title;
   b.append($('span',ic),$('b',String(p[z].length)));b.onclick=e=>{e.stopPropagation();fn()};return b};
- w.append(pile('lib','📚','Bibliothek – antippen: Aktionen',()=>{PV.sheet={kind:'lib',pi};pvRender()}),
+ w.append(pile('lib','📚','Bibliothek: antippen für Aktionen',()=>{PV.sheet={kind:'lib',pi};pvRender()}),
   pile('gy','🪦','Friedhof',()=>{PV.sheet={kind:'pile',pi,zone:'gy'};pvRender()}),pile('ex','🌀','Exil',()=>{PV.sheet={kind:'pile',pi,zone:'ex'};pvRender()}));
  const cz=$('div');cz.className='arcz';cz.dataset.drop='cz';cz.dataset.pi=pi;cz.title='Kommandozone';p.cz.forEach(c=>cz.append(arCard(p,c,'cz',pi,true)));if(!p.cz.length)cz.append($('span','👑'));w.append(cz);
  if(top&&pi!=arMe()){const h=$('div');h.className='arbacks';h.title='Hand: '+p.hand.length+' Karten';for(let i=0;i<Math.min(p.hand.length,10);i++)h.append($('i'));h.append($('b',String(p.hand.length)));w.append(h)}
@@ -8701,16 +8711,16 @@ function arSheet(){const s=PV.sheet;if(!s)return null;const w=$('div');w.id='ars
   if(PV.missing.length)a.append(Object.assign($('div','Nicht gefunden und weggelassen: '+PV.missing.join(', ')),{className:'hint'}))}
  if(s.kind=='life'){const p=PV.pl[s.pi];title.textContent=p.name;
   let a=sec('Leben: '+p.life);[-5,-1,1,5].forEach(d=>btn(a,(d>0?'+':'')+d,()=>arDo(()=>{p.life+=d;pvLog(p.name+': Leben '+(p.life-d)+' → '+p.life)}),'arbig'));
-  a=sec('Gift: '+p.poison);btn(a,'−1',()=>arDo(()=>{p.poison=Math.max(0,p.poison-1);pvLog(p.name+': '+p.poison+' Giftmarken')}));btn(a,'+1',()=>arDo(()=>{p.poison++;pvLog(p.name+': '+p.poison+' Giftmarken'+(p.poison>=10?' – verloren!':''))}));
+  a=sec('Gift: '+p.poison);btn(a,'−1',()=>arDo(()=>{p.poison=Math.max(0,p.poison-1);pvLog(p.name+': '+p.poison+' Giftmarken')}));btn(a,'+1',()=>arDo(()=>{p.poison++;pvLog(p.name+': '+p.poison+' Giftmarken'+(p.poison>=10?', verloren!':''))}));
   PV.pl.forEach((q,qi)=>{if(qi==s.pi)return;const v=p.cdmg[qi]||0;const b=sec('Commander-Schaden von '+q.name+': '+v);
-   btn(b,'+1 (kostet 1 Leben)',()=>arDo(()=>{p.cdmg[qi]=v+1;p.life--;pvLog(p.name+': 1 Commander-Schaden von '+q.name+' (gesamt '+(v+1)+')'+(v+1>=21?' – 21 erreicht, verloren!':''))}))})}
- if(s.kind=='lib'){const p=PV.pl[s.pi];title.textContent='📚 Bibliothek – '+p.lib.length+' Karten';const a=sec('');
+   btn(b,'+1 (kostet 1 Leben)',()=>arDo(()=>{p.cdmg[qi]=v+1;p.life--;pvLog(p.name+': 1 Commander-Schaden von '+q.name+' (gesamt '+(v+1)+')'+(v+1>=21?', 21 erreicht, verloren!':''))}))})}
+ if(s.kind=='lib'){const p=PV.pl[s.pi];title.textContent='📚 Bibliothek: '+p.lib.length+' Karten';const a=sec('');
   btn(a,'🃏 Karte ziehen',()=>arDo(()=>{pvDraw(p,1);pvLog(p.name+' zieht eine Karte')}),'primary','ardraw2');btn(a,'🔀 Mischen',()=>arDo(()=>{pvShuf(p.lib);pvLog(p.name+' mischt')}));
   const n=$('input');n.type='number';n.min=1;n.max=20;n.value=3;n.style.width='3.5em';const b2=$('div');b2.className='arsec';b2.append('Oberste ',n,' ');
   b2.append(pvBtn('ansehen',()=>{PV.sheet={kind:'pile',pi:s.pi,zone:'lib',top:Math.max(1,parseInt(n.value)||3)};pvRender()}));w.append(b2);
   btn(a,'🔎 Durchsuchen',()=>{PV.sheet={kind:'pile',pi:s.pi,zone:'lib'};pvLog(p.name+' durchsucht die Bibliothek');pvRender()},'','arsearch')}
  if(s.kind=='pile'){const p=PV.pl[s.pi];let list=p[s.zone];if(s.top)list=list.slice(-s.top).reverse();else if(s.zone=='lib')list=list.slice().reverse();
-  title.textContent=(s.top?'Oberste '+s.top+' Karten':ZN[s.zone])+' – '+p.name+' ('+list.length+')';
+  title.textContent=(s.top?'Oberste '+s.top+' Karten':ZN[s.zone])+': '+p.name+' ('+list.length+')';
   if(s.top)w.append(Object.assign($('div','Links die oberste. Karte antippen → Aktionen (z. B. unter die Bibliothek für Scry).'),{className:'hint'}));
   const g=$('div');g.className='argrid';list.forEach(c=>g.append(arCard(p,c,s.zone,s.pi,true)));if(!list.length)g.append($('span','leer'));w.append(g);
   if(s.zone=='lib'&&!s.top)w.append(pvBtn('Schließen und mischen',()=>{PV.sheet=null;arDo(()=>{pvShuf(p.lib);pvLog(p.name+' mischt')})}))}
@@ -8719,7 +8729,7 @@ function arSheet(){const s=PV.sheet;if(!s)return null;const w=$('div');w.id='ars
   const l=sec('Tokens aus dem Deck');l.id='artoklist';l.append(Object.assign($('span','lade …'),{className:'hint'}));
   const names=[...new Set(['lib','hand','bf','gy','ex','cz'].flatMap(z=>p[z].map(c=>c.name)))];
   J('/api/tokens',{list:names.map(n=>'1 '+n).join('\\n'),commander:p.cz.map(c=>c.name).join(' + ')}).then(r=>{l.innerHTML='';l.append($('h4','Tokens aus dem Deck'));
-   (r.tokens||[]).forEach(t=>l.append(pvBtn(t.name+(t.type?' – '+t.type:''),()=>{PV.sheet=null;arDo(()=>{p.bf.push(Object.assign(pvCard({name:t.name,image:t.image||'',type:t.type||'Token'}),{tok:true}));pvLog(p.name+' erzeugt Token '+t.name)})},'artokbtn')));
+   (r.tokens||[]).forEach(t=>l.append(pvBtn(t.name+(t.type?' ('+t.type+')':''),()=>{PV.sheet=null;arDo(()=>{p.bf.push(Object.assign(pvCard({name:t.name,image:t.image||'',type:t.type||'Token'}),{tok:true}));pvLog(p.name+' erzeugt Token '+t.name)})},'artokbtn')));
    if(!(r.tokens||[]).length)l.append(Object.assign($('span','Keine Tokens im Deck erkannt.'),{className:'hint'}))})}
  if(s.kind=='stats'){title.textContent='📊 Statistik';w.append(pvStats())}
  if(s.kind=='log'){title.textContent='📜 Protokoll ('+PV.log.length+')';const l=$('div');l.id='pvlog';PV.log.slice().reverse().slice(0,300).forEach(e=>l.append($('div',(e[0]?'Zug '+e[0]+': ':'')+e[1])));w.append(l)}
@@ -8731,7 +8741,7 @@ function arSheet(){const s=PV.sheet;if(!s)return null;const w=$('div');w.id='ars
 // --- Starthand / Mulligan
 function arMull(){const i=PV.bottom?PV.bottom.p:PV.pl.findIndex(p=>!p.kept);if(i<0)return null;const p=PV.pl[i];
  const w=$('div');w.id='armull';w.onclick=e=>e.stopPropagation();
- w.append($('h3',PV.pl.length>1?'Starthand – '+p.name:'Deine Starthand'));
+ w.append($('h3',PV.pl.length>1?'Starthand: '+p.name:'Deine Starthand'));
  w.append(Object.assign($('div',PV.bottom?'Tippe '+PV.bottom.n+' Karte'+(PV.bottom.n>1?'n':'')+' an, die unter die Bibliothek '+(PV.bottom.n>1?'kommen':'kommt')+'.':(p.mull?p.mull+'. Mulligan'+(p.mull==1?' (frei)':'')+' · ':'')+p.hand.length+' Karten · '+p.hand.filter(pvLand).length+' Länder'),{className:'arsub'}));
  const r=$('div');r.className='armullrow';p.hand.forEach(c=>r.append(arCard(p,c,'hand',i)));w.append(r);
  if(!PV.bottom){const b=$('div');b.className='armullbtn';b.append(pvBtn('Behalten',()=>pvKeep(i),'argo'),pvBtn('Mulligan',()=>pvMull(i),'armullb'));
@@ -8751,7 +8761,7 @@ function pvRender(){const o=E('pv');if(!o||!PV)return;setTimeout(ttextLoad,0);o.
  tr.append(arIcon('↶','Rückgängig (Z)',()=>{if(!PVH.length)return;PV=JSON.parse(PVH.pop());pvSave();pvRender()},'','arundo'),
   Object.assign(arIcon('📱','Quer + Vollbild',()=>tableLandscape(),'arrot','tquer2')),
   arIcon('⚙','Menü: Ansicht, Tokens, Würfel, Statistik, Protokoll, Partie beenden',()=>{PV.sheet=PV.sheet&&PV.sheet.kind=='menu'?null:{kind:'menu'};pvRender()},'','armenu'),
-  arIcon('✕','Schließen (Esc) – die Partie bleibt gespeichert',pvClose,'','arclose'));
+  arIcon('✕','Schließen (Esc), die Partie bleibt gespeichert',pvClose,'','arclose'));
  top.append(tr);
  if(op!=null)o.append(arPlayerBar(op,true));
  const field=$('div');field.className='arfield';o.append(field);
@@ -8801,7 +8811,7 @@ function roomApply(r){if(!tg||!tg.room)return;if(r.error){tg.room.lost=r.error;t
 async function roomLoop(){const my=++roomLoopId;while(tg&&tg.room&&my==roomLoopId&&!tg.room.closed){
  const r=await J('/api/room_get?'+new URLSearchParams({code:tg.room.code,since:tg.room.ver||0,client:tClient()}));
  if(my!=roomLoopId||!tg||!tg.room)return;
- if(r.error&&!/nicht gefunden/.test(r.error)){tg.room.lost='Verbindung unterbrochen – versuche erneut …';tableGame();await new Promise(z=>setTimeout(z,2500));continue}
+ if(r.error&&!/nicht gefunden/.test(r.error)){tg.room.lost='Verbindung unterbrochen, versuche erneut …';tableGame();await new Promise(z=>setTimeout(z,2500));continue}
  roomApply(r);if(r.error)return}}
 function roomPushSoon(){clearTimeout(roomPushT);roomPushT=setTimeout(roomPush,120)}
 async function roomPush(){if(!tg||!tg.room||tg.room.closed)return;if(roomInflight){roomPushSoon();return}
@@ -8819,7 +8829,7 @@ async function roomJoin(code,box){code=(code||'').trim().toUpperCase();if(!code)
  const r=await J('/api/room_get?'+new URLSearchParams({code:code,since:0,client:tClient(),wait:'0'}));box.innerHTML='';
  if(r.error){P(box,r.error,'warn');return}if(r.closed){P(box,'Diese Partie ist bereits beendet.','warn');return}
  P(box,'Welcher Platz bist du?');const g=$('div');g.className='tseats';
- r.state.players.forEach((p,i)=>{const taken=r.claims[i]&&r.claims[i]!=tClient();const b=$('button',p.name+(p.deck?' – '+p.deck:'')+(taken?' (vergeben)':''));b.type='button';b.disabled=!!taken;b.dataset.seat=i;
+ r.state.players.forEach((p,i)=>{const taken=r.claims[i]&&r.claims[i]!=tClient();const b=$('button',p.name+(p.deck?' · '+p.deck:'')+(taken?' (vergeben)':''));b.type='button';b.disabled=!!taken;b.dataset.seat=i;
   b.onclick=async()=>{const c=await J('/api/room_claim',{code:code,seat:i,client:tClient()});if(c.error){P(box,c.error,'warn');return}
    tg={players:[],turn:1,start:Date.now(),room:{code:code,host:false,seat:i,ver:0}};roomApplying=true;roomApplying=false;roomApply(c);tableSetup();roomLoop();tableGame();
    try{history.replaceState(null,'',location.pathname+'#spieltisch')}catch(e){}};g.append(b)});box.append(g)}
@@ -8838,7 +8848,7 @@ function roomHostBox(o){const b=$('div');b.className='roombox';
  const det=$('details');det.className='roomqr';const sm=$('summary','QR-Code & Link zum Beitreten');det.append(sm);const qr=$('div');qr.className='qrbox';const ln=$('input');ln.readOnly=true;ln.value=roomLink(R.code);ln.size=40;
  const cp=$('button','Link kopieren');cp.type='button';cp.onclick=()=>{try{navigator.clipboard.writeText(ln.value);cp.textContent='✓ kopiert'}catch(e){ln.select()}};
  det.addEventListener('toggle',()=>{if(det.open&&!qr.innerHTML)roomQR(qr,ln.value)});
- det.append(qr,ln,' ',cp);if(navigator.share){const sh=$('button','Teilen …');sh.type='button';sh.onclick=()=>navigator.share({title:'Manaschmiede – Tisch '+R.code,url:ln.value}).catch(()=>{});det.append(' ',sh)}
+ det.append(qr,ln,' ',cp);if(navigator.share){const sh=$('button','Teilen …');sh.type='button';sh.onclick=()=>navigator.share({title:'Manaschmiede: Tisch '+R.code,url:ln.value}).catch(()=>{});det.append(' ',sh)}
  const who=$('div');who.className='hint';who.textContent='Plätze: '+tg.players.map((p,i)=>p.name+(R.claims&&R.claims[i]?(R.claims[i]==tClient()?' (du)':' ✓'):' –')).join(' · ');
  const al=$('label');const cb=$('input');cb.type='checkbox';cb.id='tall';cb.checked=!!R.all;cb.onchange=()=>{R.all=cb.checked;tgStore();tableGame()};al.append(cb,' alle Felder anzeigen und steuern (z. B. wenn ein Handy ausfällt)');
  b.append(det,who,al);o.append(b)}
@@ -8861,7 +8871,7 @@ let wake=null;const keepAwake=async on=>{try{if(on&&navigator.wakeLock&&!wake)wa
 async function tableSetup(){const o=E('tsetup');o.innerHTML='';if(tg){o.style.display='none';return}o.style.display='';
  {const jb=$('div');jb.className='roombox';jb.append($('b','📡 Einem Tisch beitreten: '));const ci2=$('input');ci2.id='tjoincode';ci2.size=6;ci2.maxLength=4;ci2.placeholder='Code';ci2.style.textTransform='uppercase';
   const jg=$('button','Beitreten');jg.type='button';jg.id='tjoin';const jr=$('div');jr.id='tjoinres';jg.onclick=()=>roomJoin(ci2.value,jr);ci2.onkeydown=e=>{if(e.key=='Enter')jg.click()};
-  jb.append(ci2,' ',jg,jr);P(jb,'Code oder QR-Code vom Gastgeber – oder unten selbst eine Partie starten und mit „📡 Tisch teilen“ freigeben.','hint');o.append(jb);
+  jb.append(ci2,' ',jg,jr);P(jb,'Code oder QR-Code vom Gastgeber eingeben oder unten selbst eine Partie starten und mit „📡 Tisch teilen“ freigeben.','hint');o.append(jb);
   const jq=new URLSearchParams(location.search).get('join');if(jq&&!o.dataset.auto){o.dataset.auto=1;ci2.value=jq;roomJoin(jq,jr)}}
  const dl=await J('/api/decks');const decks=Array.isArray(dl)?dl:(dl.decks||[]);
  const n=$('select');n.id='tn';[2,3,4,5,6].forEach(k=>{const op=$('option',k+' Spieler');op.value=k;n.append(op)});n.value=4;
@@ -8910,7 +8920,7 @@ function tableEnd(o){if(tg.room&&!tg.room.host)return;if(tview!='tisch'||(tg.roo
  if(alive.length==1)ws.value=alive[0][1];const nt=$('input');nt.size=30;nt.placeholder='Notiz (optional)';nt.id='tnote';
  const sv=$('button','Speichern');sv.type='button';sv.className='primary';sv.id='tsave';
  sv.onclick=async()=>{const r=await J('/api/game_save',{games:JSON.stringify([{players:tg.players.map(p=>({name:p.name,deck:p.deck})),winner:+ws.value,turns:tg.turn,note:nt.value}])});
-  if(r.error){P(end,r.error,'warn');return}gnFromTable(+ws.value>=0?tg.players[+ws.value].name:'');if(tg.room){roomLoopId++;J('/api/room_close',{code:tg.room.code,client:tClient(),result:'Partie beendet'+(+ws.value>=0?' – Sieger: '+tg.players[+ws.value].name:'')+'.'})}tg=null;tgSave();tableSetup();tableGame();tableStats(r)};
+  if(r.error){P(end,r.error,'warn');return}gnFromTable(+ws.value>=0?tg.players[+ws.value].name:'');if(tg.room){roomLoopId++;J('/api/room_close',{code:tg.room.code,client:tClient(),result:'Partie beendet'+(+ws.value>=0?', Sieger: '+tg.players[+ws.value].name:'')+'.'})}tg=null;tgSave();tableSetup();tableGame();tableStats(r)};
  const ab=$('button','Abbrechen ohne Speichern');ab.type='button';ab.onclick=()=>{if(ab.textContent!='Wirklich abbrechen?'){ab.textContent='Wirklich abbrechen?';return}if(tg.room){roomLoopId++;J('/api/room_close',{code:tg.room.code,client:tClient(),result:'Partie abgebrochen.'})}tg=null;tgSave();tableSetup();tableGame()};
  end.append(ws,' ',nt,' ',sv,' ',ab);o.append(end)}
 // ---------- Spielabend: Spieler, gemischte Vierer-Tische, Siege, Rangliste, optionale Saison
@@ -8947,7 +8957,7 @@ function gnShow(d){if(d.error){P(E('gnbox'),d.error,'warn');return}GN=d;const bo
  // Teilen: QR-Code + Link für Mitspieler (ohne Anmeldung)
  const sh=$('details');sh.id='gnshare';sh.append($('summary','📱 Mitspieler-Link & QR-Code'));const q=$('div');q.className='gnqr';const u=$('code',gnUrl());
  const cp=$('button','Link kopieren');cp.type='button';cp.onclick=()=>copyText(gnUrl(),cp);sh.append(q,u,' ',cp,
-  $('p','Wer den Link hat, sieht Tische und Rangliste und kann Sieger eintragen – ohne Konto. Ergebnisse erscheinen hier automatisch.'));
+  $('p','Wer den Link hat, sieht Tische und Rangliste und kann Sieger eintragen, auch ohne Konto. Ergebnisse erscheinen hier automatisch.'));
  sh.ontoggle=()=>{if(sh.open&&!q.firstChild)roomQR(q,gnUrl())};box.append(sh);
  // Spieler
  const pl=$('details');pl.id='gnpl';pl.append($('summary','👥 Spieler ('+d.players.filter(p=>p.active).length+' anwesend)'));
@@ -8962,10 +8972,10 @@ function gnShow(d){if(d.error){P(E('gnbox'),d.error,'warn');return}GN=d;const bo
  // Runden
  const acts=$('p');if(!n.closed){const rb=$('button',d.rounds.length?'🎲 Nächste Runde auslosen':'🎲 Erste Runde auslosen');rb.type='button';rb.className='primary';rb.id='gnround';
   rb.onclick=async()=>{let r=await J('/api/gn_round',{id:n.id});if(r.warn){if(!confirm(r.warn))return;r=await J('/api/gn_round',{id:n.id,force:1})}gnShow(r);
-   if(r.repeats)arToastMsg('Nicht alle Paarungen ließen sich vermeiden – einige treffen sich erneut.')};acts.append(rb);
+   if(r.repeats)arToastMsg('Nicht alle Paarungen ließen sich vermeiden, einige treffen sich erneut.')};acts.append(rb);
   if(d.rounds.length){const ud=$('button','Letzte Runde verwerfen');ud.type='button';ud.id='gnundo';ud.onclick=async()=>{if(confirm('Letzte Runde samt Ergebnissen verwerfen?'))gnShow(await J('/api/gn_round_delete',{id:n.id}))};acts.append(' ',ud)}}
  box.append(acts);
- d.rounds.slice().reverse().forEach((r,ri)=>{const det=$('details');det.className='gnround';det.open=ri==0;det.append($('summary','Runde '+r.round+' – '+r.pods.filter(p=>p.winner!=null).length+'/'+r.pods.length+' Tische fertig'));
+ d.rounds.slice().reverse().forEach((r,ri)=>{const det=$('details');det.className='gnround';det.open=ri==0;det.append($('summary','Runde '+r.round+': '+r.pods.filter(p=>p.winner!=null).length+'/'+r.pods.length+' Tische fertig'));
   r.pods.forEach(p=>{const pd=$('div');pd.className='gnpod';pd.append($('b','Tisch '+p.tab+': '));
    p.seats.forEach(s=>{const b=$('button',(p.winner==s?'👑 ':'')+nm[s]);b.type='button';b.className=p.winner==s?'gnwin':'';b.disabled=!!n.closed;b.dataset.pod=p.id;b.dataset.seat=s;
     b.onclick=async()=>gnShow(await J('/api/gn_report',{id:n.id,pod:p.id,winner:p.winner==s?'none':s}));pd.append(b)});
@@ -8998,7 +9008,7 @@ async function legalDialog(){const b=dlgOpen('Impressum & Datenschutz');const L=
  sv.onclick=async()=>{const o={};for(const k in ins)o[k]=ins[k].value;const r=await J('/api/legal',o);m.className=r.error?'warn':'tag';m.textContent=r.error||'Gespeichert.'}}
 function tableSetupNames(names,decks){const n=E('tn');if(!n){setTimeout(()=>tableSetupNames(names,decks),300);return}n.value=Math.min(6,Math.max(2,names.length));n.onchange();
  [...document.querySelectorAll('#tsetup .tpname')].forEach((x,i)=>x.value=names[i]||'');[...document.querySelectorAll('#tsetup .tpdeck')].forEach((x,i)=>x.value=(decks||[])[i]||'');
- const h=E('tsetup');let b=E('gnhint');if(!b){b=$('p');b.id='gnhint';b.className='hint';h.prepend(b)}b.textContent='🏆 Tisch aus dem Spielabend – der Sieger wird beim Speichern automatisch eingetragen.'}
+ const h=E('tsetup');let b=E('gnhint');if(!b){b=$('p');b.id='gnhint';b.className='hint';h.prepend(b)}b.textContent='🏆 Tisch aus dem Spielabend. Der Sieger wird beim Speichern automatisch eingetragen.'}
 // Tischansicht: ein großes Feld je Spieler; links tippen −1, rechts +1, halten ±10 (wiederholt)
 function tableTisch(o){const n=tg.players.length;if(tg.active==null)tg.active=0;if(tg.rot==null)tg.rot=true;
  const f=$('div');f.id='tfield';const bot=Math.ceil(n/2),top=n-bot;
@@ -9048,7 +9058,7 @@ function tableStats(r){const o=E('tstats');o.innerHTML='';E('gamecount').textCon
   list.forEach(e=>{const tr=t.insertRow();[e.name,e.games,e.wins,e.rate+' %'].forEach(v=>tr.insertCell().textContent=v)})};
  if(r.decks.length)tab('Je Deck:',r.decks,'tstatdecks');tab('Je Spieler:',r.players,'tstatplayers');
  const gl=$('details');gl.append($('summary','Letzte Partien'));o.append(gl);
- r.recent.forEach(g=>{const d=$('div',g.at+(g.source=='forge'?' · Forge':'')+' · '+g.players.map((p,i)=>(i==g.winner?'🏆 ':'')+p.name+(p.deck?' ('+p.deck+')':'')).join(' – ')+(g.turns?' · '+g.turns+' Züge':'')+(g.note?' · '+g.note:''));
+ r.recent.forEach(g=>{const d=$('div',g.at+(g.source=='forge'?' · Forge':'')+' · '+g.players.map((p,i)=>(i==g.winner?'🏆 ':'')+p.name+(p.deck?' ('+p.deck+')':'')).join(' · ')+(g.turns?' · '+g.turns+' Züge':'')+(g.note?' · '+g.note:''));
   const x=$('button','✕');x.type='button';x.className='sw';x.title='Partie löschen';x.onclick=async()=>tableStats(await J('/api/game_delete',{id:g.id}));d.append(' ',x);gl.append(d)})}
 E('tablebox').addEventListener('toggle',()=>{if(E('tablebox').open){tableSetup();tableGame();J('/api/games').then(tableStats)}});
 J('/api/games').then(r=>{E('gamecount').textContent=r.count?'('+r.count+' Partien)':''});
@@ -9102,7 +9112,7 @@ async function openSwap(gi,ci){
   const r=await fetchAlts(c,g,{nogc:E('dlgnogc').checked,maxeur:E('dlgmax').value});
   list.innerHTML='';if(r.error){list.append($('p',r.error));return}
   P(list,'Vorschläge: '+r.reason+'.','hint');
-  if(!r.cards.length)P(list,'Keine passenden Alternativen gefunden – Filter lockern?');
+  if(!r.cards.length)P(list,'Keine passenden Alternativen gefunden. Vielleicht die Filter lockern?');
   for(const a of r.cards){const row=$('div');row.className='alt';
    if(a.image){const im=$('img');im.src=a.image;im.loading='lazy';row.append(im)}
    const n=$('div');n.className='n';n.append(cardName(a.name,a.scryfall,a.image));
@@ -9183,7 +9193,7 @@ async function updStatus(){const s=await J('/api/update_status'),o=E('upd');o.in
  const items=Object.values(s.items||{});
  o.append($('b',s.running?'⟳ Prüfe auf Aktualisierungen: ':(s.done?'Aktualisierung'+(s.at?' ('+s.at+')':'')+': ':'Aktualisierung: ')));
  if(!items.length&&!s.running)o.append('beim Start übersprungen. ');
- items.forEach(it=>{const sp=$('span',it.label+' – '+it.status);sp.className=it.ok===false?'no':it.ok?'ok':'';o.append(sp,' · ')});
+ items.forEach(it=>{const sp=$('span',it.label+': '+it.status);sp.className=it.ok===false?'no':it.ok?'ok':'';o.append(sp,' · ')});
  if(s.next){const nx=$('span','nächste automatische Prüfung: '+s.next+' · ');nx.id='updnext';o.append(nx)}
  await MEP;if(!s.running&&ME.admin){const b=$('button','Jetzt aktualisieren');b.type='button';b.onclick=()=>startUpd(0);
   const f=$('button','Alles neu laden');f.type='button';f.title='Regeln, Precons und Kartendaten neu herunterladen';f.onclick=()=>startUpd(1);o.append(b,f)}
@@ -9214,9 +9224,9 @@ async function rules(q){const o=E('rres');o.textContent='Suche ...';
  const words=/^\\d/.test(q||'')?[]:(q||'').split(/\\s+/).filter(w=>w.length>1);
  if(r.toc){r.rules.forEach(x=>{const d=$('div',(x.num.length==1?x.num+'. ':x.num+' ')+x.text);
    d.className=x.num.length==1?'toc1':'toc2';if(x.num.length==3)d.onclick=()=>{E('rq').value=x.num;rules(x.num)};o.append(d)});return}
- r.glossary.forEach(g=>{const d=$('div');d.className='glo';d.append($('b','Glossar: '+g.term),' – ');richText(d,g.text,words);o.append(d)});
+ r.glossary.forEach(g=>{const d=$('div');d.className='glo';d.append($('b','Glossar: '+g.term),' ');richText(d,g.text,words);o.append(d)});
  if(!r.rules.length&&!r.glossary.length)P(o,'Keine Treffer. Tipp: englische Begriffe verwenden, z. B. „trample“ oder „mulligan“.','hint');
- if(r.total>r.rules.length)P(o,r.total+' Treffer, angezeigt werden die ersten '+r.rules.length+' – Suche genauer eingrenzen.','hint');
+ if(r.total>r.rules.length)P(o,r.total+' Treffer, angezeigt werden die ersten '+r.rules.length+'. Die Suche lässt sich genauer eingrenzen.','hint');
  r.rules.forEach(x=>{const d=$('div');d.className='rule';const b=$('b',x.num);b.onclick=()=>{E('rq').value=x.num;rules(x.num)};
   d.append(b);richText(d,x.text,words);o.append(d)})}
 E('rf').onsubmit=e=>{e.preventDefault();rules(E('rq').value.trim())};
@@ -9286,7 +9296,7 @@ def room_create(state, client, uid):
     with ROOM_LOCK:
         room_clean()
         if len(ROOMS) > 500:
-            return {"error": "Zu viele offene Tische – bitte später erneut versuchen."}
+            return {"error": "Zu viele offene Tische. Bitte später erneut versuchen."}
         alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         code = "".join(secrets.choice(alphabet) for _ in range(4))
         while code in ROOMS:
@@ -9310,7 +9320,7 @@ def room_get(code, since, client, wait=True):
         while True:
             r = ROOMS.get(code)
             if not r:
-                return {"error": "Tisch nicht gefunden – Code prüfen oder der Tisch wurde beendet."}
+                return {"error": "Tisch nicht gefunden. Entweder ist der Code falsch oder der Tisch wurde beendet."}
             if r["ver"] > since or time.time() >= deadline:
                 return room_view(r, client)
             ROOM_LOCK.wait(max(0.1, deadline - time.time()))
@@ -9396,7 +9406,7 @@ def deck_send(con, did, to_name, msg, uid, uname):
     if not u:
         return {"error": f"Benutzer „{to_name}“ gibt es nicht."}
     if u[0] == uid:
-        return {"error": "An dich selbst musst du nichts senden – das Deck liegt ja schon bei dir."}
+        return {"error": "Das Deck liegt schon bei dir, an dich selbst musst du es nicht senden."}
     if con.execute("SELECT count(*) FROM deck_inbox WHERE to_uid = ?", (u[0],)).fetchone()[0] >= 100:
         return {"error": f"Das Postfach von {u[1]} ist voll (100 Decks)."}
     con.execute("INSERT INTO deck_inbox(to_uid, from_uid, from_name, name, commander, list, extra, msg, sent_at) VALUES(?,?,?,?,?,?,?,?,?)",
@@ -9721,7 +9731,7 @@ class H(BaseHTTPRequestHandler):
                 return {"names": [r[0] for r in con.execute("SELECT name FROM users WHERE id <> ? ORDER BY name COLLATE NOCASE", (uid,))]}
             if path == "/api/deck_send":
                 if not SERVER or not self.user:
-                    return {"error": "Senden an Benutzer gibt es nur im Server-Betrieb – hier bitte „Als Link senden“ nutzen."}
+                    return {"error": "Senden an Benutzer gibt es nur im Server-Betrieb. Hier bitte „Als Link senden“ nutzen."}
                 return deck_send(con, int(g("id") or 0), g("to"), g("msg"), uid, self.user["name"])
             if path == "/api/deck_public":
                 return deck_public(con, int(g("id") or 0), g("on") == "1", uid)
@@ -10120,7 +10130,7 @@ class H(BaseHTTPRequestHandler):
         except ValueError as e:
             res = {"error": str(e)}
         except Exception as e:
-            res = {"error": "Interner Fehler – bitte erneut versuchen." if SERVER else f"Fehler: {e}"}
+            res = {"error": "Interner Fehler. Bitte erneut versuchen." if SERVER else f"Fehler: {e}"}
             if SERVER:
                 print(f"Fehler bei {path}: {e!r}")
         if self.clear_cookie:
@@ -10169,7 +10179,7 @@ if __name__ == "__main__":
         try:
             do_precons()
         except Exception as e:
-            print(f"Precons konnten nicht geladen werden ({e}) – später mit 'precons' nachholen.")
+            print(f"Precons konnten nicht geladen werden ({e}). Später mit 'precons' nachholen.")
     elif a.cmd == "precons":
         do_precons(a.file)
     elif a.cmd == "adduser":
@@ -10193,7 +10203,7 @@ if __name__ == "__main__":
         except sqlite3.Error:
             pass
         if not has_cards:
-            print("Noch keine Kartendaten vorhanden – lade sie jetzt einmalig von Scryfall (1–3 Minuten) ...")
+            print("Noch keine Kartendaten vorhanden. Sie werden jetzt einmalig von Scryfall geladen (1–3 Minuten) ...")
             wait = 30
             while True:
                 try:
@@ -10208,7 +10218,7 @@ if __name__ == "__main__":
             try:
                 do_precons()
             except Exception as e:
-                print(f"Precons konnten nicht geladen werden ({e}) – werden später automatisch nachgeholt.")
+                print(f"Precons konnten nicht geladen werden ({e}). Sie werden später automatisch nachgeholt.")
         upgrade_db()
         ensure_price_baseline()
         try:
@@ -10243,7 +10253,7 @@ if __name__ == "__main__":
             except Exception:
                 pass
             if other:  # eine Version mit Abschaltfunktion läuft noch -> beenden und Port übernehmen
-                print(f"Auf Port {a.port} läuft noch Version {other} – wird beendet ...")
+                print(f"Auf Port {a.port} läuft noch Version {other}, sie wird beendet ...")
                 try:
                     urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{a.port}/api/shutdown", data=b""), timeout=3)
                 except Exception:
@@ -10258,19 +10268,19 @@ if __name__ == "__main__":
                 for port in range(a.port + 1, a.port + 20):
                     try:
                         srv = ThreadingHTTPServer((host, port), H)
-                        print(f"Port {a.port} ist von einem anderen (älteren) Programm belegt – "
+                        print(f"Port {a.port} ist von einem anderen (älteren) Programm belegt. "
                               f"verwende Port {port}. Tipp: alte Fenster der Datenbank schließen.")
                         a.port = port
                         break
                     except OSError:
                         continue
             if srv is None:
-                sys.exit("Kein freier Port gefunden – bitte alle Fenster der Datenbank schließen und neu starten.")
+                sys.exit("Kein freier Port gefunden. Bitte alle Fenster der Datenbank schließen und neu starten.")
         if LAN_KEY:
-            print("\nZugriff von Handy/Tablet im selben WLAN – diesen Link dort öffnen:")
+            print("\nZugriff von Handy/Tablet im selben WLAN: diesen Link dort öffnen")
             print(f"    http://{lan_ip()}:{a.port}/?key={LAN_KEY}\n")
             print("(Windows fragt eventuell nach einer Firewall-Freigabe: für private Netzwerke erlauben.)")
-        print(f"Manaschmiede – Version {APP_VERSION} läuft auf http://localhost:{a.port}  (dieses Fenster offen lassen; Beenden mit Strg+C)")
+        print(f"Manaschmiede (Version {APP_VERSION}) läuft auf http://localhost:{a.port}  (dieses Fenster offen lassen; Beenden mit Strg+C)")
         if not a.no_browser:
             import webbrowser
             threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{a.port}/" + (f"?key={LAN_KEY}" if LAN_KEY else ""))).start()
