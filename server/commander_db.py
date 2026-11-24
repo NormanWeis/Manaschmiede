@@ -27,6 +27,8 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 59: Proxy-Druck: Hinweis, die Kopie mit einer echten, wertlosen Karte in eine Hülle zu stecken (einheitliche Rückseite,
+            auch in durchsichtigen Hüllen) – im Dialog, in der Druckansicht, in der Sammlung und in der Hilfe.
 Version 58: Commander-Vorschläge nach Thema erkennen Verzauberungs- und Artefakttypen (Sagen, Auren, Klassen, Räume, Fälle,
             Schreine, Flüche, Hintergründe, Rollen, Ausrüstungen, Fahrzeuge – deutsch und englisch); Erinnerungstext in Klammern
             zählt nicht mehr als Treffer; Deckbau-Synergie für Sagen.
@@ -136,7 +138,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "58"
+APP_VERSION = "59"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -5876,7 +5878,7 @@ def lab_api(path, p, uid=0):
     return {"error": "Unbekannte Aktion."}
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 58)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 59)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -5997,7 +5999,7 @@ body.mtg .cicon{border-color:#c79a37;background:linear-gradient(135deg,#7a4a1c 0
 #printarea:not(.pxcut) .pcard{outline:0}#printarea.pxgap .ppage{gap:2mm}#printarea.pxgray img{filter:grayscale(1)}
 .ptextcard{background:#fff;border:0.3mm solid #333;box-sizing:border-box}.ptext{padding:3mm;font:7.5pt/1.25 Georgia,serif;color:#000;height:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:1.5mm}
 .ptext .pth{display:flex;justify-content:space-between;align-items:center;border-bottom:0.3mm solid #333;padding-bottom:1mm;font-size:9pt}.ptext .ptx{white-space:pre-wrap;flex:1;overflow:hidden}
-.ptext .ptpt{align-self:flex-end;font-weight:bold;border:0.3mm solid #333;padding:0 2mm;margin-bottom:4mm}#pxstudio .pxnote{padding:8px;border-radius:6px;margin-bottom:8px}#pxstudio label{margin-right:6px}
+.ptext .ptpt{align-self:flex-end;font-weight:bold;border:0.3mm solid #333;padding:0 2mm;margin-bottom:4mm}#pxstudio .pxnote,#pxstudio .pxsleeve{padding:8px;border-radius:6px;margin-bottom:8px;display:block}#pxstudio label{margin-right:6px}
 body.printing>*:not(#printarea){display:none!important}
 @media print{@page{size:A4;margin:8mm}#printarea .noprint{display:none}#printarea{position:static;padding:0}.ppage{margin:0}}
 #tgame .pl{display:inline-block;vertical-align:top;border:2px solid #999;border-radius:10px;padding:8px;margin:4px;min-width:220px;text-align:center}
@@ -6299,7 +6301,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <li><b>🏷 Tags:</b> eigene Kategorien je Karte (z. B. Ramp, Wincon). Sie erscheinen als Etiketten in der Liste und im Bereich „Nach Tags“ zusammengefasst.</li>
 <li><b>↓ Maybe / Maybeboard:</b> Kandidaten, die (noch) nicht ins Deck zählen. Mit „↑ ins Deck“ holst du sie zurück; das Feld darüber nimmt neue Kandidaten auf.</li>
 <li><b>Tokens und Spielmaterial:</b> listet alle Tokens, die Karten des Decks erzeugen, mit der erzeugenden Karte.</li>
-<li><b>🖨 Proxys drucken:</b> Druckansicht in Originalgröße (63 × 88 mm, 9 je Seite, A4 oder Letter) – im Deck, in der Sammlung unter „Proxy-Druck“ für beliebige Kartenlisten und im Kaufassistenten. Wahlweise Kartenbild oder tintensparende Textfassung, Rückseiten doppelseitiger Karten, Tokens, nur fehlende Karten, ein bestimmter Druck per „(SET) Nr“. <b>Nur Kopien zum privaten Testen:</b> keine echten Karten, nicht verkaufen oder als echt ausgeben, in Turnieren nicht erlaubt; jede Kopie trägt fest den Vermerk „PROXY – keine echte Karte“. Mit „Drucken / als PDF speichern“ entsteht eine PDF-Datei; beim Drucken 100 % bzw. „Tatsächliche Größe“ wählen.</li>
+<li><b>🖨 Proxys drucken:</b> Druckansicht in Originalgröße (63 × 88 mm, 9 je Seite, A4 oder Letter) – im Deck, in der Sammlung unter „Proxy-Druck“ für beliebige Kartenlisten und im Kaufassistenten. Wahlweise Kartenbild oder tintensparende Textfassung, Rückseiten doppelseitiger Karten, Tokens, nur fehlende Karten, ein bestimmter Druck per „(SET) Nr“. <b>Nur Kopien zum privaten Testen:</b> keine echten Karten, nicht verkaufen oder als echt ausgeben, in Turnieren nicht erlaubt; jede Kopie trägt fest den Vermerk „PROXY – keine echte Karte“. Mit „Drucken / als PDF speichern“ entsteht eine PDF-Datei; beim Drucken 100 % bzw. „Tatsächliche Größe“ wählen. Kartenrückseiten werden nicht gedruckt: die ausgeschnittene Kopie zusammen mit einer echten, wertlosen Karte (z. B. Standardland) in eine Hülle stecken, Kopie nach vorne – dann sehen alle Karten von hinten gleich aus, auch in durchsichtigen Hüllen.</li>
 <li><b>💡 Empfehlungen – Lücken und Filter:</b> Unter „Lücken nach Funktion“ zählt das Programm Ramp, Kartenziehen, gezieltes Removal und Board-Wipes und vergleicht mit Richtwerten (etwa 10 / 10 / 8 / 3). Fehlt etwas, stehen je Funktion sechs passende, verbreitete Karten in deinen Farben darunter (➕ fügt sie ein). „nur aus meiner Sammlung“ zeigt nur Karten, die du besitzt; „höchstens … € je Karte“ setzt eine Preisgrenze (eigene Karten gelten als kostenlos). Im Server-Betrieb fließen auch die veröffentlichten Galerie-Decks der anderen Benutzer ein.</li>
 <li><b>💡 Empfehlungen:</b> sucht ähnliche Decks (Precons, deine gespeicherten Decks und im Server-Betrieb die Galerie mit mindestens drei gemeinsamen Karten) und schlägt Karten vor, die dort oft mit deinen Karten zusammen gespielt werden oder zum Commander-Text passen. „Streichen erwägen“ nennt Karten mit wenig Rückhalt; mit 🏷 „Wincon“ oder „Combo“ markierte Karten werden nie vorgeschlagen. Decks mit guter Siegquote im Spielprotokoll zählen stärker.</li>
 <li><b>Frust-Index:</b> eigene Schätzung aus dem Kartentext, wie sehr ein Deck Mitspieler ärgern kann (Massen-Landzerstörung, Extra-Züge, Stax, Diebstahl, Gegenzauber, Tutoren, Game Changer). Er ersetzt die Salt-Werte von EDHREC, für die es keine offizielle Schnittstelle gibt.</li>
@@ -6680,6 +6682,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <div id=buyctl></div><div id=buyres></div></details>
 <details class=subbox id=pxbox><summary><b>🖨 Proxy-Druck</b> <span class=hint>Kopien beliebiger Karten zum Testen</span></summary>
 <p class=hint>Druckt Kopien von Karten in Originalgröße – als Kartenbild oder tintensparend nur mit Text. <b>Nur Kopien zum privaten Testen, keine echten Karten:</b> jede Kopie trägt den Vermerk „PROXY – keine echte Karte“.</p>
+<p class=hint>🃏 Die Kopie mit einer echten, wertlosen Karte (z. B. Standardland) in eine Hülle stecken – so sehen alle Karten von hinten gleich aus, auch in durchsichtigen Hüllen.</p>
 <button type=button class=primary id=pxopen>🖨 Proxys zusammenstellen</button></details>
 <details class=subbox id=wishbox><summary><b>⭐ Wunschliste &amp; Preisalarm</b> <span class=hint id=wishsum></span></summary>
 <p class=hint>Karten, die du kaufen möchtest. Mit Zielpreis erscheint auf der Startseite ein Hinweis, sobald der Preis darunter fällt (geprüft bei jeder Kartenaktualisierung).</p>
@@ -6760,7 +6763,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='58';
+const PAGE_VERSION='59';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -6951,10 +6954,12 @@ async function tokenBox(o){const r=await J('/api/tokens',{list:deck.export,comma
   tr.insertCell().textContent=k.type||'–';tr.insertCell().textContent=k.from.join(', ')})}
 // ---------- Proxy-Druck: Kopien zum privaten Testen – Bild- oder Textfassung, Rückseiten, Tokens, Schnittlinien
 const PROXY_NOTE='Proxys sind Kopien bzw. Platzhalter zum privaten Testen – keine echten Karten. Nicht verkaufen, nicht tauschen und nicht als echte Karten ausgeben; in offiziellen Turnieren sind sie nicht erlaubt. Kartenbilder und -texte sind Eigentum von Wizards of the Coast (Bilder von Scryfall). Jede Kopie trägt deshalb fest den Vermerk „PROXY – keine echte Karte“, Kartenrückseiten werden nicht gedruckt.';
+const PROXY_SLEEVE='Tipp für Hüllen: Die ausgeschnittene Kopie zusammen mit einer echten, wertlosen Karte (z. B. Standardland oder übrige Common) in eine Hülle stecken – Kopie nach vorne. So zeigt jede Karte die gleiche Rückseite, auch in durchsichtigen Hüllen, und die Kopie hat Dicke und Festigkeit einer echten Karte.';
 let PXOPT={mode:'img',backs:true,cut:true,gap:false,gray:false,paper:'A4'};try{Object.assign(PXOPT,JSON.parse(localStorage.getItem('pxopt')||'{}'))}catch(e){}
 function proxyDialog(tokens){proxyStudio({deck:true})}
 async function proxyStudio(pre){pre=pre||{};const b=$('div');b.id='pxstudio';dlgOpen('🖨 Proxys drucken – Kopien zum Testen').append(b);
  const note=$('div');note.className='warn pxnote';note.id='pxnote';note.append($('b','Nur Kopien: '),PROXY_NOTE);b.append(note);
+ const sl=$('div');sl.className='tag pxsleeve';sl.id='pxsleeve';sl.append($('b','🃏 In die Hülle: '),PROXY_SLEEVE.replace('Tipp für Hüllen: ',''));b.append(sl);
  const ta=$('textarea');ta.id='pxlist';ta.rows=8;ta.style.width='100%';ta.placeholder='Eine Karte je Zeile, z. B.\\n1 Sol Ring\\n2 Lightning Bolt\\n1 Counterspell (MH2) 267   ← bestimmter Druck';
  const src=$('div');src.className='chips';const sb=(t,id,fn)=>{const x=$('button',t);x.type='button';x.id=id;x.onclick=fn;src.append(x)};
  const hasDeck=typeof deck!='undefined'&&deck&&deck.groups&&deck.groups.length;
@@ -6998,7 +7003,7 @@ function printProxies(cards,o,miss){o=Object.assign({mode:'img',cut:true,gap:fal
  const bar=$('div');bar.className='noprint';bar.append($('b',cards.length+' Kopien · '+Math.ceil(cards.length/9)+' Seiten '),' ');
  const pr=$('button','Drucken / als PDF speichern');pr.type='button';pr.className='primary';pr.id='pxprint';pr.onclick=()=>window.print();
  const cl=$('button','Schließen');cl.type='button';cl.id='pxclose';cl.onclick=()=>{pa.remove();document.body.classList.remove('printing')};bar.append(pr,' ',cl);
- bar.append($('div',PROXY_NOTE));if(miss.length)bar.append($('div','Nicht gefunden (nicht gedruckt): '+miss.join(', ')));pa.append(bar);
+ bar.append($('div',PROXY_NOTE),$('div',PROXY_SLEEVE));if(miss.length)bar.append($('div','Nicht gefunden (nicht gedruckt): '+miss.join(', ')));pa.append(bar);
  for(let i=0;i<cards.length;i+=9){const pg=$('div');pg.className='ppage';cards.slice(i,i+9).forEach(x=>{const c=$('div');c.className='pcard'+(o.mode=='text'||!x.front?' ptextcard':'');
    const src=x.src||(x.face?x.back:x.front);
    if(o.mode=='text'||!src)c.append(pxText(x));else{const im=$('img');im.src=src;im.alt=x.name+(x.face?' (Rückseite)':'');im.onerror=()=>{im.remove();c.classList.add('ptextcard');c.prepend(pxText(x))};c.append(im)}
