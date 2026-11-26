@@ -27,6 +27,7 @@ Version 35: Handyansicht – das Endgerät wird erkannt; auf Mobiltelefonen komp
   einspaltige Formulare und Kacheln, kein seitliches Verrutschen; umschaltbar (automatisch / Handy / PC).
 Version 34: Commander-Vorschläge nur nach Farbe und/oder Thema; neuer Bereich „Neu hier?“ mit Einstieg für
   Magic- und Commander-Neulinge.
+Version 62: Wunschliste schlägt Kartennamen schon nach wenigen Buchstaben vor (wie Deck und Sammlung).
 Version 61: Englische Sprachfassung – Umschalter 🌐 in der Kopfzeile (auch auf Anmelde- und Spielabend-Seite), Server
   übersetzt feste Seiten, /i18n.js die Texte im Browser; Hilfe und „Neu hier?“ komplett englisch; deutsche Texte
   auf Rechtschreibung, Grammatik und Richtigkeit geprüft.
@@ -145,7 +146,7 @@ import argparse, csv, datetime, difflib, io, gzip, hashlib, json, os, random, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-APP_VERSION = "61"
+APP_VERSION = "62"
 ENV = os.environ.get
 SERVER = ENV("CDB_SERVER", "") == "1"                 # Betrieb im Internet: Anmeldung Pflicht, Sicherheitssperren aktiv
 DATA_DIR = ENV("CDB_DATA_DIR") or os.path.dirname(os.path.abspath(__file__))
@@ -6030,7 +6031,7 @@ def lab_api(path, p, uid=0):
     return {"error": "Unbekannte Aktion."}
 
 
-PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 61)</title>
+PAGE = """<!doctype html><meta charset=utf-8><title>Manaschmiede (Version 62)</title>
 <link rel=manifest href=/manifest.webmanifest><meta name=theme-color content="#1a130e">
 <link rel=icon href=/icon-192.png><link rel=apple-touch-icon href=/icon-192.png><meta name=mobile-web-app-capable content=yes>
 <style>body{font:15px Calibri,Arial,sans-serif;max-width:1100px;margin:20px auto;padding:0 12px}
@@ -6846,7 +6847,7 @@ body.mob:not(.mtg) #mobmore.open{background:#fff;border-top-color:#bbb}
 <button type=button class=primary id=pxopen>🖨 Proxys zusammenstellen</button></details>
 <details class=subbox id=wishbox><summary><b>⭐ Wunschliste &amp; Preisalarm</b> <span class=hint id=wishsum></span></summary>
 <p class=hint>Karten, die du kaufen möchtest. Mit Zielpreis erscheint auf der Startseite ein Hinweis, sobald der Preis darunter fällt (geprüft bei jeder Kartenaktualisierung).</p>
-<div class=wishadd><input id=wishname placeholder="Karte, z. B. Sol Ring" size=28><input id=wishqty size=3 value=1 inputmode=numeric title="Anzahl">
+<div class=wishadd><span class=ac><input id=wishname placeholder="Karte, z. B. Sol Ring" size=28 autocomplete=off></span><input id=wishqty size=3 value=1 inputmode=numeric title="Anzahl">
 <label>Zielpreis <input id=wishtarget size=5 inputmode=decimal placeholder="€"> €</label><button type=button id=wishgo>⭐ Hinzufügen</button></div>
 <div id=wishres></div></details>
 <details class=subbox id=folderbox><summary><b>📁 Ordner</b> <span class=hint id=foldersum></span></summary>
@@ -6924,7 +6925,7 @@ let ME={server:false,admin:true,max_games:100};const MEP=J('/api/me').then(m=>{i
 const E=id=>document.getElementById(id);
 const P=(o,x,cls)=>{const e=$('p',x);if(cls)e.className=cls;o.append(e);return e};
 // Läuft eine andere Version als diese Seite? Dann einmal frisch laden.
-const PAGE_VERSION='61';
+const PAGE_VERSION='62';
 J('/api/version').then(v=>{if(v.version&&v.version!=PAGE_VERSION){
  try{if(sessionStorage.getItem('reloaded')!=v.version){sessionStorage.setItem('reloaded',v.version);location.reload()}}catch(e){location.reload()}}});
 // ---- Kartensymbol mit Bildvorschau (Maus darüber, am Handy antippen)
@@ -7542,6 +7543,7 @@ E('pxopen').onclick=()=>proxyStudio({});
 E('buybox').addEventListener('toggle',()=>{if(E('buybox').open&&!E('buyctl').firstChild)buyInit()});
 
 E('wishgo').onclick=async()=>{const r=await J('/api/wish_add',{text:(E('wishqty').value||'1')+' '+E('wishname').value,target:E('wishtarget').value});if(!r.error){E('wishname').value='';E('wishtarget').value=''}wishShow(r)};
+ac(E('wishname'),{get:names(false),pick:n=>{E('wishname').value=n;E('wishtarget').focus()},enter:()=>{if(E('wishname').value.trim())E('wishgo').click()}});
 E('folderadd').onclick=()=>folderPut('add');E('folderrem').onclick=()=>folderPut('remove');
 E('wishbox').addEventListener('toggle',()=>{if(E('wishbox').open)J('/api/wishlist').then(wishShow)});
 E('folderbox').addEventListener('toggle',()=>{if(E('folderbox').open)folderOverview()});
