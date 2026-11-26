@@ -1,0 +1,106 @@
+220	<span class="pip pR">R</span> <b>Red:</b> fire and speed: direct damage, fast attacks, chaos.
+221	<span class="pip pG">G</span> <b>Green:</b> nature and growth: big creatures, extra lands and lots of mana.
+222	<span class="pip pC">◇</span> <b>Colorless:</b> artifacts and some creatures fit into any deck.
+223	The basic land for each color: Plains (white), Island (blue), Swamp (black), Mountain (red), Forest (green).
+224	Card types
+225	Type
+226	What it does
+227	<b>Land</b>
+228	Produces mana. You may play <b>one land per turn</b>; it costs nothing.
+229	<b>Creature</b>
+230	Stays on the battlefield and can attack and block. At the bottom right are its <b>power/toughness</b>, e.g. 3/2: deals 3 damage, dies to 2 damage.
+231	<b>Sorcery</b>
+232	One-time effect, only during your own turn when nothing else is happening.
+233	<b>Instant</b>
+234	One-time effect, <b>at any time</b>, including during other players' turns as a response.
+235	<b>Artifact</b> and <b>enchantment</b>
+236	Stay on the battlefield and have a lasting effect, e.g. extra mana or an ongoing advantage.
+237	<b>Planeswalker</b>
+238	Powerful allies with loyalty; use one of their abilities once per turn. They can be attacked.
+239	Reading mana and costs
+240	The <b>mana cost</b> is at the top right of the card. Example: <span class=mana><span class="pip pC">2</span><span class="pip pG">G</span></span> means one green mana and two more of any kind. To use a land, you <b>tap</b> it (turn it sideways). Tapped cards are used up for this round and are turned upright again at the start of your next turn (“untapped”).
+241	How a turn works
+242	<b>Untap:</b> turn all your cards upright again.
+243	<b>Upkeep:</b> effects that happen “at the beginning of your upkeep” happen now.
+244	<b>Draw:</b> take one card from your library.
+245	<b>First main phase:</b> play a land, cast creatures and other cards.
+246	<b>Combat:</b> you choose attacking creatures (they get tapped) and whom they attack. Each player being attacked may block with untapped creatures. Unblocked damage goes to the life total; blocked creatures fight each other.
+247	<b>Second main phase:</b> play cards again (e.g. whatever you didn't want to show before attacking).
+248	<b>End:</b> more than seven cards in hand? Discard the extra ones. Damage on creatures wears off.
+249	Then it's the next person's turn, clockwise.
+250	Responding: the stack
+251	When something is cast, everyone may respond to it, for example with an instant. Responses go “on top” and are resolved <b>first</b>, so the last spell cast resolves first. For a start this is enough: before a spell resolves, briefly ask whether anyone wants to respond.
+252	Common abilities
+253	<b>Flying</b>
+254	can only be blocked by creatures with flying or reach
+255	<b>Haste</b>
+256	can attack on the turn it comes into play
+257	<b>Vigilance</b>
+258	doesn't tap to attack, so it can still block afterwards
+259	<b>Trample</b>
+260	excess damage goes through to the player despite blockers
+261	<b>Deathtouch</b>
+262	even 1 damage destroys the creature it hits
+263	<b>Lifelink</b>
+264	you gain as much life as the damage the creature deals
+265	<b>First strike</b>
+266	deals combat damage first
+267	<b>Hexproof</b>
+268	can't be the target of opponents' spells
+269	<b>Indestructible</b>
+270	isn't destroyed by damage or “destroy” effects
+271	All terms in detail: <a href="#regeln">📖 Rules</a> (glossary and search).
+272	👑 Part 2: What makes Commander special?
+273	<b>A leader:</b> your deck has a <b>commander</b>, usually a legendary creature. It starts in the <b>command zone</b> next to the battlefield and can be cast from there at any time, as if it were in your hand.
+274	<b>100 cards, each only once:</b> the deck has exactly 100 cards including the commander. Each card may appear only once. Basic lands (Plains, Island, Swamp, Mountain, Forest, Wastes) and cards that explicitly allow it are the exception.
+275	<b>Color identity:</b> all cards must fit your commander's colors. Every mana symbol on the card counts, including in the rules text. A red-green commander therefore only allows red, green and colorless cards.
+276	<b>40 life</b> instead of 20, and usually <b>three or four people</b> sit at the table, everyone against everyone.
+277	<b>Commander tax:</b> if your commander would go to the graveyard, exile, your hand or your library, you may put it back into the command zone instead. Each further cast costs <b>2 more mana</b> than the previous one.
+278	<b>Commander damage:</b> a player who has taken a total of <b>21 combat damage from the same commander</b> loses, no matter how much life is left.
+279	<b>Free mulligan:</b> if you don't like your opening hand, shuffle and draw seven cards again. In games with several opponents the first mulligan is free; after that you put one card on the bottom of your library per mulligan.
+280	<b>Drawing on the first turn:</b> in games with more than two people, the starting player also draws a card on the first turn.
+281	Agreeing on power level
+282	Commander is a social format: everyone should have fun. Before the game, briefly agree on how strong your decks are (“Rule 0”). There are official <b>brackets</b> for this (levels 1–5): from very relaxed theme decks to tournament-strength decks. Many ready-made precons are at level 2 or 3. Especially strong cards are on the <b>Game Changer</b> list. Manaschmiede marks them and can leave them out when building. The deck view shows your deck's level under “🎚 Bracket rating” with reasons; the detailed explanation is in the help under “Brackets”.
+283	At a table with several players
+284	Don't always attack the same person. Whoever is ahead becomes the target.
+285	Deals (“I won't attack you if …”) are allowed but not binding.
+286	Explain your cards when someone asks, and read them aloud if in doubt.
+287	Keep life totals and commander damage visible. The <a href="#spieltisch">🎲 Game table</a> does this for you.
+288	🛠 Part 3: Your first deck
+289	Path A: a ready-made deck (recommended for beginners)
+290	Preconstructed Commander decks (“<b>precons</b>”) are playable right away and balanced against each other. Under <a href="#precons">🎁 Precons</a> you'll find all precons with their card lists, and under <a href="#gegner">⚔ Opponents &amp; duel</a> you can let them play against each other. That way you can see which one suits you before buying.
+291	Path B: build it yourself with the assistant
+292	Under <a href="#deck">🛠 Build deck</a>, click your favorite colors and/or enter a theme, e.g. “dragons”, “tokens” or “graveyard”.
+293	<b>“💡 Suggest commanders”</b> shows matching commanders with images. Pick one.
+294	<b>“Suggest deck”</b> puts together 100 cards. Optionally take a budget or your collection into account.
+295	Save the deck, play a few turns alone with the sample hand and the 🎮 test board, and let it play against precons under “Opponents &amp; duel”.
+296	<b>Rule of thumb for a balanced deck:</b> about 36–38 lands, 10 cards for extra mana (“ramp”), 10 for drawing cards, 8–10 for removing single threats and 2–3 that clear the whole battlefield. The rest supports your commander's theme. Manaschmiede checks this and shows gaps.
+297	🎲 Part 4: The first game
+298	<b>Setup:</b> place the commander face up in the command zone and shuffle the other 99 cards. Open the <a href="#spieltisch">🎲 Game table</a>, enter names and start the game.
+299	<b>Starting player:</b> tap 🎲 in the game table and let chance decide.
+300	<b>Opening hand:</b> everyone draws seven cards. Too few or too many lands (3–4 is good)? Take a mulligan.
+301	<b>Playing:</b> take turns clockwise. In the first turns play lands and ramp, then cast your commander.
+302	<b>Counting life:</b> in the game table tap right = +1, left = −1, hold = ±10. Enter commander damage via ⚔.
+303	<b>End:</b> the last player standing wins. Choose the winner in the game table and save. This builds up your statistics.
+304	Small glossary
+305	<b>Graveyard</b>
+306	discard pile for destroyed and used cards
+307	<b>Exile</b>
+308	cards removed from the game entirely
+309	<b>Library</b>
+310	your draw pile
+311	<b>Ramp</b>
+312	cards that give you more mana faster
+313	<b>Removal</b>
+314	cards that remove opponents' cards
+315	<b>Board wipe</b>
+316	clears all creatures (or more) from the battlefield
+317	<b>Token</b>
+318	a creature or object created by an effect, without a real card
+319	<b>Staple</b>
+320	a card found in very many decks (e.g. Sol Ring)
+321	<b>Combo</b>
+322	a few cards that together win at once or create something endless
+323	<b>Proxy</b>
+324	a placeholder printout for testing, printable from the deck and under <a href="#sammlung">📦 Collection</a>
+325	Any questions? ❓ at the top right explains every feature of Manaschmiede. The complete official rules are under <a href="#regeln">📖 Rules</a>.

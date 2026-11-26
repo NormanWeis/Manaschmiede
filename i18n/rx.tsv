@@ -1,0 +1,14 @@
+^Mulligan: Tippe (\d+) Handkarten? an, die unter die Bibliothek sollen\.$	Mulligan: tap $1 hand card(s) to put on the bottom of the library.
+^Bei (.+) ansehen\. Anmeldung und Kauf laufen direkt beim Händler\.$	View at $1. Login and purchase happen directly with the seller.
+^„(.+)“ durch „(.+)“ ersetzen$	Replace “$1” with “$2”
+^„(.+)“ verschieben$	Move “$1”
+^Wirklich alle (\d*) ?Karten hinzufügen\?$	Really add all $1 cards?
+^„(.+)“ als nicht verfügbar merken$	Mark “$1” as unavailable
+^„(.+)“ bei (.+) suchen$	Search for “$1” at $2
+^Alle (\d+) Game Changer ersetzen$	Replace all $1 Game Changers
+^Liste kopieren und (.+) öffnen$	Copy the list and open $1
+^\(Pop-up blockiert, bitte (.+) selbst öffnen\.\)$	(Pop-up blocked, please open $1 yourself.)
+^Datei „(.+)“ wird heruntergeladen\.$	File “$1” is being downloaded.
+^Druckdaten für (\d+) Einträge nachladen$	Load printing data for $1 entries
+^Dauerscan läuft, (\d+) Karte\(n\) erfasst\. Nächste Karte in den Rahmen legen\.$	Continuous scan running, $1 card(s) captured. Place the next card in the frame.
+^Mulligan: Tippe (\d+) Handkarten? an, die unter die Bibliothek sollen\.$	Mulligan: tap $1 hand card(s) to put on the bottom of the library.

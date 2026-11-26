@@ -1,0 +1,398 @@
+0	(Cardmarket, Trader-online, cardcosmos): data is only transmitted to the seller when you click; the seller's privacy policy applies.
+3	(at the earliest around turn
+4	(cheapest printing, trend price); dollars: TCGplayer via Scryfall.
+5	(approx.)
+6	(of
+7	) according to the owner · estimate
+9	). Please choose “Export” → “Copy for MTGO/Arena” in Moxfield and paste the list here.
+10	). The existing data will continue to be used.
+11	). Printing data will be loaded later.
+12	). Allowed are
+13	). Check your internet connection.
+17	); last price list from
+18	+1/+1 counters
+19	, round
+20	, table
+21	, without combo check)
+23	, similar mana value preferred
+25	. Please choose fewer games, variants or opponents.
+26	. No analytics or advertising services are used.
+27	. Euro prices: Cardmarket price list from
+28	. Prices: Scryfall (euro = Cardmarket, dollar = TCGplayer), printing as in the card database.
+156	1. Controller
+157	2. What data is processed
+158	3. Purpose and legal basis
+159	5. Third-party services
+160	7. Your rights
+161	8. Further information
+162	: price list from
+164	; shared rare cards count more than everyday cards)
+165	; newer data from
+168	Note:
+169	Note: different bracket estimates (
+170	Admin access “
+172	Current deck
+173	All decks
+174	age loaded
+175	Request too large.
+176	Information pursuant to § 5 DDG
+177	Attack
+178	Attack with
+179	Login:
+180	View settings and ongoing test games (localStorage); these never leave your device.
+181	Artifacts
+183	Not available on the server.
+184	Not available on the server. Please download as .dck.
+185	On the server, only links from Archidekt, Moxfield, MTGGoldfish, TappedOut and Deckstats are allowed.
+186	No TXT link was found on the Wizards rules page.
+187	Conceded
+188	From the gallery of
+189	Even: both decks win the same number of categories (
+190	Access (Art. 15), rectification (Art. 16), erasure (Art. 17), restriction (Art. 18), data portability (Art. 20) and objection (Art. 21 GDPR). Please contact the address given above. You also have the right to lodge a complaint with a data protection supervisory authority.
+191	Equipment
+192	Outside the commander's color identity:
+194	User “
+196	Wrong user name or password.
+197	User name and password (stored only as a salted hash, never in plain text), role, date of creation.
+198	User name: 2–40 characters, only letters, digits, period, @, - and _.
+199	Providing the features you use (Art. 6 (1) (b) GDPR), security of the service (Art. 6 (1) (f) GDPR). Names of other players are only used for the game night and the game log (Art. 6 (1) (f) GDPR; legitimate interest in organizing shared game nights).
+200	Library empty (mill)
+201	Please open the complete link from the window on the PC (it ends with
+202	Please choose a precon or one of your own decks as the opponent.
+203	Please enter a color identity or a theme.
+205	Please enter a folder name.
+206	Please wait a moment before writing your next comment.
+207	Please choose at least one more AI profile.
+208	Please enter at least one thing: commander, theme, color identity or cards.
+209	Please enter at least one variant (card out → card in).
+210	Please choose at least one opponent.
+212	Please load a deck first.
+213	Please load a deck with a commander first.
+214	Please choose your own deck and an opponent (precon or own deck) first.
+215	Bracket 1: none · Bracket 2–3: a few, not in a row (more than 3 cards count as a chain) · from 4: free
+216	Bracket 1–2: none intentional · Bracket 3: none before about turn 6 · from 4: free
+217	Bracket 1–2: none · Bracket 3: at most 3 · from bracket 4: any
+218	Bracket estimate from Commander Spellbook unreachable (
+224	Cardmarket unreachable (
+225	Cardmarket files incomplete
+226	Cardmarket prices
+227	Chance of having seen the necessary colored sources by the turn matching the card's mana value (on the play, without mulligan). Sources are lands including fetch and search lands plus mana artifacts/creatures up to mana value 2; ramp spells up to mana value 3 that fetch a land count as half. Target: about 90 %.
+228	Combo database unreachable (
+229	Commander taken from the sideboard section.
+230	Commander recognized from the separate block of the list; please check.
+231	Build Commander decks, compare them, find combos and let Forge play them against each other.
+232	Commander precons saved.
+233	Commander damage (21)
+234	The deck has too few cards for the gallery.
+235	The deck is already yours; you don't need to send it to yourself.
+236	The password must have at least 8 characters.
+237	The inbox of
+238	The current password is wrong.
+239	Privacy policy
+240	Deck not found.
+241	Decks from local mode assigned to the administrator.
+242	Decks, collection, wishlist, folders, game log, game nights with the names of the players, comments and ratings in the deck gallery, settings.
+243	Your deck is in
+244	Your cards
+245	Your own cards include Game Changers. They were kept despite the filter.
+246	The comment is empty.
+247	The history builds up with the next card data updates (one snapshot per update).
+248	The selection follows general EDHREC popularity, not commander-specific data. Please check.
+249	The data is stored on
+250	The decklist is too long.
+251	The list has
+252	Manaschmiede is a private, non-commercial fan project and is not affiliated with Wizards of the Coast. Magic: The Gathering, card names, card images and symbols are property of Wizards of the Coast LLC.
+253	The rules are not loaded yet. Click “Update now” at the top.
+254	Theft / control
+255	This site doesn't provide the decklist as text. Please use the site's export function and paste the list here or upload it as a file.
+256	You can't delete this comment.
+257	This link is invalid or has been revoked.
+258	This seat is already taken.
+259	This game night is closed.
+260	This player isn't sitting at that table.
+261	This deck is not public (anymore).
+262	This deck is not public.
+263	This shared deck is on another Manaschmiede. Use “Copy text” there and paste it here.
+264	You already have a duel or measurement running. Please wait or cancel it.
+265	You already have a duel running. Please wait or cancel it.
+266	You haven't imported a collection yet. The deck was built without a collection.
+267	You can't delete yourself.
+268	Our own estimate from the card text (no EDHREC salt scores): how much the deck can frustrate other players.
+269	Restricted cards in an amount that fits bracket 3 (Upgraded).
+270	Entry missing.
+271	Recommendation: your deck with AI profile “
+272	Recommendation: “
+273	Energy
+274	Received from
+275	At least 3 players must be present.
+276	Only
+277	Exhibition or Core
+278	Exile and return
+279	A small number of extra turns rules out bracket 1; otherwise the deck fits bracket 2 (Core).
+280	COLORLESS
+281	Vehicles
+282	Error at
+283	Error:
+284	Flying
+285	Curses
+286	Forge returned no result. Last output:
+287	Forge is ready.
+288	Forge doesn't know the AI profile:
+289	Forge could not load a deck:
+290	Forge could not be started:
+291	Forge failed to start:
+292	Forge folder not set yet.
+293	Cases
+294	For the duel, the opponent's deck also needs a commander.
+295	For the duel, your deck needs a commander.
+296	Built for the competitive metagame; games can end on any turn.
+297	For the measurement, your deck needs a commander.
+298	There is no history for this game.
+299	A game night needs at least 3 players.
+300	Gallery decks
+301	Opponent “
+302	Shared with Manaschmiede. Card data and images: Scryfall. Unofficial Fan Content, not endorsed by Wizards of the Coast.
+303	Targeted removal
+304	Targeted removal
+305	glossary terms)
+306	Basis:
+307	Sorceries
+308	Backgrounds
+309	Note to the operator:
+311	At most 50 folders.
+312	Max price per card:
+314	Within budget
+315	No typical mechanics were found in the commander's text, so cards were chosen by general popularity.
+316	No file forge-gui-desktop-…-jar-with-dependencies.jar was found in the given folder.
+317	Import failed:
+318	Imported deck
+319	Round %d still has open tables. Draw again anyway?
+320	Content you create:
+321	Internal error. Please try again.
+322	Java not found. Please install Java 17 or newer.
+323	AI “
+324	Card missing.
+325	Card not found.
+326	Card “
+327	card(s) without a known price are not included.
+328	Cards from
+329	Cards from your collection were preferred.
+330	cards found.
+331	Cards in
+332	cards assigned
+333	cards assigned)
+334	Card images are loaded directly from Scryfall's servers; Scryfall receives your IP address and browser data in the process. The server fetches card data without any personal data.
+335	Card data could not be loaded (
+336	Card quality (EDHREC median, lower = more popular)
+337	categories and is stronger on paper than “
+338	categories; your deck has some catching up to do there.
+340	No commander found. The deck is suggested without a commander.
+341	No commander marked. Please choose one below.
+342	No commander marked. The first card was assumed; please check.
+343	No theme given, so generally popular cards were chosen.
+344	No deck of your own to compare. Please suggest or load a deck first.
+346	No cards recognized.
+347	No cards recognized. Expected is a list (“4 Sol Ring”) or a CSV file with columns for name and quantity.
+348	No cards recognized. Expected is e.g. “1 Sol Ring” per line.
+349	No variant is measurably better. More games per variant reveal smaller differences.
+350	No restricted cards found. Whether it's bracket 1 (Exhibition) or 2 (Core) depends on intent: if a theme clearly comes before power, it's bracket 1.
+351	Classes
+352	Couldn't find a download address. Scryfall entry:
+353	Creature
+354	Creatures
+356	Life @
+357	Life total reduced to 0
+358	Empty decklist.
+359	Legendary
+360	Links to sellers
+361	List to copy
+362	Local storage in the browser:
+363	Mill
+364	Manaschmiede - opponent
+365	Mass land destruction / mana denial
+366	At most 500 saved decks per user.
+367	Test lab: result not saved:
+368	At least one rule goes beyond bracket 3. Whether it's 4 (Optimized) or 5 (cEDH) depends on whether the deck is built for the competitive tournament metagame. That can't be read from the list alone.
+369	Moxfield often blocks direct requests (
+370	Name missing.
+371	Name, address and email are still missing. Please enter them as administrator under “Legal notice & privacy”.
+372	Not Commander-legal:
+373	Not logged in.
+374	Not found.
+375	Not in the deck:
+376	Loss by card effect
+377	No price history yet. It builds up from now on with every card data update (once a day at startup).
+379	No collection imported yet.
+380	Notes
+381	No.
+382	Number
+383	Only
+384	Only cards from your collection (except basic lands).
+385	Only the administrator can hide decks.
+386	Only the host can end the table.
+387	Administrators only.
+390	Without a commander and color identity, all five colors were allowed.
+391	Sacrifice
+392	Game over.
+394	Precon not found.
+395	Precons could not be loaded (
+396	Price per copy (EUR)
+399	Check failed (
+400	Ramp (mana acceleration)
+401	rules recognized. Is the file incomplete?
+402	Rules,
+403	Wizards rules page unreachable (
+404	Guideline
+405	Roles
+406	Rooms
+407	Sagas
+408	Damage to @
+409	Battles
+410	Shrines
+411	Treasures
+412	Scryfall (Scryfall, LLC, USA):
+413	Scryfall unreachable (
+414	seconds ...
+415	seconds.
+416	Playing in Forge yourself only works in local mode on your own PC.
+417	Sending to users is only available in server mode. Please use “Send as link” here.
+418	Win by card effect (e.g. combo)
+419	See above.
+420	As long as your account exists. When the account is deleted, decks, collection, game log and game nights are deleted with it. Sessions expire when their validity ends or when you log out.
+421	Other
+422	Instants/sorceries
+423	Stax / locks
+424	Dying
+425	snapshot(s) since
+426	Total (EUR)
+427	Synergy with the commander (
+428	Synergy cards were chosen based on the commander's text, the rest by general EDHREC popularity. Please check.
+430	days
+431	Phone:
+432	Text recognition could not be loaded (
+433	Theme before power, very casual; games last at least about 9 turns.
+434	Theme:
+435	Table not found.
+436	Table not found. Either the code is wrong or the table has been closed.
+437	Tokens detected from the card text; exact data and images from Scryfall will follow after the next card data update.
+438	Tutors
+440	Lethal, consistent and fast, but not aimed at the tournament metagame; at least about 4 turns.
+441	Unknown action.
+442	Unknown card:
+443	Unknown measurement.
+444	Unknown structure of the rules file.
+445	Unknown duel job.
+446	Unknown game night.
+447	Unknown game night. Please check the link.
+448	Unknown table.
+449	Unknown JSON format (supported: Moxfield, Archidekt).
+450	Unknown XML format (supported: MTGO .dek, Cockatrice .cod).
+451	Invalid selection.
+452	Invalid data.
+453	Invalid name list.
+454	Invalid game data.
+455	Invalid player list.
+456	Invalid variants.
+457	Invalid Deckstats link.
+458	Invalid seat.
+459	Invalid game state.
+460	Unoptimized and straightforward, social; games last at least about 8 turns.
+461	Responsible for the content
+462	Version not found.
+463	Strengthened with good synergy and card quality; games last at least about 6 turns.
+464	Defense
+465	Enchantments
+466	More popular cards
+467	Additional opponent “
+468	Anyone who has the link or QR code of a game night sees the players' names, the tables and the standings and can enter results.
+469	Value per saved snapshot (at every card data update).
+470	XML with DOCTYPE/ENTITY is not read for security reasons.
+471	Spells:
+472	Time limit reached (counted as a draw)
+473	This deck already has 200 comments.
+474	Too many failed attempts. Please
+475	Too many games (
+476	Too many lines (at most 60,000).
+477	Too many open tables. Please try again later.
+478	Access code missing
+480	Nothing was found for the theme. Try other terms (e.g. tokens, dragons, graveyard).
+481	To Manaschmiede
+482	Two-card combos could not be checked (Commander Spellbook unreachable).
+483	Two-card combos are being checked on Commander Spellbook …
+484	Two-card combos that win the game
+485	turns skipped …
+490	current (price list from
+491	current (as of
+492	current (effective from
+493	up to date (as of
+494	current version (
+495	cards marked as unavailable were excluded.
+496	other lands
+504	popular
+505	popular cards
+507	the operator's server
+508	clearly better
+509	clearly worse
+511	German name
+512	German name (Scryfall)
+519	can't be commanders together. Both need “Partner” (or the same partner variant, “Friends forever”), or it must be “Choose a Background” with a background or “Doctor's companion” with a Doctor.
+521	somewhat better
+522	somewhat worse
+524	own decks
+525	a session cookie (cdbsess), technically necessary to keep you logged in (§ 25 (2) No. 2 TDDDG). To protect against password guessing, the IP address is briefly kept in memory after failed logins.
+532	relaxed
+536	done
+541	frustration
+544	banned
+545	measured
+546	saved.
+547	is not a commander according to my approximation; please check.
+548	same role:
+549	same card type (
+552	high
+569	not intended in brackets 1–3
+570	in no similar deck
+571	is not legal in Commander (banned).
+572	is not legal in Commander and was left out.
+573	is full (100 decks).
+575	is too old; Forge needs Java 17 or newer.
+581	no measurable difference
+593	reloaded
+594	reloaded:
+595	reloaded: as of
+596	reloaded: effective from
+597	not exact
+598	no data yet
+601	only allowed locally
+603	often together with your cards in
+605	matching the
+606	exact match
+607	fits the commander's text
+629	weakest backing in comparison
+630	rarely played
+637	noticeable
+639	instead of
+642	and the commander's text. No EDHREC data.
+647	published decks from the gallery
+650	from
+653	restored
+654	is being checked ...
+655	is still being used
+659	too few sources
+660	too few games for a verdict
+664	Avg. mana value (excluding lands)
+665	similar decks (precons, own saved decks
+666	similar name
+667	similar German name
+668	” saved.
+669	” doesn't exist.
+670	” is set up.
+671	” is in
+672	” not found exactly, using:
+673	” not found or without commander.
+674	” not found.
+675	” test (
+678	“Partner with” only allows the named partner (
+679	€ (excluding commander and cards from your collection); a replacement costs at most 30 % of the price.
+680	€ used (excluding basic lands).
+681	€ of

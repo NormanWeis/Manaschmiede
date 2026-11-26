@@ -1,0 +1,110 @@
+110	<b>Table view (default):</b> one large area per player; the top row is upside down for the players sitting opposite (🔄 switches this off). <b>Tap left = −1, tap right = +1, hold = ±10</b> (repeating while your finger stays down); the change is shown briefly. If a deck with a commander is saved for the player or a commander name is entered, its card image appears as the background. ☠/⚔ opens poison, commander damage per opponent, monarch, “to play” and concede. In the middle: 🎲 pick the starting player, turn counter, ⏭ next player, ⛶ full screen, 📋 grid view.
+111	<b>📡 Shared table (several phones):</b> all devices must use the same Manaschmiede (a server, or a PC in the home network started with “start in network”). One person starts the game, chooses “Your seat” below and taps “📡 Share table”. A four-digit code, a QR code and a link then appear. The others enter the code at “📡 Join a table” in the game table (or scan the QR code) and choose their seat. Each phone then shows its own area large and the other players small above it; life, poison, commander damage (entered by the player who was hit), turn and monarch are synchronized within about a second. Everyone can only change their own area. If a phone drops out, the host ticks “show and control all areas”. Saving or cancelling on the host ends the table for everyone. After a reload, a phone reconnects by itself; open tables expire after 12 hours without changes.
+112	<b>Grid view:</b> switch with 📋 (🃏 to go back; the choice is remembered): poison (10 or more loses) and commander damage per opponent (21 or more loses). Players who have lost are greyed out. “Next turn” counts the rounds. The state survives a reload; on a phone the screen stays on.
+113	<b>End game:</b> choose the winner (if only one player is left, they are preselected) and save. The statistics show games, wins and win rate per deck and per player, plus the most recent games.
+114	<b>Forge results:</b> after a duel, “Add to game log” includes the AI games (marked as “Forge”).
+115	<b>🏆 Game night:</b> enter the players and draw tables. Manaschmiede forms four-player tables where possible, otherwise three-player tables, and avoids pairings that already happened that night. You tap the winner; the standings only count wins. A season is optional and combines several nights. Players open the link or QR code on their phone and enter winners without an account of their own. “Play at the phone table” starts the life counter with the players of that table and reports the winner back when you save.
+116	Export and transfer
+117	<b>→ Moxfield / → Archidekt:</b> the list is copied to the clipboard and the site is opened. Create a new deck there, open the import and paste with <b>Ctrl+V</b>. (Neither site allows direct uploads from other programs.)
+118	<b>Copy text:</b> works for almost all other sites and apps.
+119	<b>Download:</b> as a text file, Forge deck (.dck) or spreadsheet (CSV).
+120	<b>Save to Forge deck folder:</b> the deck then appears in Forge under the Commander decks.
+121	Choose and compare opponents
+122	An opponent can be an official <b>precon</b> (search field or matching suggestions) or a <b>deck of your own</b> (buttons “Own decks as opponents” or “Use as opponent” in the import section).
+123	The <b>comparison</b> sets key figures side by side: ramp (mana acceleration), card advantage, removal, mass removal, land count, mana value, Game Changers, tutors, card quality. Green marks who is ahead. The comparison only uses the decklists; the actual playing happens in the Forge duel.
+124	<b>Ideas from the opponent's deck:</b> popular cards your deck doesn't have that fit your colors.
+125	Combos
+126	Combos are card combinations that together do something extraordinary, often winning on the spot. The data comes from Commander Spellbook. For each combo you see how likely you are to have all pieces together by turn 6, 8 or 10 (calculated from 1,500 simulated opening hands, without interference from opponents). Winning combos that are possible early raise the bracket rating.
+127	The analysis also shows the <b>Commander Spellbook rating</b> (Ruthless, Spicy, Powerful, Oddball, Core, Exhibition) with its reasoning, e.g. the number of Game Changers and two-card combos. <b>“Almost complete”</b> lists combos that are missing exactly one card. The “➕ … to deck” button adds it directly. The missing card has a dashed red border.
+128	Direct duel with Forge
+129	Forge is a free program that plays Magic with all the rules. Here two computer players play your two decks fully against each other, combos included.
+130	<b>One-time setup:</b> install Java 17 or newer (e.g. from adoptium.net) and install Forge from github.com/Card-Forge/forge/releases.
+131	In the duel section, enter the <b>Forge folder</b> (the folder containing the file <code>forge-gui-desktop-…-jar-with-dependencies.jar</code>) and press <b>Save</b>. “Forge is ready.” should appear.
+132	<b>Game type:</b> “1 vs 1”, “Three-player Commander game” (one more opponent) or “Four-player Commander game” (two more opponents), each with matching precons or your own decks. Multiplayer games take considerably longer (1–10 minutes per game); with equally strong decks, each wins about 33 % with three players and about 25 % with four.
+133	<b>Choose a precon:</b> the “Choose precon” list contains all official precons with name, commander and colors, ordered by set and year; those matching your colors are at the very top. If you know the name, you can also search for a precon, commander or set in the search field.
+134	Choose the number of games (10 is a good start) and click <b>Start duel</b>. The first game takes a little longer because Forge has to start. After that, a 1-vs-1 game takes about 15 seconds to 3 minutes depending on the decks.
+135	<b>⚙ AI settings:</b> your deck's AI profile (the opponents play with “Default”) and the lookahead. With lookahead the AI checks moves in advance and plays stronger but takes longer: about 15 s per game without, 30 s with and 50 s with maximum lookahead (1 vs 1).
+136	<b>🔬 Test lab:</b> measures whether a card swap helps or with which AI profile Forge plays your deck best. All variants play equally often against the same opponents (up to four) with the same random seed. The levels Quick, Standard, Thorough and Very thorough show the approximate duration in advance; during the measurement you see the remaining time. The result gives the win rate with a 90% range and a verdict (“clearly better”, “somewhat worse” etc., only from 8 games per variant). You can apply a better variant to the deck with one click, or a better profile as the AI pilot for this deck. Earlier measurements are kept.
+137	<b>📊 Detailed statistics:</b> collapsed below the result. Per deck: how often it went first (and then won), avg. mulligans, in which round the commander first arrived and how often it was cast, avg. lands and spells, avg. damage to opponents (of which in combat), the most frequently cast cards, the cards that dealt the most damage, and “key cards” with which the deck wins clearly more often than average. Under “Individual games”, <b>🔎 History</b> shows a game turn by turn: lands, spells, commander, attacks, damage and life totals, plus a life chart. “Round” counts a player's own turns.
+138	<b>🃏 Play yourself:</b> “In the browser” opens the same game table with your deck and the opponent; you play both sides. After “End turn” the other player moves to the bottom; ⇅ switches sides at any time. “End game” (⚙) enters the result in the game log. In local mode, “🖥 Play yourself in Forge” puts both decks into Forge and opens it: choose “Commander” on the left there; player 1 is your deck, player 2 the AI with the opponent's deck. Forge enforces all the rules.
+139	<b>📱 On a phone:</b> the table is easiest to read in landscape; in portrait, 📱 at the top switches to full screen and landscape (Android/Chrome; on an iPhone, rotate the phone). The hand only sticks halfway into the picture and rises when tapped. On small screens, “Aa” (text tiles with rules text and power/toughness) and the card size in the ⚙ menu help.
+140	<b>Reading the result:</b> wins in percent, average winning turn, type of win (e.g. commander damage, combo) and which card won. The AI plays solidly but makes mistakes, so only trends over many games are meaningful. How the AI plays your deck best and whether a card swap helps is measured by the 🔬 test lab below the duel. If a game runs too long, it counts as a draw.
+141	Official rules
+142	The complete <b>Comprehensive Rules</b> by Wizards of the Coast (English), automatically in the latest version. Search for
+143	a <b>rule number</b>: <code>903</code> (all Commander rules), <code>903.4</code> (one rule with its subrules), <code>5</code> (a whole chapter),
+144	or <b>words</b> (English): e.g. <code>color identity</code>, <code>commander tax</code>, <code>trample</code>. Glossary hits are shown at the top.
+145	References like “rule 702.19” in the text are clickable. The quick buttons jump to frequently used sections. For the ban list and brackets there are links to the official pages.
+146	Card search
+147	Search by name or rules text, card type, keyword (e.g. Flying), color identity and mana value. “Can be a commander” shows only possible commanders. Results are sorted by popularity, with prices and a link to Scryfall.
+148	Automatic updates
+149	Each start checks: <b>rules</b> (new version at Wizards?), <b>precons</b> (new decklists?) and <b>card data</b> (reloaded when older than 7 days and Scryfall has newer data).
+150	Only what has changed is downloaded. Without internet, everything keeps working with the existing data.
+151	<b>Update now</b> in the bar at the top checks immediately; <b>Reload everything</b> forces a fresh download.
+152	Saved decks, settings and the Forge folder are kept during updates.
+153	Phone, tablet and other devices
+154	<b>In the home network:</b> start on the PC with <code>Commander-DB im Netzwerk starten.bat</code> (or <code>python commander_db_vNN.py serve --lan</code>). The black window shows an address like <code>http://192.168.178.23:8000/?key=…</code>. Open this address in the browser of your phone or tablet (same Wi-Fi). The code in the link protects against outside access; after that the browser remembers the permission.
+155	The first time, Windows asks whether Python may communicate on the network. Allow it for <b>private networks</b>.
+156	Duels run on the PC; the phone only shows the results.
+157	<b>Mac and Linux:</b> the script runs the same way there (install Python 3, then <code>python3 commander_db_vNN.py serve</code>).
+158	<b>On the internet (server):</b> if the database runs on a server, open its address (e.g. <code>https://commander.your-domain.com</code>) and log in with user name and password. Each user has their own saved decks. The administrator creates new users via “Manage users”.
+159	<b>Install as an app:</b> on Android, open the server address in Chrome, then “📲 Install as app” (or menu ⋮ → “Install app”). On Windows, do the same in Edge or Chrome via the install icon in the address bar. The app then appears in the app menu or Start menu and opens in its own window.
+160	<b>Android app (APK):</b> asks for the server address at first start and then shows the same content; files are saved in the Download folder.
+161	<b>Legal notice and privacy:</b> if the server is reachable from the internet, the administrator enters name, address and email under “Legal notice &amp; privacy” in the top bar. The pages <code>/impressum</code> and <code>/datenschutz</code> are linked in the footer.
+162	Terms
+163	Ramp
+164	Cards that provide extra mana (e.g. Sol Ring, searching for lands).
+165	Card advantage (draw)
+166	Cards that let you draw extra cards.
+167	Removal
+168	Cards that destroy or exile an opponent's card.
+169	Mass removal (wipe)
+170	Removes many or all creatures/permanents at once.
+171	Tutor
+172	Searches the library for a specific card.
+173	Game Changer
+174	Official list of especially powerful cards; they help determine which bracket a deck belongs in.
+175	Official power level from 1 (very casual) to 5 (tournament level, cEDH).
+176	Precon
+177	Official Commander deck bought ready-made.
+178	Color identity
+179	All color symbols on the card, including in the rules text. It determines the colors allowed in the deck.
+180	EDHREC rank
+181	How often a card is played in Commander decks (lower = more popular).
+182	Mulligan
+183	Drawing a new opening hand if the first one is bad.
+184	Combo
+185	Cards that together have an especially strong or game-winning effect.
+186	Troubleshooting
+187	The page doesn't load / “No connection to the script”
+188	The black window was closed. Restart it and reload the page (F5).
+189	A card is not found
+190	Use the English card name. Brand-new cards arrive with the next card data update.
+191	“Java is too old” / “Java not found”
+192	Install Java 17 or newer and restart the program.
+193	“No file forge-gui-desktop… found”
+194	Wrong Forge folder. Search for “forge-gui-desktop” in Explorer and enter the folder containing the file.
+195	Moxfield link doesn't work
+196	In Moxfield, “Export” → copy the list and paste it.
+197	Combos “unreachable”
+198	No internet connection, or Commander Spellbook is currently unreachable. Try again later.
+199	Update “failed”
+200	Usually the internet was briefly unavailable. The old data stays usable; click “Update now” later.
+201	Card data: Scryfall · Precons: mtg.wtf/MTGJSON · Combos: Commander Spellbook · Rules: Wizards of the Coast · Rules engine: Forge. Magic: The Gathering is a trademark of Wizards of the Coast; this program is a private fan tool with no connection to Wizards.
+202	🌱 New here? How to get into the game
+203	You've never played Magic, or you know Magic but not Commander? Here is everything you need for your first game, to read at your own pace and without jargon.
+204	Completely new to Magic
+205	New to Commander
+206	My first deck
+207	The first game
+208	✨ Part 1: Magic in ten minutes
+209	What is it about?
+210	Each person plays with their own stack of cards, the <b>deck</b>. You play lands that give you <b>mana</b> (the energy for spells), and with that mana you cast creatures and spells. The goal is to make your opponents lose. That happens when
+211	their <b>life total drops to 0</b> (in Commander, everyone starts with 40),
+212	they have <b>10 poison counters</b>,
+213	they have to draw a card but their <b>library</b> (the draw pile) is empty,
+214	or a card explicitly says that someone wins or loses.
+215	The five colors
+216	Almost every card belongs to one or more colors. Each color has its own style:
+217	<span class="pip pW">W</span> <b>White:</b> order and community: many small creatures, protection, gaining life, destroying everything at once.
+218	<span class="pip pU">U</span> <b>Blue:</b> knowledge and control: drawing cards, countering opposing spells, sending things back to the hand.
+219	<span class="pip pB">B</span> <b>Black:</b> power at any price: destroying creatures, bringing the dead back from the graveyard, paying life for advantages.

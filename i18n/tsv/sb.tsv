@@ -1,0 +1,23 @@
+0	Fan tool for the Commander format of <b>Magic: The Gathering®</b> · Magic: The Gathering is made by <a href="https://magic.wizards.com/en" target=_blank rel=noopener>Wizards of the Coast</a>
+1	Build, test and compare your decks for the Commander format of <b>Magic: The Gathering</b>: 100 cards, one commander and up to three opponents at the table.
+2	No idea yet? Type “Atraxa”, “Krenko” or “Edgar Markov”, or <a href="#deck" id=wsug>💡 get commander suggestions by color and theme</a>.
+3	Unavailable cards (<span id=excount>0</span>), never suggested
+4	First create a deck in the <a href="#deck">“Build deck”</a> tab or load one under <a href="#decks">“My decks”</a>. Then choose the opponent here.
+5	<b>Choose precon:</b>
+6	<button type=button class=primary id=scanbtn>📷 Scan cards</button> <span class=hint>Capture cards with the camera and add them to your collection or deck.</span>
+7	<b>🛒 Shopping list across all decks</b> <span class=hint id=shopsum></span>
+8	<b>🧭 Buying assistant</b> <span class=hint>Budget, printing &amp; foil, split across sellers, precon check</span>
+9	<b>🖨 Proxy printing</b> <span class=hint>Copies of any cards for testing</span>
+10	Prints copies of cards at original size, as card images or ink-saving text only. <b>Copies for private testing only, not real cards:</b> every copy carries the mark “PROXY – not a real card”.
+11	<b>📈 Collection value history</b>
+12	<b>🎲 Game table: life counter &amp; game log</b> <span class=hint id=gamecount></span> <button type=button class=qh data-h=spieltisch>?</button>
+13	<b>Magic: The Gathering</b> is a game by <b>Wizards of the Coast LLC</b>. Manaschmiede (Commander deck-building database) is unofficial Fan Content permitted under the <a href="https://company.wizards.com/en/legal/fancontentpolicy" target=_blank rel=noopener>Fan Content Policy</a>. Not approved/endorsed by Wizards of the Coast. Portions of the materials used (card names, card text, card images, mana symbols, Comprehensive Rules) are property of Wizards of the Coast. ©Wizards of the Coast LLC.
+14	Card data and images: <a href="https://scryfall.com" target=_blank rel=noopener>Scryfall</a> · Euro prices: <a href="https://www.cardmarket.com" target=_blank rel=noopener>Cardmarket</a> (price list) · Precons: MTGJSON / mtg.wtf · Combos: <a href="https://commanderspellbook.com" target=_blank rel=noopener>Commander Spellbook</a> · Rules engine: Forge · <a href="#regeln">Official rules</a> · <a href="#willkommen">Home</a> · <a href="/impressum" target=_blank>Legal notice</a> · <a href="/datenschutz" target=_blank>Privacy</a>
+15	<b>Note to the operator:</b> name, address and email are still missing. Please enter them as administrator under “Legal notice &amp; privacy”.
+16	<b>User account:</b> user name and password (stored only as a salted hash, never in plain text), role, date of creation.
+17	<b>Content you create:</b> decks, collection, wishlist, folders, game log, game nights with the names of the players, comments and ratings in the deck gallery, settings.
+18	<b>Login:</b> a session cookie (cdbsess), technically necessary to keep you logged in (§ 25 (2) No. 2 TDDDG). To protect against password guessing, the IP address is briefly kept in memory after failed logins.
+19	<b>Local storage in the browser:</b> view settings and ongoing test games (localStorage); these never leave your device.
+20	<b>Game night links:</b> anyone who has the link or QR code of a game night sees the players' names, the tables and the standings and can enter results.
+21	<b>Scryfall (Scryfall, LLC, USA):</b> card images are loaded directly from Scryfall's servers; Scryfall receives your IP address and browser data in the process. The server fetches card data without any personal data.
+22	<b>Links to sellers</b> (Cardmarket, Trader-online, cardcosmos): data is only transmitted to the seller when you click; the seller's privacy policy applies.

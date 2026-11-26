@@ -1,0 +1,341 @@
+% (ohne Standardländer).	% (excluding basic lands).
+% der Partien.	% of games.
+% des Decks besitzt du	% of the deck is in your collection
+% statt	% instead of
+% · Landdrop in Zug 1/2/3/4 (als Startspieler):	% · land drop on turn 1/2/3/4 (on the play):
+(Combos noch ungeprüft)	(combos not checked yet)
+(Commander-Steuer +	(commander tax +
+(Daten fehlen)	(data missing)
+(Kopie)	(copy)
+(Pop-up blockiert, bitte	(pop-up blocked, please
+(Preisgrenze)	(price limit)
+(Preisliste vom	(price list from
+(Preisliste) · Precons: MTGJSON / mtg.wtf · Combos:	(price list) · Precons: MTGJSON / mtg.wtf · Combos:
+(Runde	(round
+(Rückseite)	(back)
+(Ziel	(target
+(der erste Start von Forge dauert etwa eine Minute)	(the first Forge start takes about a minute)
+(die Karten bleiben in der Sammlung)	(the cards stay in the collection)
+(gelesen: „	(read: “
+(gesamt	(total
+(grob geschätzt)	(rough estimate)
+(höchstens diese Farben)	(these colors at most)
+(in Mehrspieler-Partien frei)	(free in multiplayer games)
+(noch leer)	(still empty)
+(nur versiegelte Ware, z. B. Precons)	(sealed products only, e.g. precons)
+(oben)	(top)
+(ohne Commander und eigene Karten).	(excluding commander and cards you own).
+(schon das	(already the
+(unten)	(bottom)
+(vergeben)	(taken)
+(zieht im ersten Zug keine Karte)	(draws no card on the first turn)
+) enthält	) contains
+) und wurde nicht hinzugefügt.	) and was not added.
+) · voraussichtlich	) · expected
+), vom Besitzer angegeben	), stated by the owner
+), werden nie vorgeschlagen	), never suggested
+). Gemischte Auswahl aus beliebten Commandern, Geheimtipps und günstigen Optionen	). A mix of popular commanders, hidden gems and budget options
+): Kandidaten, die nicht mitzählen	): candidates that don't count
+): antippen = ausspielen, gedrückt halten / Rechtsklick = weitere Aktionen	): tap = play, long press / right-click = more actions
+); ohne eigenen Verlauf zählt der Trend gegenüber dem 30-Tage-Durchschnitt.	); without its own history, the trend against the 30-day average counts.
++ Gegner	+ opponent
++ Variante	+ variant
++1 (kostet 1 Leben)	+1 (costs 1 life)
++1 Marke	+1 counter
++1 gleiche Karte	+1 same card
+, 21 erreicht, verloren!	, reached 21, lost!
+, Münze:	, coin:
+, Sieger:	, winner:
+, Thema „	, theme “
+, angezeigt werden die ersten	, showing the first
+, antippen zum Wechseln	, tap to switch
+, es fehlen	, missing
+, gewonnen hat	, winner:
+, gültig ab	, effective from
+, günstigste Druckversion). 🛒 öffnet die Karte auf Cardmarket.	, cheapest printing). 🛒 opens the card on Cardmarket.
+, insgesamt	, total
+, keine spielentscheidende Zwei-Karten-Combo gefunden	, no game-winning two-card combo found
+, lege	, put
+, mehr als erlaubt (	, more than allowed (
+, verloren!	, lost!
+. Achtung:	. Note:
+. Achtung: kein gültiger Commander	. Note: not a valid commander
+. Das Deck enthält Karten über diesem Bracket	. The deck contains cards above this bracket
+. Das Ergebnis ist deshalb nur eingeschränkt aussagekräftig.	. The result is therefore of limited value.
+. Die Decks liegen dort unter Commander:	. The decks are listed there under Commander:
+. Die Manaschmiede (Commander-Deckbau-Datenbank) ist inoffizieller Fan-Inhalt im Sinne der	. Manaschmiede (Commander deck-building database) is unofficial Fan Content as defined by the
+. Die Suche lässt sich genauer eingrenzen.	. You can narrow the search down.
+. Durchschnitte und Trend beziehen sich auf die günstigste Druckversion; Tiefst- und Foil-Preis auf alle Drucke.	. Averages and trend refer to the cheapest printing; low and foil prices to all printings.
+. In Forge links „Commander“ wählen, bei Spieler 1 dein Deck, bei Spieler 2 „KI“ und den Gegner, dann „Spiel starten“. Forge prüft dabei alle Regeln.	. In Forge, choose “Commander” on the left, your deck for player 1, “AI” and the opponent for player 2, then “Start game”. Forge enforces all the rules.
+. In Forge unter Commander-Decks auswählbar.	. Selectable in Forge under Commander decks.
+. Jeder hat 7 Karten gezogen: behalten oder Mulligan (der erste ist frei).	. Everyone has drawn 7 cards: keep or mulligan (the first one is free).
+. Land in diesem Zug)	. land this turn)
+. Nicht von Wizards of the Coast genehmigt oder unterstützt. Teile der verwendeten Materialien (Kartennamen, -texte, -bilder, Mana-Symbole, Comprehensive Rules) sind Eigentum von Wizards of the Coast. ©Wizards of the Coast LLC.	. Not approved/endorsed by Wizards of the Coast. Portions of the materials used (card names, card text, card images, mana symbols, Comprehensive Rules) are property of Wizards of the Coast. ©Wizards of the Coast LLC.
+. Über die TO-Links in der Tabelle suchen und in den Warenkorb legen.	. Search via the TO links in the table and add the cards to your cart.
+1 gegen 1	1 vs 1
+10 Partien je Variante und Gegner, ohne Vorausschau. Zeigt grobe Tendenzen und große Unterschiede.	10 games per variant and opponent, without lookahead. Shows rough tendencies and large differences.
+2 mm Abstand zwischen den Karten	2 mm gap between cards
+20 Partien, alle KI-Profile. Erkennt Unterschiede ab etwa 25 Prozentpunkten zuverlässig.	20 games, all AI profiles. Reliably detects differences of about 25 percentage points or more.
+21 Commander-Schaden von	21 commander damage from
+30 Partien mit Vorausschau: die KI prüft Züge vorher durch und spielt stärker, dauert etwa doppelt so lange je Partie.	30 games with lookahead: the AI checks moves in advance and plays stronger; each game takes about twice as long.
+40 Partien, alle KI-Profile. Macht auch kleinere Unterschiede sichtbar.	40 games, all AI profiles. Also reveals smaller differences.
+: 1 Commander-Schaden von	: 1 commander damage from
+: 100 Karten, ein Commander und bis zu drei Gegner am Tisch.	: 100 cards, one commander and up to three opponents at the table.
+: 7 neue Karten	: 7 new cards
+: Leben	: life
+: Leben, Gift, Commander-Schaden	: life, poison, commander damage
+: Verlauf	: history
+: dazugekommen	: added
+; Schätzung des Programms:	; the app's estimate:
+; kein Ersatz für:	; no replacement for:
+Abbrechen	Cancel
+Abbrechen ohne Speichern	Cancel without saving
+Abende)	nights)
+Abgebrochen nach	Cancelled after
+Ablauf	How it works
+Ablauf bei Commander Spellbook	Steps on Commander Spellbook
+Ablegen in:	Move to:
+Ablehnen	Decline
+Abmelden	Log out
+Abwerfen	Discard
+Achtung: Forge kennt	Note: Forge does not know
+Aktionen	Actions
+Aktualisierung	Update
+Aktualisierung:	Update:
+Aktueller Gegner:	Current opponent:
+Alle	All
+Alle Commander-Karten nach Name, Text, Typ, Farbe und Manawert durchsuchen.	Search all commander-legal cards by name, text, type, color and mana value.
+Alle Felder sind optional, eine Angabe genügt. Namen werden beim Tippen vorgeschlagen.	All fields are optional; one entry is enough. Names are suggested as you type.
+Alle Karten dieses Precons zu deiner Sammlung hinzufügen	Add all cards of this precon to your collection
+Alle auswählen	Select all
+Alle gespeicherten Decks	All saved decks
+Alle offiziellen Commander-Precons mit vollständiger Deckliste. Antippen zeigt die Liste; von dort kannst du das Deck im Editor öffnen, speichern, als Gegner nehmen oder, wenn du es gekauft hast, in deine Sammlung übernehmen.	All official Commander precons with full decklists. Tap one to see its list; from there you can open the deck in the editor, save it, use it as an opponent or, if you bought it, add it to your collection.
+Alle offiziellen Precons (nach Erscheinen sortiert)	All official precons (sorted by release)
+Alles neu laden	Reload everything
+Als CSV herunterladen	Download as CSV
+Als Commander nutzbar	Can be a commander
+Als Gegner gesetzt. Jetzt ein eigenes Deck vorschlagen oder laden.	Set as opponent. Now suggest or load a deck of your own.
+Als Gegner verwenden	Use as opponent
+Als KI-Pilot merken	Remember as AI pilot
+Als mein Deck verwenden	Use as my deck
+Am häufigsten gewirkt	Most often cast
+Andere Möglichkeiten:	Other options:
+Angelegt	Created
+Angemeldet als	Logged in as
+Angezeigt werden die zuletzt geladenen Drucke.	Showing the most recently loaded printings.
+Angriffe	Attacks
+Anlegen	Create
+Anmelden	Log in
+Anmelden · Manaschmiede	Log in · Manaschmiede
+Anmeldung fehlgeschlagen.	Login failed.
+Anschrift (Straße, PLZ Ort)	Address (street, postcode, town)
+Ansicht	View
+Ansicht:	View:
+Ansicht: automatisch / Handy / PC	View: automatic / phone / PC
+Antippen zum Schließen	Tap to close
+Anz.	Qty
+Anzahl	Quantity
+Anzahl Partien (max.	Number of games (max.
+Auch bei:	Also at:
+Auf Cardmarket ansehen (günstigste Druckversion)	View on Cardmarket (cheapest printing)
+Auf den Bestand begrenzt:	Limited to your stock:
+Auf diesem Server gibt es noch keine anderen Benutzer. Der Administrator kann sie unter „Benutzer verwalten“ anlegen.	There are no other users on this server yet. The administrator can create them under “Manage users”.
+Aufs Spielfeld	To the battlefield
+Aufträge in der Warteschlange)	jobs in the queue)
+Aus dem Ordner nehmen	Remove from folder
+Ausgelassen sind Phasenwechsel, Manaproduktion und ausgelöste Fähigkeiten; Schaden zwischen Kreaturen steht nicht einzeln da.	Phase changes, mana production and triggered abilities are left out; damage between creatures is not listed separately.
+Ausgewertet aus dem Spielprotokoll von Forge. „Runde“ zählt die eigenen Züge eines Spielers (Runde 3 = sein dritter Zug).	Evaluated from Forge's game log. “Round” counts a player's own turns (round 3 = their third turn).
+Ausspielen	Play
+Automatisch korrigierte Namen (	Automatically corrected names (
+Baue, teste und vergleiche deine Decks für das Commander-Format von	Build, test and compare your decks for the Commander format of
+Bedienung	Controls
+Beginnt:	Starts:
+Behaltbare Starthände (2–5 Länder):	Keepable opening hands (2–5 lands):
+Behalten	Keep
+Bei	At
+Bei Cardmarket: neue Wants-Liste anlegen → „Decklist hinzufügen“ → Liste einfügen (Strg+V) → „Hinzufügen“. Danach findet der Shopping Wizard die günstigste Händlerkombination.	On Cardmarket: create a new Wants list → “Add decklist” → paste the list (Ctrl+V) → “Add”. The Shopping Wizard then finds the cheapest combination of sellers.
+Bei Trader-online suchen	Search on Trader-online
+Beitreten	Join
+Bekannte Spieler:	Known players:
+Beliebiger Druck (günstigster)	Any printing (cheapest)
+Benutzer	Users
+Benutzer anlegen oder Passwort neu setzen	Create user or reset password
+Benutzer verwalten	Manage users
+Benötigt zusätzlich:	Also needs:
+Berechne …	Calculating …
+Bestes KI-Profil für dein Deck finden	Find the best AI profile for your deck
+Bibliothek	Library
+Bibliothek durchsuchen	Search library
+Bibliothek durchsuchen: Karte antippen für Aktionen. Danach wird automatisch gemischt.	Search library: tap a card for actions. The library is shuffled automatically afterwards.
+Bibliothek gemischt.	Library shuffled.
+Bibliothek leer, du würdest verlieren!	Library empty, you would lose!
+Bibliothek: antippen für Aktionen	Library: tap for actions
+Bild des Commanders	Commander image
+Bild wird geladen …	Loading image …
+Bisherige Spielabende	Past game nights
+Bitte Internetverbindung prüfen und erneut versuchen.	Please check your internet connection and try again.
+Bitte Karten eintragen.	Please enter cards.
+Bitte anmelden.	Please log in.
+Bitte mindestens eine Farbe anklicken oder ein Thema eintragen.	Please click at least one color or enter a theme.
+Bitte mindestens eine Variante angeben.	Please enter at least one variant.
+Bitte zuerst bestätigen, dass du nur Kopien für den privaten Gebrauch druckst.	Please confirm first that you are only printing copies for private use.
+Bitte zuerst ein Deck bauen oder öffnen.	Please build or open a deck first.
+Bitte zuerst gekaufte Karten ankreuzen.	Please tick the cards you bought first.
+Blau	Blue
+Bleibende Karten (Kreaturen, Artefakte …)	Permanents (creatures, artifacts …)
+Bracket-Schätzung	Bracket estimate
+Bracket-Schätzung des Programms (ohne Combo-Prüfung):	The app's bracket estimate (without combo check):
+Bracket-Schätzung nach Game Changern, Extra-Zügen und Landzerstörung; Combos siehe unten.	Bracket estimate based on Game Changers, extra turns and land destruction; for combos see below.
+Bracket: egal	Bracket: any
+Budget gesamt €	Total budget €
+Budget, Druck & Foil, Aufteilung auf Händler, Precon-Check	Budget, printing & foil, split across sellers, precon check
+CSV herunterladen	Download CSV
+CSV nur mit Namen	CSV with names only
+Cardmarket-Preis dieses Drucks	Cardmarket price of this printing
+Cardmarket-Preise anzeigen	Show Cardmarket prices
+Chinesisch (traditionell)	Chinese (traditional)
+Chinesisch (vereinfacht)	Chinese (simplified)
+Code oder QR-Code vom Gastgeber eingeben oder unten selbst eine Partie starten und mit „📡 Tisch teilen“ freigeben.	Enter the code or scan the host's QR code, or start a game below and share it with “📡 Share table”.
+Combos gefunden, davon	combos found, of which
+Combos geprüft mit Commander Spellbook	Combos checked with Commander Spellbook
+Combos im Vergleich	Combos compared
+Combos, denen genau eine Karte fehlt (passend zur Farbidentität). Du kannst sie bewusst ergänzen oder bewusst weglassen.	Combos missing exactly one card (within the color identity). You can add them or leave them out on purpose.
+Commander (Partner mit „ + “ trennen)	Commander (separate partners with “ + ”)
+Commander gewirkt	Commander cast
+Commander nicht gefunden	Commander not found
+Commander passen (	commanders match (
+Commander vorschlagen	Suggest commanders
+Commander zuerst gewirkt	Commander cast first
+Commander zuerst gewirkt, Ø Runde	Commander cast first, avg. round
+Commander „	Commander “
+Commander-Format (offiziell)	Commander format (official)
+Commander-Regeln	Commander rules
+Commander-Runde zu dritt	Three-player Commander game
+Commander-Runde zu viert	Four-player Commander game
+Commander-Schaden	Commander damage
+Commander-Schaden erhalten von:	Commander damage received from:
+Commander-Schaden von	Commander damage from
+Commander-Steuer	Commander tax
+Comprehensive Rules von Wizards of the Coast (englisch)	Comprehensive Rules by Wizards of the Coast (English)
+Das Deck hat gerade	The deck currently has
+Das Deck landet im Postfach des Empfängers („📥 Erhaltene Decks“ unter Meine Decks) und kann dort übernommen oder abgelehnt werden. Dein eigenes Deck bleibt unverändert.	The deck lands in the recipient's inbox (“📥 Received decks” under My decks), where it can be accepted or declined. Your own deck stays unchanged.
+Datei „	File “
+Datei: Archidekt (.txt)	File: Archidekt (.txt)
+Datei: CSV	File: CSV
+Datei: Forge (.dck)	File: Forge (.dck)
+Datei: Moxfield/Arena (.txt)	File: Moxfield/Arena (.txt)
+Datei: einfache Liste (.txt)	File: plain list (.txt)
+Datenschutz	Privacy
+Datenschutz ansehen	View privacy policy
+Dauerscan angehalten,	Continuous scan paused,
+Dauerscan beendet, keine Karte erfasst.	Continuous scan ended, no card captured.
+Dauerscan läuft,	Continuous scan running,
+Dauerscan läuft. Karte in den Rahmen legen, Name oben im hellen Streifen.	Continuous scan running. Place the card in the frame with its name in the bright strip at the top.
+Davon in deiner Sammlung:	In your collection:
+Deck (gespeichert oder frei)	Deck (saved or free)
+Deck auf einem Spielfeld ohne Gegner durchspielen	Play through the deck on a board without opponents
+Deck bauen	Build deck
+Deck bauen ✦	Build deck ✦
+Deck im Editor:	Deck in the editor:
+Deck importieren & gespeicherte Decks	Import deck & saved decks
+Deck senden:	Send deck:
+Deck teilen:	Share deck:
+Deck vorschlagen	Suggest deck
+Deck wird zusammengestellt ...	Building the deck ...
+Deck wählen …	Choose deck …
+Deck „	Deck “
+Deckbau-Assistent	Deck-building assistant
+Deckliste (Arena-/Moxfield-Format) kopiert. Das Format passt für die meisten Seiten und Apps.	Decklist (Arena/Moxfield format) copied. This format works for most sites and apps.
+Deckliste des Gegners anzeigen	Show the opponent's decklist
+Deckliste einfügen, z. B. „1 Sol Ring“ je Zeile	Paste a decklist, e.g. “1 Sol Ring” per line
+Deckliste ist kopiert.	Decklist copied.
+Deckname:	Deck name:
+Decks importieren (Moxfield, Archidekt, Dateien), speichern, Versionen vergleichen und teilen.	Import decks (Moxfield, Archidekt, files), save them, compare versions and share them.
+Decks · zusammen ca.	decks · together approx.
+Dein Deck	Your deck
+Dein Deck gegen „	Your deck against “
+Deine Starthand	Your opening hand
+Der Assistent stellt ein vollständiges Deck zusammen, passend zu Commander, Budget und Sammlung. Danach frei anpassen.	The assistant builds a complete deck to fit your commander, budget and collection. Adjust it freely afterwards.
+Der Link funktioniert nur, solange deine Manaschmiede läuft und für die andere Person erreichbar ist (gleiches Heimnetz mit „im Netzwerk starten“ oder Server).	The link only works while your Manaschmiede is running and reachable for the other person (same home network with “start in network” or a server).
+Der Ordner ist leer.	The folder is empty.
+Deutsch	German
+Die Gegner spielen immer mit „Default“. Das beste Profil kannst du danach für Duelle mit diesem Deck übernehmen.	The opponents always play with “Default”. You can then use the best profile for duels with this deck.
+Die Gegner spielen mit „Default“. Mit Vorausschau prüft die KI mögliche Züge vorher durch. Sie spielt dann stärker, braucht aber länger. Zeiten gelten für 1 gegen 1; Runden zu dritt oder viert dauern deutlich länger.	The opponents play with “Default”. With lookahead the AI checks possible moves in advance. It then plays stronger but takes longer. Times apply to 1 vs 1; three- or four-player games take considerably longer.
+Die Precon-Decklisten sind noch nicht geladen (einmalig ca. 30 MB von GitHub).	The precon decklists are not loaded yet (one-time download of about 30 MB from GitHub).
+Die Wunschliste ist leer.	The wishlist is empty.
+Die neuen Passwörter stimmen nicht überein.	The new passwords do not match.
+Die offiziellen Comprehensive Rules von Wizards of the Coast mit Suche und Glossar.	The official Comprehensive Rules by Wizards of the Coast with search and glossary.
+Diese Angaben erscheinen auf /impressum und /datenschutz. Pflicht für einen aus dem Internet erreichbaren Server: Name, ladungsfähige Anschrift, E-Mail.	These details appear on /impressum and /datenschutz. Required for a server reachable from the internet (German law): name, address for service, email.
+Diese Fassung wiederherstellen	Restore this version
+Diese Partie ist bereits beendet.	This game has already ended.
+Diesen Druck	This printing
+Dieses Gerät lässt die Drehung nicht automatisch zu (z. B. iPhone). Bitte das Handy quer halten	This device does not allow automatic rotation (e.g. iPhone). Please hold the phone sideways
+Dir fehlt keine Karte, alle Decks sind komplett.	You're not missing any cards; all decks are complete.
+Direktes Duell (Regel-Engine Forge)	Direct duel (Forge rules engine)
+Drei Decks am Tisch: dein Deck, der oben gewählte Gegner und ein weiterer.	Three decks at the table: your deck, the opponent chosen above and one more.
+Druck	Printing
+Druck für	Printing for
+Druck wählen	Choose printing
+Druck wählen …	Choose printing …
+Druck wählen:	Choose printing:
+Druck ändern:	Change printing:
+Druckansicht öffnen	Open print view
+Druckdaten für	Printing data for
+Drucke, neueste zuerst. Preise: Cardmarket je Druck (sonst Scryfall).	Printings, newest first. Prices: Cardmarket per printing (otherwise Scryfall).
+Drucken / als PDF speichern	Print / save as PDF
+Druckt Kopien von Karten in Originalgröße, als Kartenbild oder tintensparend nur mit Text.	Prints copies of cards at original size, as card images or ink-saving text only.
+Druckversionen bei Cardmarket	Printings on Cardmarket
+Du spielst beide Seiten am Spieltisch im Browser: Starthand und Mulligan, Ziehen, Ausspielen, Angriffe, Leben und Commander-Schaden, mit Protokoll und Statistik. Regeln prüft der Spieltisch nicht.	You play both sides at the game table in the browser: opening hand and mulligan, drawing, casting, attacks, life and commander damage, with a log and statistics. The game table does not enforce the rules.
+Duell	Duel
+Duell starten	Start duel
+Durch Standardland ersetzen	Replace with a basic land
+Durchschnitt 30 Tage	30-day average
+Durchschnitt 7 Tage	7-day average
+Durchschnitt letzter Tag	Average last day
+Eigene Decks als Gegner:	Own decks as opponents:
+Eigene Einstellung	Custom setting
+Eigene Kategorien, mit Komma getrennt (z. B. „Ramp, Wincon“). Sie werden mit dem Deck gespeichert.	Your own categories, separated by commas (e.g. “Ramp, Wincon”). They are saved with the deck.
+Eigene Sammlung abziehen	Subtract own collection
+Eigene gespeicherte Decks	Own saved decks
+Eigener Token, z. B. 1/1 Goblin	Custom token, e.g. 1/1 Goblin
+Eigenes Deck:	Own deck:
+Ein Commander ist im Format Pflicht. Hier passende Vorschläge:	A commander is mandatory in this format. Here are matching suggestions:
+Eine Gruppe entsteht, sobald eine Karte darin liegt. Name eingeben, dann Karten mit ⇄, Mehrfachauswahl oder per Ziehen hineinlegen.	A group appears as soon as it holds a card. Enter a name, then move cards into it with ⇄, multi-select or drag and drop.
+Eine Karte je Zeile, z. B. 1 Sol Ring 2 Lightning Bolt 1 Counterspell (MH2) 267 ← bestimmter Druck	One card per line, e.g. 1 Sol Ring 2 Lightning Bolt 1 Counterspell (MH2) 267 ← specific printing
+Eine Karte pro Zeile	One card per line
+Eine Partie dauert hier meist 1–10 Minuten; nach 15 Minuten wertet Forge sie als Unentschieden.	A game here usually takes 1–10 minutes; after 15 minutes Forge counts it as a draw.
+Einkaufsliste berechnen	Calculate shopping list
+Einmalig nötig: Java 17+ (z. B. adoptium.net) und Forge (github.com/Card-Forge/forge/releases, Archiv entpacken). Dann hier den entpackten Ordner angeben.	Needed once: Java 17+ (e.g. adoptium.net) and Forge (github.com/Card-Forge/forge/releases, unpack the archive). Then enter the unpacked folder here.
+Einschätzung	Assessment
+Einstufung von Commander Spellbook:	Commander Spellbook rating:
+Eintrag entfernen	Remove entry
+Einträge	entries
+Einträge fehlen noch Druckdaten (unten unter „📚 Bestand“ nachladen)	entries still lack printing data (load them below under “📚 Stock”)
+Einträge nachladen	Load entries
+Einzelne Partien	Individual games
+Empfehlungen, Streichvorschläge und Frust-Index	Recommendations, cut suggestions and frustration index
+Ende	End
+Englisch	English
+Entfernung	Removal
+Enttappen und ziehen (N)	Untap and draw (N)
+Enttappen, Versorgung, Ziehen	Untap, upkeep, draw
+Ergebnis	Result
+Ergebnis:	Result:
+Ergebnisse auch ins Spielprotokoll übernehmen	Also add the results to the game log
+Ergänzen	Add
+Erkenne Text …	Recognizing text …
+Erneut versuchen	Try again
+Ersatz für	Replacement for
+Erzeugen	Create
+Exil	Exile
+Export aus ManaBox, Moxfield, Deckbox, Archidekt, Dragon Shield (CSV) oder eine einfache Liste („4 Sol Ring“ je Zeile).	Export from ManaBox, Moxfield, Deckbox, Archidekt, Dragon Shield (CSV) or a plain list (“4 Sol Ring” per line).
+Exportieren & übertragen	Export & transfer
+Extra-Züge	Extra turns
+Fan-Werkzeug für das Commander-Format von	Fan tool for the Commander format of
+Farbe	Color
+Farben des Decks	Deck colors
+Farben oben anklicken und/oder ein Thema eintragen (z. B. Drachen, Sagen, Tokens, Friedhof, Lebensgewinn).	Click colors above and/or enter a theme (e.g. dragons, sagas, tokens, graveyard, lifegain).
+Farbidentität	Color identity
+Farbidentität (z. B. WUB)	Color identity (e.g. WUB)
+Farbidentität (z. B. WUB, C)	Color identity (e.g. WUB, C)
+Farblos	Colorless
